@@ -44,8 +44,8 @@ public final class AppCoordinator: ObservableObject {
 
         // Check screen capture permissions
         if !hasScreenCapturePermission() {
-            AppLogger.shared.capture.notice("Screen capture permission not yet authorized. Directing user to System Settings.")
-            openPrivacySettings()
+            AppLogger.shared.capture.notice("Screen capture permission not yet authorized. Presenting permission modal.")
+            PermissionManager.shared.showScreenRecordingPermissionDialog()
             return
         }
 

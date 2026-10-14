@@ -15,7 +15,7 @@ public final class CaptureCoordinator: ObservableObject {
 
     public func captureRegion() {
         guard PermissionManager.shared.checkScreenRecordingPermission() else {
-            PermissionManager.shared.requestScreenRecordingPermission()
+            PermissionManager.shared.showScreenRecordingPermissionDialog()
             return
         }
 
@@ -42,7 +42,7 @@ public final class CaptureCoordinator: ObservableObject {
 
     public func captureFullScreen() {
         guard PermissionManager.shared.checkScreenRecordingPermission() else {
-            PermissionManager.shared.requestScreenRecordingPermission()
+            PermissionManager.shared.showScreenRecordingPermissionDialog()
             return
         }
 
@@ -61,7 +61,7 @@ public final class CaptureCoordinator: ObservableObject {
 
     public func captureWindow() {
         guard PermissionManager.shared.checkScreenRecordingPermission() else {
-            PermissionManager.shared.requestScreenRecordingPermission()
+            PermissionManager.shared.showScreenRecordingPermissionDialog()
             return
         }
 
