@@ -488,16 +488,16 @@ All requested feature groups work end to end. Local capture/edit/history works o
 
 Plan for approximately 6–8 weeks for a focused solo-developer MVP. These estimates are not guarantees and depend on recording complexity and cloud setup.
 
-| Milestone | Estimate | Deliverable |
-|---|---:|---|
-| M1. Foundation | 3–4 days | Xcode project, lifecycle, menu bar, settings |
-| M2. Capture | 4–5 days | Full-screen, window, region capture |
-| M3. Editor | 5–7 days | Annotations, undo/redo, blur/pixelation |
-| M4. Styling + recognition | 3–4 days | Backgrounds, export, OCR, QR |
-| M5. History | 2–3 days | Database, search, file management |
-| M6. Recording | 5–7 days | Screen/audio capture, export, GIF conversion |
-| M7. Cloud | 5–7 days | Managed service, S3-compatible provider, sharing |
-| M8. QA + release | 4–5 days | Testing, signing, notarization, website release |
+| Milestone | Estimate | Deliverable | Status |
+|---|---:|---|:---:|
+| M1. Foundation | 3–4 days | Xcode project, lifecycle, menu bar, settings | ✅ **Completed** |
+| M2. Capture | 4–5 days | Full-screen, window, region capture | 🟡 **Next Up** |
+| M3. Editor | 5–7 days | Annotations, undo/redo, blur/pixelation | ⚪️ Planned |
+| M4. Styling + recognition | 3–4 days | Backgrounds, export, OCR, QR | ⚪️ Planned |
+| M5. History | 2–3 days | Database, search, file management | ⚪️ Planned |
+| M6. Recording | 5–7 days | Screen/audio capture, export, GIF conversion | ⚪️ Planned |
+| M7. Cloud | 5–7 days | Managed service, S3-compatible provider, sharing | ⚪️ Planned |
+| M8. QA + release | 4–5 days | Testing, signing, notarization, website release | ⚪️ Planned |
 
 ### Recommended implementation sequence
 
