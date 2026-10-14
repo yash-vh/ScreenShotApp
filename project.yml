@@ -1,0 +1,46 @@
+name: ScreenshotApp
+options:
+  bundleIdPrefix: com.screenshotapp
+  createIntermediateGroups: true
+  xcodeVersion: "15.0"
+  deploymentTarget:
+    macOS: "14.0"
+
+settings:
+  base:
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    SWIFT_VERSION: "5.9"
+    ENABLE_HARDENED_RUNTIME: YES
+    COMBINE_HIDPI_IMAGES: YES
+
+targets:
+  ScreenshotApp:
+    type: application
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Sources
+        excludes:
+          - "**/*.md"
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac
+      PRODUCT_NAME: ScreenshotApp
+      INFOPLIST_FILE: Sources/Resources/Info.plist
+      CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenshotApp.entitlements
+      ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+      GENERATE_INFOPLIST_FILE: NO
+
+  ScreenshotAppTests:
+    type: bundle.unit-test
+    platform: macOS
+    deploymentTarget: "14.0"
+    sources:
+      - path: Tests
+        excludes:
+          - "**/*.md"
+    dependencies:
+      - target: ScreenshotApp
+    settings:
+      PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac.tests
+      PRODUCT_NAME: ScreenshotAppTests
+      GENERATE_INFOPLIST_FILE: YES
