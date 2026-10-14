@@ -29,7 +29,7 @@ public struct NormalizedRect: Codable, Sendable, Equatable {
 }
 
 /// Color representation compatible with Codable and multi-platform rendering
-public struct AnnotationColor: Codable, Sendable, Equatable {
+public struct AnnotationColor: Codable, Sendable, Equatable, Hashable {
     public var red: Double
     public var green: Double
     public var blue: Double

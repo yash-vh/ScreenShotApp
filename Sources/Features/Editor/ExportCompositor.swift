@@ -109,7 +109,15 @@ public final class ExportCompositor: @unchecked Sendable {
             context.strokeEllipse(in: rect)
 
         case .arrow:
-            drawArrow(in: rect, strokeColor: strokeCG, lineWidth: CGFloat(item.strokeWidth), context: context)
+            if let pts = item.points, pts.count >= 2 {
+                let start = CGPoint(x: pts[0].x * Double(imageSize.width), y: pts[0].y * Double(imageSize.height))
+                let end = CGPoint(x: pts[1].x * Double(imageSize.width), y: pts[1].y * Double(imageSize.height))
+                drawArrow(from: start, to: end, strokeColor: strokeCG, lineWidth: CGFloat(item.strokeWidth), context: context)
+            } else {
+                let start = CGPoint(x: rect.minX, y: rect.minY)
+                let end = CGPoint(x: rect.maxX, y: rect.maxY)
+                drawArrow(from: start, to: end, strokeColor: strokeCG, lineWidth: CGFloat(item.strokeWidth), context: context)
+            }
 
         case .highlight:
             let highlightColor = CGColor(
@@ -145,10 +153,7 @@ public final class ExportCompositor: @unchecked Sendable {
         context.restoreGState()
     }
 
-    private func drawArrow(in rect: CGRect, strokeColor: CGColor, lineWidth: CGFloat, context: CGContext) {
-        let start = CGPoint(x: rect.minX, y: rect.minY)
-        let end = CGPoint(x: rect.maxX, y: rect.maxY)
-
+    private func drawArrow(from start: CGPoint, to end: CGPoint, strokeColor: CGColor, lineWidth: CGFloat, context: CGContext) {
         // Draw line body
         context.move(to: start)
         context.addLine(to: end)
@@ -156,7 +161,7 @@ public final class ExportCompositor: @unchecked Sendable {
 
         // Calculate arrowhead angle
         let angle = atan2(end.y - start.y, end.x - start.x)
-        let headLength: CGFloat = max(lineWidth * 3.5, 16.0)
+        let headLength: CGFloat = max(lineWidth * 3.5, 14.0)
         let headAngle: CGFloat = .pi / 6 // 30 degrees
 
         let p1 = CGPoint(

@@ -27,12 +27,12 @@ public final class CaptureCoordinator: ObservableObject {
 
         isCapturing = true
         RegionSelectionOverlayController.shared.present(
-            onComplete: { [weak self] rect, screen in
+            onComplete: { [weak self] rect, screen, action in
                 Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     do {
                         let cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
-                        self.processCapturedImage(cgImage, title: "Region Capture")
+                        self.processCapturedRegion(cgImage, title: "Region Capture", action: action)
                     } catch {
                         AppLogger.shared.capture.error("Region capture error: \(error.localizedDescription, privacy: .public)")
                         AppCoordinator.shared.lastErrorMessage = error.localizedDescription
@@ -157,6 +157,83 @@ public final class CaptureCoordinator: ObservableObject {
         // 6. Editor Trigger
         if settings.openInEditor {
             AppCoordinator.shared.openEditor(for: asset)
+        }
+    }
+
+    public func processCapturedRegion(_ cgImage: CGImage, title: String, action: RegionCaptureAction) {
+        let config = AppConfiguration.shared
+        let settings = config.captureSettings
+
+        // 1. Composite in-place annotations if any were drawn directly on the overlay
+        let finalImage: CGImage
+        switch action {
+        case .copy(let doc), .save(let doc), .edit(let doc), .defaultAction(let doc):
+            if !doc.items.isEmpty {
+                finalImage = ExportCompositor.shared.composite(baseImage: cgImage, document: doc)
+            } else {
+                finalImage = cgImage
+            }
+        }
+
+        if settings.playCaptureSound {
+            playShutterSound()
+        }
+
+        let saveDir = config.resolveLocalSaveDirectory()
+        let dateFormatter = DateFormatter()
+        dateFormatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let timestamp = dateFormatter.string(from: Date())
+        let fileExt = settings.defaultFormat.rawValue
+        let filename = "Screenshot \(timestamp).\(fileExt)"
+        let fileURL = saveDir.appendingPathComponent(filename)
+
+        do {
+            try ScreenCaptureService.shared.saveImage(
+                finalImage,
+                format: settings.defaultFormat,
+                jpegQuality: settings.jpegQuality,
+                to: fileURL
+            )
+        } catch {
+            AppLogger.shared.storage.error("Failed to save capture to disk: \(error.localizedDescription, privacy: .public)")
+        }
+
+        let asset = ScreenshotAsset(
+            title: title,
+            originalFileURL: fileURL,
+            pixelWidth: finalImage.width,
+            pixelHeight: finalImage.height,
+            fileSizeBytes: (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0,
+            mediaType: .image
+        )
+
+        AppCoordinator.shared.recentAssets.insert(asset, at: 0)
+        AppLogger.shared.capture.info("Successfully processed in-place region capture: \(asset.dimensionsString, privacy: .public)")
+
+        switch action {
+        case .copy:
+            copyImageToPasteboard(cgImage: finalImage)
+            AppLogger.shared.capture.info("Region captured and copied directly to clipboard.")
+
+        case .save:
+            if settings.copyToClipboard {
+                copyImageToPasteboard(cgImage: finalImage)
+            }
+            AppLogger.shared.capture.info("Region captured and saved to disk: \(fileURL.lastPathComponent, privacy: .public)")
+
+        case .edit:
+            if settings.copyToClipboard {
+                copyImageToPasteboard(cgImage: finalImage)
+            }
+            EditorWindowController.present(for: asset)
+
+        case .defaultAction:
+            if settings.copyToClipboard {
+                copyImageToPasteboard(cgImage: finalImage)
+            }
+            if settings.openInEditor {
+                EditorWindowController.present(for: asset)
+            }
         }
     }
 

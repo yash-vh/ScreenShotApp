@@ -25,8 +25,12 @@ public final class RedactionRenderer: @unchecked Sendable {
 
         let ciImage = CIImage(cgImage: baseImage)
 
+        // Convert top-left pixel coordinates to CoreImage bottom-left coordinates
+        let ciY = CGFloat(baseImage.height) - pixelRect.origin.y - pixelRect.height
+        let ciRect = CGRect(x: pixelRect.origin.x, y: ciY, width: pixelRect.width, height: pixelRect.height)
+
         // 1. Crop region to blur
-        let targetCrop = ciImage.cropped(to: pixelRect)
+        let targetCrop = ciImage.cropped(to: ciRect)
 
         // 2. Clamp edges to prevent dark blur fringes
         guard let clamped = CIFilter(name: "CIAffineClamp", parameters: [
@@ -40,7 +44,7 @@ public final class RedactionRenderer: @unchecked Sendable {
         guard let blurFilter = CIFilter(name: "CIGaussianBlur", parameters: [
             kCIInputImageKey: clamped,
             kCIInputRadiusKey: radius
-        ]), let blurredImage = blurFilter.outputImage?.cropped(to: pixelRect) else {
+        ]), let blurredImage = blurFilter.outputImage?.cropped(to: ciRect) else {
             return baseImage
         }
 
@@ -65,14 +69,19 @@ public final class RedactionRenderer: @unchecked Sendable {
         guard pixelRect.width >= 1, pixelRect.height >= 1 else { return baseImage }
 
         let ciImage = CIImage(cgImage: baseImage)
-        let targetCrop = ciImage.cropped(to: pixelRect)
+
+        // Convert top-left pixel coordinates to CoreImage bottom-left coordinates
+        let ciY = CGFloat(baseImage.height) - pixelRect.origin.y - pixelRect.height
+        let ciRect = CGRect(x: pixelRect.origin.x, y: ciY, width: pixelRect.width, height: pixelRect.height)
+
+        let targetCrop = ciImage.cropped(to: ciRect)
 
         // Apply CIPixellate to the target rectangle
         guard let pixellateFilter = CIFilter(name: "CIPixellate", parameters: [
             kCIInputImageKey: targetCrop,
-            kCIInputCenterKey: CIVector(x: pixelRect.midX, y: pixelRect.midY),
+            kCIInputCenterKey: CIVector(x: ciRect.midX, y: ciRect.midY),
             kCIInputScaleKey: max(scale, 4.0)
-        ]), let pixelatedCrop = pixellateFilter.outputImage?.cropped(to: pixelRect) else {
+        ]), let pixelatedCrop = pixellateFilter.outputImage?.cropped(to: ciRect) else {
             return baseImage
         }
 

@@ -12,20 +12,20 @@ public final class EditorWindowController: NSWindowController {
     private var baseCGImage: CGImage?
     private var canvasView: AnnotationCanvasView?
 
-    public static func present(for asset: ScreenshotAsset) {
+    public static func present(for asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
         if let existing = currentControllers[asset.id] {
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let controller = EditorWindowController(asset: asset)
+        let controller = EditorWindowController(asset: asset, initialTool: initialTool)
         currentControllers[asset.id] = controller
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    public init(asset: ScreenshotAsset) {
+    public init(asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
         self.asset = asset
 
         // Load or create initial annotation document
@@ -47,7 +47,7 @@ public final class EditorWindowController: NSWindowController {
         }
 
         winW = max(winW, 600)
-        winH = max(winH, 450) + 50 // Include toolbar height
+        winH = max(winH, 450) + 80 // Include toolbar height
 
         let window = NSWindow(
             contentRect: NSRect(x: (screen.width - winW) / 2, y: (screen.height - winH) / 2, width: winW, height: winH),
@@ -60,14 +60,14 @@ public final class EditorWindowController: NSWindowController {
 
         super.init(window: window)
 
-        setupContentView(width: winW, height: winH - 50)
+        setupContentView(width: winW, height: winH - 80, initialTool: initialTool)
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func setupContentView(width: CGFloat, height: CGFloat) {
+    private func setupContentView(width: CGFloat, height: CGFloat, initialTool: EditorTool = .arrow) {
         guard let window = window else { return }
 
         // 1. Load base image from disk
@@ -81,29 +81,44 @@ public final class EditorWindowController: NSWindowController {
 
         // 2. Setup Canvas
         let canvas = AnnotationCanvasView(
-            frame: NSRect(x: 0, y: 0, width: width, height: height),
+            frame: .zero,
             undoRedoManager: undoRedoManager,
             baseImage: baseCGImage
         )
-        canvas.autoresizingMask = [.width, .height]
+        canvas.translatesAutoresizingMaskIntoConstraints = false
+        canvas.currentTool = initialTool
         self.canvasView = canvas
 
         // 3. Setup Toolbar State Bindings
         let toolbarView = EditorToolbarContainer(
             undoRedoManager: undoRedoManager,
             canvasView: canvas,
+            initialTool: initialTool,
             onExport: { [weak self] in self?.handleExport() },
             onCopy: { [weak self] in self?.handleCopy() },
             onClose: { [weak self] in self?.handleClose() }
         )
 
         let toolbarHost = NSHostingView(rootView: toolbarView)
-        toolbarHost.frame = NSRect(x: 0, y: height, width: width, height: 50)
-        toolbarHost.autoresizingMask = [.width, .minYMargin]
+        toolbarHost.translatesAutoresizingMaskIntoConstraints = false
 
-        containerView.addSubview(canvas)
         containerView.addSubview(toolbarHost)
+        containerView.addSubview(canvas)
+
+        NSLayoutConstraint.activate([
+            toolbarHost.topAnchor.constraint(equalTo: containerView.topAnchor),
+            toolbarHost.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            toolbarHost.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            toolbarHost.heightAnchor.constraint(equalToConstant: 80),
+
+            canvas.topAnchor.constraint(equalTo: toolbarHost.bottomAnchor),
+            canvas.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
+            canvas.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
+            canvas.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
+        ])
+
         window.contentView = containerView
+        window.makeFirstResponder(canvas)
     }
 
     // MARK: - Export and Actions
@@ -149,9 +164,28 @@ struct EditorToolbarContainer: View {
     let onCopy: () -> Void
     let onClose: () -> Void
 
-    @State private var selectedTool: EditorTool = .arrow
+    @State private var selectedTool: EditorTool
     @State private var selectedColor: AnnotationColor = .red
     @State private var strokeWidth: Double = 3.0
+    @State private var textContent: String = "Text"
+    @State private var fontSize: Double = 22.0
+    @State private var blurRadius: Double = 20.0
+
+    init(
+        undoRedoManager: UndoRedoManager,
+        canvasView: AnnotationCanvasView,
+        initialTool: EditorTool = .arrow,
+        onExport: @escaping () -> Void,
+        onCopy: @escaping () -> Void,
+        onClose: @escaping () -> Void
+    ) {
+        self.undoRedoManager = undoRedoManager
+        self.canvasView = canvasView
+        self._selectedTool = State(initialValue: initialTool)
+        self.onExport = onExport
+        self.onCopy = onCopy
+        self.onClose = onClose
+    }
 
     var body: some View {
         EditorToolbarView(
@@ -159,6 +193,9 @@ struct EditorToolbarContainer: View {
             selectedTool: $selectedTool,
             selectedColor: $selectedColor,
             strokeWidth: $strokeWidth,
+            textContent: $textContent,
+            fontSize: $fontSize,
+            blurRadius: $blurRadius,
             onExport: onExport,
             onCopyToClipboard: onCopy,
             onClose: onClose
@@ -171,6 +208,15 @@ struct EditorToolbarContainer: View {
         }
         .onChange(of: strokeWidth) { _, newWidth in
             canvasView.currentStrokeWidth = newWidth
+        }
+        .onChange(of: textContent) { _, newText in
+            canvasView.currentTextContent = newText
+        }
+        .onChange(of: fontSize) { _, newSize in
+            canvasView.currentFontSize = newSize
+        }
+        .onChange(of: blurRadius) { _, newRad in
+            canvasView.currentBlurRadius = newRad
         }
     }
 }
