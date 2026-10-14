@@ -27,6 +27,12 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
                 self?.updateActivationPolicy(showInDock: showInDock)
             }
             .store(in: &cancellables)
+
+        // Show Settings window on launch
+        AppCoordinator.shared.openSettings()
+
+        // Start Global Keyboard Shortcuts
+        HotKeyManager.shared.startMonitoring()
     }
 
     private func updateActivationPolicy(showInDock: Bool) {
@@ -42,6 +48,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationWillTerminate(_ notification: Notification) {
+        HotKeyManager.shared.stopMonitoring()
         AppLogger.shared.app.info("ScreenshotApp terminating.")
     }
 }

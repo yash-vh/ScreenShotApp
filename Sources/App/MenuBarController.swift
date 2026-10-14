@@ -8,9 +8,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private let coordinator: AppCoordinator
     private let config: AppConfiguration
 
-    public init(coordinator: AppCoordinator = .shared, config: AppConfiguration = .shared) {
-        self.coordinator = coordinator
-        self.config = config
+    public init(coordinator: AppCoordinator? = nil, config: AppConfiguration? = nil) {
+        self.coordinator = coordinator ?? .shared
+        self.config = config ?? .shared
         super.init()
         setupStatusItem()
     }

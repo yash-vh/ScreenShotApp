@@ -491,8 +491,8 @@ Plan for approximately 6–8 weeks for a focused solo-developer MVP. These estim
 | Milestone | Estimate | Deliverable | Status |
 |---|---:|---|:---:|
 | M1. Foundation | 3–4 days | Xcode project, lifecycle, menu bar, settings | ✅ **Completed** |
-| M2. Capture | 4–5 days | Full-screen, window, region capture | 🟡 **Next Up** |
-| M3. Editor | 5–7 days | Annotations, undo/redo, blur/pixelation | ⚪️ Planned |
+| M2. Capture | 4–5 days | Full-screen, window, region capture | ✅ **Completed** |
+| M3. Editor | 5–7 days | Annotations, undo/redo, blur/pixelation | 🟡 **Next Up** |
 | M4. Styling + recognition | 3–4 days | Backgrounds, export, OCR, QR | ⚪️ Planned |
 | M5. History | 2–3 days | Database, search, file management | ⚪️ Planned |
 | M6. Recording | 5–7 days | Screen/audio capture, export, GIF conversion | ⚪️ Planned |

@@ -84,32 +84,32 @@ public final class AppCoordinator: ObservableObject {
         NSApp.activate(ignoringOtherApps: true)
     }
 
+    public func openEditor(for asset: ScreenshotAsset) {
+        AppLogger.shared.editor.info("Opening editor for asset: \(asset.title, privacy: .public)")
+        // Milestone 2 opens preview / reveals file in Finder; Milestone 3 hooks into the vector annotation canvas
+        NSWorkspace.shared.open(asset.originalFileURL)
+    }
+
     public func openPrivacySettings() {
-        if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture") {
-            NSWorkspace.shared.open(url)
-        }
+        PermissionManager.shared.openScreenRecordingSystemSettings()
     }
 
     public func hasScreenCapturePermission() -> Bool {
-        // CGPreflightScreenCaptureAccess checks if the application has permissions on macOS 10.15+
-        return CGPreflightScreenCaptureAccess()
+        return PermissionManager.shared.checkScreenRecordingPermission()
     }
 
-    // MARK: - Capture Handlers (Foundations for M2-M6)
+    // MARK: - Capture Handlers (Powered by CaptureCoordinator)
 
     private func startRegionCapture() {
-        // Foundation placeholder for M2 ScreenCaptureKit region overlay
-        AppLogger.shared.capture.debug("Opening region selection overlay.")
+        CaptureCoordinator.shared.captureRegion()
     }
 
     private func startFullScreenCapture() {
-        // Foundation placeholder for M2 full display capture
-        AppLogger.shared.capture.debug("Capturing full screen display.")
+        CaptureCoordinator.shared.captureFullScreen()
     }
 
     private func startWindowCapture() {
-        // Foundation placeholder for M2 window selector
-        AppLogger.shared.capture.debug("Capturing targeted window.")
+        CaptureCoordinator.shared.captureWindow()
     }
 
     private func toggleScreenRecording() {
@@ -119,5 +119,6 @@ public final class AppCoordinator: ObservableObject {
 
     private func startOcrCapture() {
         AppLogger.shared.recognition.debug("Starting OCR capture mode.")
+        CaptureCoordinator.shared.captureRegion()
     }
 }

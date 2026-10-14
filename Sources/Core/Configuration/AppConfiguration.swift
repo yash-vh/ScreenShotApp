@@ -92,7 +92,7 @@ public final class AppConfiguration: ObservableObject {
 
         // App general preferences
         self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
-        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : false
+        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
         
         if let rawProvider = defaults.string(forKey: Keys.activeCloudProvider),
            let provider = CloudProviderType(rawValue: rawProvider) {

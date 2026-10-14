@@ -40,32 +40,32 @@
 
 ---
 
-#### **Milestone 2: Screen Capture Engine** `[READY TO IMPLEMENT]`
+#### **Milestone 2: Screen Capture Engine** `[COMPLETED & VERIFIED]`
 - **Target:** Days 4–7
-- **Status:** 🟡 **Next Up (Ready to start)**
-- **Technical Plan & Files to Implement:**
-  1. `Sources/Features/Capture/ScreenCaptureService.swift`: ScreenCaptureKit integration (`SCShareableContent`, `SCScreenshotManager`) for full-screen and window capture.
-  2. `Sources/Features/Capture/RegionSelectionOverlay.swift`: Multi-display borderless AppKit overlay window (`NSWindow` with `.screenSaver` window level) with interactive drag crosshairs, dimensions display, and magnifier loupe.
-  3. `Sources/Features/Capture/WindowSelectionOverlay.swift`: Hover highlight and selection for targeted AppKit/SCK window capture.
-  4. `Sources/Features/Capture/CaptureCoordinator.swift`: Connects capture trigger to screen capture service, post-processing (clipboard copy, sound, auto-save), and triggers the editor window.
-  5. `Sources/Features/Capture/HotKeyManager.swift`: Registers global shortcuts (`⇧⌘4`, `⇧⌘3`, `⇧⌘5`) across macOS apps.
-- **Verification Tests to Build:**
-  - `Tests/UnitTests/CaptureGeometryTests.swift`: Multi-monitor coordinate conversion and Retina @2x scaling tests.
-  - `Tests/UnitTests/PermissionTests.swift`: Screen capture permission status handling.
+- **Status:** ✅ **Completed & Verified**
+- **Completion Sign-Off Checklist:**
+  - [x] **Permission Management:** `PermissionManager.swift` checking and requesting macOS Screen Recording permissions with deep-links to System Settings.
+  - [x] **Capture Engine:** `ScreenCaptureService.swift` leveraging `ScreenCaptureKit` (`SCScreenshotManager`) with `CoreGraphics` fallback for full-display, targeted window, and cropped region captures.
+  - [x] **Multi-Display Region Overlay:** `RegionSelectionOverlay.swift` presenting transparent `.screenSaver` windows across all displays with animated crosshairs, selection cutouts, and dynamic dimension badges.
+  - [x] **Interactive Window Selection:** `WindowSelectionOverlay.swift` providing window hover detection and highlight bounding boxes.
+  - [x] **Capture Pipeline & Post-Processing:** `CaptureCoordinator.swift` managing audio shutter feedback, automatic clipboard copying, file persistence to user-configured directory, and `ScreenshotAsset` creation.
+  - [x] **Global Hotkeys:** `HotKeyManager.swift` intercepting `⇧⌘4` (Region), `⇧⌘3` (Full Screen), `⇧⌘5` (Window), `⇧⌘6` (Recording), and `⇧⌘7` (OCR) from any active application.
+  - [x] **Unit Testing:** 14/14 unit tests passing in `ScreenshotAppTests` including coordinate conversion, sub-pixel geometry validation, and PNG/JPEG export verification (`** TEST SUCCEEDED **`).
 
 ---
 
 ### Week 2: Editing, Privacy Redaction, Styling & Vision
 
-#### **Milestone 3: Annotation Editor & True Redaction**
+#### **Milestone 3: Annotation Editor & True Redaction** `[READY TO IMPLEMENT]`
 - **Target:** Days 8–11
-- **Scope:**
-  - [ ] Canvas-based annotation editor window with undo/redo stack.
-  - [ ] Vector annotation tools: Arrow, Rectangle, Ellipse, Text, Semi-transparent Highlight, Freehand pen.
-  - [ ] True pixel-level redaction (Gaussian Blur & Mosaic Pixelation).
-  - [ ] Document model persistence: vector layers saved separately from base raw capture.
-  - [ ] Non-destructive cropping tool.
-  - [ ] Flattened export rendering via Core Graphics/Core Image (ensuring redacted areas are irreversibly baked).
+- **Status:** 🟡 **Next Up (Ready to start)**
+- **Technical Plan & Files to Implement:**
+  1. `Sources/Features/Editor/EditorWindowController.swift`: Dedicated AppKit window controller managing the editor canvas and toolbar.
+  2. `Sources/Features/Editor/AnnotationCanvasView.swift`: SwiftUI / AppKit interactive vector canvas supporting tool selection, layer creation, drag selection, and handles.
+  3. `Sources/Features/Editor/Tools/`: Vector annotation tool implementations (Arrow, Rectangle, Ellipse, Text, Semi-transparent Highlight, Freehand pen).
+  4. `Sources/Features/Privacy/RedactionRenderer.swift`: Irreversible pixel rasterizer applying Gaussian blur and mosaic pixelation directly to base pixels.
+  5. `Sources/Features/Editor/UndoRedoManager.swift`: Snapshot/action undo and redo stack.
+  6. `Sources/Features/Editor/ExportCompositor.swift`: Core Graphics renderer generating flattened PNG/JPEG exports without unredacted data or hidden vector layers.
 
 #### **Milestone 4: Image Styling & Local Recognition**
 - **Target:** Days 12–14
