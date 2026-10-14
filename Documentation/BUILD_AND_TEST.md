@@ -29,10 +29,7 @@ This creates `ScreenshotApp.xcodeproj` with configured targets:
 xcodebuild -project ScreenshotApp.xcodeproj \
            -scheme ScreenshotApp \
            -destination 'platform=macOS' \
-           build \
-           CODE_SIGN_IDENTITY="" \
-           CODE_SIGNING_REQUIRED=NO \
-           CODE_SIGNING_ALLOWED=NO
+           build
 ```
 
 ### Release Build
@@ -52,10 +49,7 @@ xcodebuild -project ScreenshotApp.xcodeproj \
 xcodebuild test \
            -project ScreenshotApp.xcodeproj \
            -scheme ScreenshotApp \
-           -destination 'platform=macOS' \
-           CODE_SIGN_IDENTITY="" \
-           CODE_SIGNING_REQUIRED=NO \
-           CODE_SIGNING_ALLOWED=NO
+           -destination 'platform=macOS'
 ```
 
 ---

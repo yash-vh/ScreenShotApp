@@ -31,10 +31,20 @@ public final class AppCoordinator: ObservableObject {
     @Published public var recentAssets: [ScreenshotAsset] = []
     @Published public var lastErrorMessage: String?
 
+    @Published public var hasPermission: Bool = false
+
     private var settingsWindowController: NSWindowController?
+    private var cancellables = Set<AnyCancellable>()
 
     private init() {
         AppLogger.shared.app.info("AppCoordinator initialized.")
+        self.hasPermission = PermissionManager.shared.checkScreenRecordingPermission()
+        PermissionManager.shared.$isAuthorized
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] authorized in
+                self?.hasPermission = authorized
+            }
+            .store(in: &cancellables)
     }
 
     // MARK: - Actions
@@ -42,13 +52,25 @@ public final class AppCoordinator: ObservableObject {
     public func triggerCapture(type: CaptureActionType) {
         AppLogger.shared.capture.info("Triggered capture action: \(type.rawValue, privacy: .public)")
 
-        // Check screen capture permissions
-        if !hasScreenCapturePermission() {
-            AppLogger.shared.capture.notice("Screen capture permission not yet authorized. Presenting permission modal.")
-            PermissionManager.shared.showScreenRecordingPermissionDialog()
+        // Check screen capture permissions immediately
+        if hasScreenCapturePermission() {
+            proceedWithCapture(type: type)
             return
         }
 
+        // Asynchronous verification in case of stale cache
+        Task { @MainActor in
+            let verified = await PermissionManager.shared.verifyScreenRecordingPermission()
+            if verified {
+                self.proceedWithCapture(type: type)
+            } else {
+                AppLogger.shared.capture.notice("Screen capture permission not yet authorized. Presenting permission modal.")
+                PermissionManager.shared.showScreenRecordingPermissionDialog()
+            }
+        }
+    }
+
+    private func proceedWithCapture(type: CaptureActionType) {
         switch type {
         case .region:
             startRegionCapture()

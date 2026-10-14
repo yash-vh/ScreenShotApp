@@ -29,6 +29,8 @@ targets:
       CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenshotApp.entitlements
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       GENERATE_INFOPLIST_FILE: NO
+      CODE_SIGN_IDENTITY: "-"
+      OTHER_CODE_SIGN_FLAGS: "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\""
 
   ScreenshotAppTests:
     type: bundle.unit-test

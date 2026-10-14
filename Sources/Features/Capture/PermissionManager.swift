@@ -1,5 +1,6 @@
 import Foundation
 import CoreGraphics
+import ScreenCaptureKit
 import AppKit
 
 /// Manages macOS Screen Recording and Microphone permission states
@@ -14,38 +15,139 @@ public final class PermissionManager: ObservableObject {
     }
 
     @Published public private(set) var screenRecordingStatus: PermissionStatus = .notDetermined
+    @Published public private(set) var isAuthorized: Bool = false
 
     private init() {
         checkScreenRecordingPermission()
+
+        // Auto-refresh permission status when app gains focus (e.g. returning from System Settings)
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            Task { @MainActor [weak self] in
+                await self?.verifyScreenRecordingPermission()
+            }
+        }
     }
 
-    /// Checks if screen recording access is granted
+    /// Checks if screen recording access is granted synchronously via CGPreflightScreenCaptureAccess
     @discardableResult
     public func checkScreenRecordingPermission() -> Bool {
         let authorized = CGPreflightScreenCaptureAccess()
         screenRecordingStatus = authorized ? .authorized : .denied
+        isAuthorized = authorized
         return authorized
     }
 
-    /// Displays a prominent modal alert explaining why permission is required with a direct link to macOS System Settings
+    /// Verifies screen recording permission with an asynchronous fallback check via ScreenCaptureKit.
+    /// This resolves issues where CGPreflightScreenCaptureAccess() temporarily caches `false`
+    /// even though access was granted.
+    @discardableResult
+    public func verifyScreenRecordingPermission() async -> Bool {
+        if CGPreflightScreenCaptureAccess() {
+            screenRecordingStatus = .authorized
+            isAuthorized = true
+            return true
+        }
+
+        // Secondary check using ScreenCaptureKit
+        if #available(macOS 14.0, *) {
+            do {
+                _ = try await SCShareableContent.excludingDesktopWindows(false, onScreenWindowsOnly: true)
+                screenRecordingStatus = .authorized
+                isAuthorized = true
+                return true
+            } catch {
+                AppLogger.shared.capture.notice("SCShareableContent verification check: \(error.localizedDescription, privacy: .public)")
+            }
+        }
+
+        screenRecordingStatus = .denied
+        isAuthorized = false
+        return false
+    }
+
+    /// Displays an actionable dialog explaining how to grant permissions, with direct links to
+    /// System Settings, Relaunch, and a Reset TCC option for clearing stale entries.
     public func showScreenRecordingPermissionDialog() {
-        // Trigger system request
+        // If already authorized, no dialog is needed
+        if checkScreenRecordingPermission() {
+            return
+        }
+
+        // Trigger system permission prompt if not yet presented
         _ = CGRequestScreenCaptureAccess()
 
-        // Present native macOS Alert modal
         let alert = NSAlert()
         alert.messageText = "Screen Recording Permission Required"
-        alert.informativeText = "ScreenshotApp requires permission to capture your screen, windows, and selected areas.\n\nPlease grant access in:\nSystem Settings > Privacy & Security > Screen Recording,\nthen enable ScreenshotApp."
+        alert.informativeText = """
+        ScreenshotApp needs permission to capture your screen, windows, and selected areas.
+
+        If permission is ALREADY enabled in System Settings:
+        1. macOS requires ScreenshotApp to be quit and reopened for permissions to take effect. Click "Relaunch App" below.
+        2. If it still asks after relaunching, the entry in System Settings is stale. Click "Reset Permission" to clear the stale entry, then turn the toggle back on.
+        """
         alert.alertStyle = .warning
         alert.addButton(withTitle: "Open System Settings")
+        alert.addButton(withTitle: "Relaunch App")
+        alert.addButton(withTitle: "Reset Permission")
         alert.addButton(withTitle: "Cancel")
 
-        // Ensure the app is active and brought to front so modal is immediately visible
         NSApp.activate(ignoringOtherApps: true)
 
         let response = alert.runModal()
-        if response == .alertFirstButtonReturn {
+        switch response {
+        case .alertFirstButtonReturn:
             openScreenRecordingSystemSettings()
+        case .alertSecondButtonReturn:
+            relaunchApp()
+        case .alertThirdButtonReturn:
+            resetScreenCapturePermission()
+        default:
+            break
+        }
+    }
+
+    /// Resets macOS Screen Recording TCC approval status for this app.
+    /// This fixes the common macOS issue where an entry in System Settings is marked enabled,
+    /// but macOS rejected it due to a binary signature update during development.
+    public func resetScreenCapturePermission() {
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.screenshotapp.mac"
+        AppLogger.shared.app.info("Resetting TCC ScreenCapture permission for \(bundleID, privacy: .public)")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/tccutil")
+        process.arguments = ["reset", "ScreenCapture", bundleID]
+        try? process.run()
+        process.waitUntilExit()
+
+        _ = checkScreenRecordingPermission()
+        _ = CGRequestScreenCaptureAccess()
+        openScreenRecordingSystemSettings()
+    }
+
+    /// Programmatically relaunches the application so macOS TCC updates take effect.
+    public func relaunchApp() {
+        let bundleURL = Bundle.main.bundleURL
+        AppLogger.shared.app.info("Relaunching ScreenshotApp from \(bundleURL.path, privacy: .public)")
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
+        process.arguments = ["-n", bundleURL.path]
+
+        do {
+            try process.run()
+            NSApp.terminate(nil)
+        } catch {
+            AppLogger.shared.app.error("Failed to relaunch ScreenshotApp: \(error.localizedDescription, privacy: .public)")
+            let fallbackAlert = NSAlert()
+            fallbackAlert.messageText = "Please Restart ScreenshotApp"
+            fallbackAlert.informativeText = "Please quit and reopen ScreenshotApp manually from your Applications or build folder to apply permissions."
+            fallbackAlert.addButton(withTitle: "Quit")
+            fallbackAlert.runModal()
+            NSApp.terminate(nil)
         }
     }
 

@@ -266,24 +266,55 @@ struct StorageSettingsTab: View {
 struct PrivacySettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
     @EnvironmentObject var coordinator: AppCoordinator
+    @ObservedObject var permissionManager = PermissionManager.shared
 
     var body: some View {
         Form {
             Section(header: Text("System Permissions").font(.headline)) {
-                HStack {
-                    Image(systemName: coordinator.hasScreenCapturePermission() ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                        .foregroundColor(coordinator.hasScreenCapturePermission() ? .green : .orange)
-                    VStack(alignment: .leading) {
-                        Text("Screen Recording Permission")
-                        Text(coordinator.hasScreenCapturePermission() ? "Authorized" : "Permission Required")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                    Spacer()
-                    if !coordinator.hasScreenCapturePermission() {
-                        Button("Open Settings") {
-                            coordinator.openPrivacySettings()
+                VStack(alignment: .leading, spacing: 10) {
+                    HStack {
+                        Image(systemName: permissionManager.isAuthorized ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
+                            .foregroundColor(permissionManager.isAuthorized ? .green : .orange)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text("Screen Recording Permission")
+                                .font(.subheadline)
+                                .fontWeight(.medium)
+                            Text(permissionManager.isAuthorized ? "Authorized" : "Permission Required or Restart Needed")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
                         }
+                        Spacer()
+                        if !permissionManager.isAuthorized {
+                            Button("Open Settings") {
+                                coordinator.openPrivacySettings()
+                            }
+                            Button("Relaunch App") {
+                                permissionManager.relaunchApp()
+                            }
+                            .buttonStyle(.borderedProminent)
+                            Button("Reset Permission") {
+                                permissionManager.resetScreenCapturePermission()
+                            }
+                        } else {
+                            Text("Enabled")
+                                .font(.caption)
+                                .foregroundColor(.green)
+                        }
+                    }
+
+                    if !permissionManager.isAuthorized {
+                        VStack(alignment: .leading, spacing: 4) {
+                            Text("Already enabled in System Settings?")
+                                .font(.caption)
+                                .fontWeight(.semibold)
+                                .foregroundColor(.primary)
+                            Text("macOS requires ScreenshotApp to restart after granting Screen Recording access. If you already turned on the toggle in System Settings, click \"Relaunch App\" above to apply permissions immediately.")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                        }
+                        .padding(8)
+                        .background(Color.orange.opacity(0.1))
+                        .cornerRadius(6)
                     }
                 }
             }
