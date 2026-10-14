@@ -86,8 +86,7 @@ public final class AppCoordinator: ObservableObject {
 
     public func openEditor(for asset: ScreenshotAsset) {
         AppLogger.shared.editor.info("Opening editor for asset: \(asset.title, privacy: .public)")
-        // Milestone 2 opens preview / reveals file in Finder; Milestone 3 hooks into the vector annotation canvas
-        NSWorkspace.shared.open(asset.originalFileURL)
+        EditorWindowController.present(for: asset)
     }
 
     public func openPrivacySettings() {

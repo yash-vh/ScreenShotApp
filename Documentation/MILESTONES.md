@@ -56,25 +56,31 @@
 
 ### Week 2: Editing, Privacy Redaction, Styling & Vision
 
-#### **Milestone 3: Annotation Editor & True Redaction** `[READY TO IMPLEMENT]`
+#### **Milestone 3: Annotation Editor & True Redaction** `[COMPLETED & VERIFIED]`
 - **Target:** Days 8–11
+- **Status:** ✅ **Completed & Verified**
+- **Completion Sign-Off Checklist:**
+  - [x] **Irreversible Redaction Engine:** `RedactionRenderer.swift` utilizing GPU-accelerated Core Image filters (`CIGaussianBlur`, `CIPixellate`) that permanently overwrite and degrade pixel values in-place so redacted content is non-recoverable.
+  - [x] **Snapshot Undo/Redo System:** `UndoRedoManager.swift` supporting multi-step undo (`⌘Z`), redo (`⇧⌘Z`), history trimming, and atomic document mutations.
+  - [x] **Interactive Vector Canvas:** `AnnotationCanvasView.swift` supporting real-time drawing of Arrows, Rectangles, Ellipses, Text boxes, Semi-transparent Highlights, Freehand strokes, and live Blur/Pixelation overlays in normalized `0.0...1.0` coordinate space.
+  - [x] **Modern Editor Toolbar:** `EditorToolbarView.swift` with tool pickers, harmonious 8-color palette, stroke width adjustments, undo/redo triggers, and instant Copy/Save actions.
+  - [x] **Flattened Export Compositor:** `ExportCompositor.swift` rendering base image, baked pixel redactions, and vector annotation layers into flattened PNG/JPEG assets without retaining hidden vector layers.
+  - [x] **Editor Window Management:** `EditorWindowController.swift` presenting native macOS editing windows scaled proportionally to captured asset dimensions.
+  - [x] **Unit Testing:** 19/19 unit tests passing across all suites including `RedactionRendererTests`, `UndoRedoTests`, and `ExportCompositorTests` (`** TEST SUCCEEDED **`).
+
+---
+
+#### **Milestone 4: Image Styling & Local Recognition** `[READY TO IMPLEMENT]`
+- **Target:** Days 12–14
 - **Status:** 🟡 **Next Up (Ready to start)**
 - **Technical Plan & Files to Implement:**
-  1. `Sources/Features/Editor/EditorWindowController.swift`: Dedicated AppKit window controller managing the editor canvas and toolbar.
-  2. `Sources/Features/Editor/AnnotationCanvasView.swift`: SwiftUI / AppKit interactive vector canvas supporting tool selection, layer creation, drag selection, and handles.
-  3. `Sources/Features/Editor/Tools/`: Vector annotation tool implementations (Arrow, Rectangle, Ellipse, Text, Semi-transparent Highlight, Freehand pen).
-  4. `Sources/Features/Privacy/RedactionRenderer.swift`: Irreversible pixel rasterizer applying Gaussian blur and mosaic pixelation directly to base pixels.
-  5. `Sources/Features/Editor/UndoRedoManager.swift`: Snapshot/action undo and redo stack.
-  6. `Sources/Features/Editor/ExportCompositor.swift`: Core Graphics renderer generating flattened PNG/JPEG exports without unredacted data or hidden vector layers.
-
-#### **Milestone 4: Image Styling & Local Recognition**
-- **Target:** Days 12–14
-- **Scope:**
-  - [ ] `ImageComposer` for social/presentation styling: solid colors, modern gradient presets, padding, rounded corners, drop shadows.
-  - [ ] On-device OCR using Apple's Vision framework (`VNRecognizeTextRequest`).
-  - [ ] Quick copy recognized text to clipboard.
-  - [ ] QR code and barcode detection (`VNDetectBarcodesRequest`).
-  - [ ] Zero cloud transmission guarantee for local text processing.
+  1. `Sources/Features/Styling/ImageComposer.swift`: Adds rounded corners, drop shadows, configurable padding, and solid/gradient presentation backgrounds.
+  2. `Sources/Features/Styling/BackgroundPresets.swift`: Curated modern gradient and solid backdrop color presets.
+  3. `Sources/Features/Recognition/VisionService.swift`: On-device asynchronous text recognition (`VNRecognizeTextRequest`) and barcode/QR detection (`VNDetectBarcodesRequest`).
+  4. `Sources/Features/Recognition/OCRResultOverlay.swift`: Visual bounding boxes and quick "Copy All Text" / "Copy QR Link" actions.
+- **Verification Tests to Build:**
+  - `Tests/UnitTests/ImageComposerTests.swift`: Background padding and corner radius composition tests.
+  - `Tests/UnitTests/VisionServiceTests.swift`: Text recognition bounding box and OCR text normalization tests.
 
 ---
 
