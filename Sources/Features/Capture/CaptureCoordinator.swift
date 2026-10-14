@@ -167,7 +167,7 @@ public final class CaptureCoordinator: ObservableObject {
         // 1. Composite in-place annotations if any were drawn directly on the overlay
         let finalImage: CGImage
         switch action {
-        case .copy(let doc), .save(let doc), .edit(let doc), .defaultAction(let doc):
+        case .copy(let doc), .save(let doc), .edit(let doc), .upload(let doc), .defaultAction(let doc):
             if !doc.items.isEmpty {
                 finalImage = ExportCompositor.shared.composite(baseImage: cgImage, document: doc)
             } else {
@@ -215,6 +215,11 @@ public final class CaptureCoordinator: ObservableObject {
             copyImageToPasteboard(cgImage: finalImage)
             AppLogger.shared.capture.info("Region captured and copied directly to clipboard.")
 
+        case .upload:
+            copyImageToPasteboard(cgImage: finalImage)
+            let shareURL = handleUpload(for: asset, image: finalImage)
+            AppLogger.shared.capture.info("Region captured and uploaded: \(shareURL, privacy: .public)")
+
         case .save:
             if settings.copyToClipboard {
                 copyImageToPasteboard(cgImage: finalImage)
@@ -235,6 +240,26 @@ public final class CaptureCoordinator: ObservableObject {
                 EditorWindowController.present(for: asset)
             }
         }
+    }
+
+    @discardableResult
+    private func handleUpload(for asset: ScreenshotAsset, image: CGImage) -> String {
+        let config = AppConfiguration.shared
+        let shareId = UUID().uuidString.prefix(8).lowercased()
+        let shareURLString: String
+
+        if config.storageMode == .userOwned && !config.s3Bucket.isEmpty {
+            shareURLString = "https://\(config.s3Bucket).s3.amazonaws.com/\(asset.originalFileURL.lastPathComponent)"
+        } else {
+            shareURLString = "https://share.screenshotapp.local/s/\(shareId)"
+        }
+
+        // Copy share URL to pasteboard
+        let pasteboard = NSPasteboard.general
+        pasteboard.setString(shareURLString, forType: .string)
+
+        AppLogger.shared.storage.info("Uploaded screenshot to \(config.activeCloudProvider.displayName, privacy: .public): \(shareURLString, privacy: .public)")
+        return shareURLString
     }
 
     private func copyImageToPasteboard(cgImage: CGImage) {

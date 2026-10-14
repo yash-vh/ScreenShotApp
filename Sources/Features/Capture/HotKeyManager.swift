@@ -193,6 +193,54 @@ public final class HotKeyManager {
 
     @discardableResult
     private func handleNSEvent(_ event: NSEvent) -> Bool {
+        let settings = AppConfiguration.shared.captureSettings
+
+        if settings.shortcutRegion.matches(event: event) {
+            CaptureCoordinator.shared.captureRegion()
+            return true
+        }
+        if settings.shortcutFullScreen.matches(event: event) {
+            CaptureCoordinator.shared.captureFullScreen()
+            return true
+        }
+        if settings.shortcutWindow.matches(event: event) {
+            CaptureCoordinator.shared.captureWindow()
+            return true
+        }
+        if settings.shortcutRecording.matches(event: event) {
+            AppCoordinator.shared.triggerCapture(type: .recording)
+            return true
+        }
+        if settings.shortcutQuickOcr.matches(event: event) {
+            AppCoordinator.shared.triggerCapture(type: .ocr)
+            return true
+        }
+
+        // Custom shortcuts
+        for item in settings.customShortcuts {
+            if item.binding.matches(event: event) {
+                switch item.action {
+                case "Capture Selected Region":
+                    CaptureCoordinator.shared.captureRegion()
+                    return true
+                case "Capture Full Screen":
+                    CaptureCoordinator.shared.captureFullScreen()
+                    return true
+                case "Capture Window":
+                    CaptureCoordinator.shared.captureWindow()
+                    return true
+                case "Record Screen":
+                    AppCoordinator.shared.triggerCapture(type: .recording)
+                    return true
+                case "OCR Text from Screen":
+                    AppCoordinator.shared.triggerCapture(type: .ocr)
+                    return true
+                default:
+                    break
+                }
+            }
+        }
+
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         let isCmdShift = flags.contains([.command, .shift])
         let isCmdOption = flags.contains([.command, .option])

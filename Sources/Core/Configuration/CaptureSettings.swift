@@ -1,4 +1,5 @@
 import Foundation
+import AppKit
 
 /// Image format options for exported screenshots
 public enum ExportFormat: String, Codable, Sendable, CaseIterable {
@@ -39,6 +40,54 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
     public var displayString: String {
         modifiers.joined() + key
     }
+
+    public func matches(event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let hasCmd = flags.contains(.command)
+        let hasShift = flags.contains(.shift)
+        let hasOpt = flags.contains(.option)
+        let hasCtrl = flags.contains(.control)
+
+        let wantCmd = modifiers.contains("⌘")
+        let wantShift = modifiers.contains("⇧")
+        let wantOpt = modifiers.contains("⌥")
+        let wantCtrl = modifiers.contains("⌃")
+
+        guard hasCmd == wantCmd, hasShift == wantShift, hasOpt == wantOpt, hasCtrl == wantCtrl else {
+            return false
+        }
+
+        if key.lowercased() == "esc" && event.keyCode == 53 {
+            return true
+        }
+        if key.lowercased() == "return" && event.keyCode == 36 {
+            return true
+        }
+        if key.lowercased() == "space" && event.keyCode == 49 {
+            return true
+        }
+
+        if let chars = event.charactersIgnoringModifiers?.uppercased() {
+            return chars == key.uppercased()
+        }
+
+        return false
+    }
+}
+
+/// User-defined custom shortcut item
+public struct CustomShortcutItem: Identifiable, Codable, Sendable, Equatable {
+    public var id: UUID
+    public var name: String
+    public var action: String
+    public var binding: ShortcutBinding
+
+    public init(id: UUID = UUID(), name: String, action: String, binding: ShortcutBinding) {
+        self.id = id
+        self.name = name
+        self.action = action
+        self.binding = binding
+    }
 }
 
 /// Encapsulates user preferences for screenshot capture & post-capture workflow
@@ -60,6 +109,10 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public var shortcutWindow: ShortcutBinding
     public var shortcutRecording: ShortcutBinding
     public var shortcutQuickOcr: ShortcutBinding
+    public var shortcutCopy: ShortcutBinding
+    public var shortcutUpload: ShortcutBinding
+    public var shortcutCancel: ShortcutBinding
+    public var customShortcuts: [CustomShortcutItem]
 
     public init(
         defaultFormat: ExportFormat = .png,
@@ -76,7 +129,11 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         shortcutFullScreen: ShortcutBinding = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"]),
         shortcutWindow: ShortcutBinding = ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"]),
         shortcutRecording: ShortcutBinding = ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"]),
-        shortcutQuickOcr: ShortcutBinding = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        shortcutQuickOcr: ShortcutBinding = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"]),
+        shortcutCopy: ShortcutBinding = ShortcutBinding(key: "C", modifiers: ["⌘"]),
+        shortcutUpload: ShortcutBinding = ShortcutBinding(key: "U", modifiers: ["⌘"]),
+        shortcutCancel: ShortcutBinding = ShortcutBinding(key: "Esc", modifiers: []),
+        customShortcuts: [CustomShortcutItem] = []
     ) {
         self.defaultFormat = defaultFormat
         self.jpegQuality = jpegQuality
@@ -93,6 +150,33 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.shortcutWindow = shortcutWindow
         self.shortcutRecording = shortcutRecording
         self.shortcutQuickOcr = shortcutQuickOcr
+        self.shortcutCopy = shortcutCopy
+        self.shortcutUpload = shortcutUpload
+        self.shortcutCancel = shortcutCancel
+        self.customShortcuts = customShortcuts
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.defaultFormat = try container.decodeIfPresent(ExportFormat.self, forKey: .defaultFormat) ?? .png
+        self.jpegQuality = try container.decodeIfPresent(Double.self, forKey: .jpegQuality) ?? 0.85
+        self.copyToClipboard = try container.decodeIfPresent(Bool.self, forKey: .copyToClipboard) ?? true
+        self.openInEditor = try container.decodeIfPresent(Bool.self, forKey: .openInEditor) ?? true
+        self.saveToDisk = try container.decodeIfPresent(Bool.self, forKey: .saveToDisk) ?? true
+        self.playCaptureSound = try container.decodeIfPresent(Bool.self, forKey: .playCaptureSound) ?? true
+        self.showMagnifier = try container.decodeIfPresent(Bool.self, forKey: .showMagnifier) ?? true
+        self.runOcrAutomatically = try container.decodeIfPresent(Bool.self, forKey: .runOcrAutomatically) ?? true
+        self.defaultRedactionStyle = try container.decodeIfPresent(DefaultRedactionStyle.self, forKey: .defaultRedactionStyle) ?? .blur
+        self.customSaveDirectory = try container.decodeIfPresent(String.self, forKey: .customSaveDirectory)
+        self.shortcutRegion = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutRegion) ?? ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+        self.shortcutFullScreen = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutFullScreen) ?? ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+        self.shortcutWindow = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutWindow) ?? ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
+        self.shortcutRecording = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutRecording) ?? ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
+        self.shortcutQuickOcr = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutQuickOcr) ?? ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        self.shortcutCopy = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCopy) ?? ShortcutBinding(key: "C", modifiers: ["⌘"])
+        self.shortcutUpload = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutUpload) ?? ShortcutBinding(key: "U", modifiers: ["⌘"])
+        self.shortcutCancel = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCancel) ?? ShortcutBinding(key: "Esc", modifiers: [])
+        self.customShortcuts = try container.decodeIfPresent([CustomShortcutItem].self, forKey: .customShortcuts) ?? []
     }
 
     public static let `default` = CaptureSettings()

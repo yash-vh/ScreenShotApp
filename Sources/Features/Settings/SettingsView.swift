@@ -171,35 +171,337 @@ struct CaptureSettingsTab: View {
 
 struct ShortcutsSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
+    @State private var showingAddSheet = false
 
     var body: some View {
         Form {
-            Section(header: Text("Global Shortcuts").font(.headline)) {
-                ShortcutRow(label: "Capture Selected Region", binding: config.captureSettings.shortcutRegion)
-                ShortcutRow(label: "Capture Full Screen", binding: config.captureSettings.shortcutFullScreen)
-                ShortcutRow(label: "Capture Window", binding: config.captureSettings.shortcutWindow)
-                ShortcutRow(label: "Record Screen", binding: config.captureSettings.shortcutRecording)
-                ShortcutRow(label: "OCR Text from Screen", binding: config.captureSettings.shortcutQuickOcr)
+            Section(header: Text("In-Place Capture & Actions").font(.headline)) {
+                ShortcutRecorderRow(
+                    label: "Copy Selection",
+                    icon: "doc.on.doc.fill",
+                    binding: $config.captureSettings.shortcutCopy,
+                    defaultBinding: ShortcutBinding(key: "C", modifiers: ["⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "Upload & Share Link",
+                    icon: "icloud.and.arrow.up.fill",
+                    binding: $config.captureSettings.shortcutUpload,
+                    defaultBinding: ShortcutBinding(key: "U", modifiers: ["⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "Cancel Capture / Selection",
+                    icon: "xmark.circle.fill",
+                    binding: $config.captureSettings.shortcutCancel,
+                    defaultBinding: ShortcutBinding(key: "Esc", modifiers: [])
+                )
+            }
+
+            Section(header: Text("Global Screen Capture").font(.headline)) {
+                ShortcutRecorderRow(
+                    label: "Capture Selected Region",
+                    icon: "crop",
+                    binding: $config.captureSettings.shortcutRegion,
+                    defaultBinding: ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "Capture Full Screen",
+                    icon: "macwindow",
+                    binding: $config.captureSettings.shortcutFullScreen,
+                    defaultBinding: ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "Capture Window",
+                    icon: "macwindow.on.rectangle",
+                    binding: $config.captureSettings.shortcutWindow,
+                    defaultBinding: ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "Record Screen",
+                    icon: "record.circle",
+                    binding: $config.captureSettings.shortcutRecording,
+                    defaultBinding: ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
+                )
+
+                ShortcutRecorderRow(
+                    label: "OCR Text from Screen",
+                    icon: "text.viewfinder",
+                    binding: $config.captureSettings.shortcutQuickOcr,
+                    defaultBinding: ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+                )
+            }
+
+            Section(header: Text("User Custom Shortcuts").font(.headline)) {
+                if config.captureSettings.customShortcuts.isEmpty {
+                    Text("No custom shortcuts added yet. You can add your own custom shortcuts below.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                } else {
+                    ForEach($config.captureSettings.customShortcuts) { $item in
+                        ShortcutRecorderRow(
+                            label: "\(item.name) (\(item.action))",
+                            icon: "star.fill",
+                            binding: $item.binding,
+                            defaultBinding: item.binding,
+                            onDelete: {
+                                config.captureSettings.customShortcuts.removeAll { $0.id == item.id }
+                            }
+                        )
+                    }
+                }
+
+                Button {
+                    showingAddSheet = true
+                } label: {
+                    Label("Add New Shortcut...", systemImage: "plus.circle.fill")
+                        .fontWeight(.medium)
+                }
+                .padding(.top, 4)
             }
         }
         .formStyle(.grouped)
+        .sheet(isPresented: $showingAddSheet) {
+            AddShortcutSheet(isPresented: $showingAddSheet) { newItem in
+                config.captureSettings.customShortcuts.append(newItem)
+            }
+        }
     }
 }
 
-struct ShortcutRow: View {
+// MARK: - Interactive Shortcut Recorder Row
+
+struct ShortcutRecorderRow: View {
     let label: String
-    let binding: ShortcutBinding
+    let icon: String
+    @Binding var binding: ShortcutBinding
+    let defaultBinding: ShortcutBinding
+    var onDelete: (() -> Void)? = nil
+
+    @State private var isRecording = false
+    @State private var monitor: Any?
 
     var body: some View {
-        HStack {
+        HStack(spacing: 10) {
+            Image(systemName: icon)
+                .foregroundColor(.accentColor)
+                .frame(width: 20)
+
             Text(label)
+                .font(.body)
+
             Spacer()
-            Text(binding.displayString)
-                .font(.system(.body, design: .monospaced))
-                .padding(.horizontal, 10)
-                .padding(.vertical, 4)
-                .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
+
+            if isRecording {
+                Button {
+                    stopRecording()
+                } label: {
+                    HStack(spacing: 6) {
+                        Circle()
+                            .fill(Color.red)
+                            .frame(width: 8, height: 8)
+                        Text("Type keys (or Esc)...")
+                            .font(.system(.subheadline, design: .monospaced).bold())
+                            .foregroundColor(.accentColor)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).stroke(Color.accentColor, lineWidth: 1.5).background(Color.accentColor.opacity(0.12)))
+                }
+                .buttonStyle(.plain)
+            } else {
+                Button {
+                    startRecording()
+                } label: {
+                    HStack(spacing: 6) {
+                        Text(binding.displayString.isEmpty ? "None" : binding.displayString)
+                            .font(.system(.body, design: .monospaced).bold())
+                            .foregroundColor(.primary)
+
+                        Image(systemName: "pencil")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                    }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15)))
+                }
+                .buttonStyle(.plain)
+                .help("Click to record a new shortcut key")
+            }
+
+            if binding != defaultBinding {
+                Button {
+                    binding = defaultBinding
+                } label: {
+                    Image(systemName: "arrow.counterclockwise")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help("Reset to default (\(defaultBinding.displayString))")
+            }
+
+            if let onDelete = onDelete {
+                Button(role: .destructive) {
+                    onDelete()
+                } label: {
+                    Image(systemName: "trash")
+                        .font(.caption)
+                        .foregroundColor(.red.opacity(0.85))
+                }
+                .buttonStyle(.plain)
+                .help("Delete custom shortcut")
+            }
         }
+        .onDisappear {
+            stopRecording()
+        }
+    }
+
+    private func startRecording() {
+        stopRecording()
+        isRecording = true
+
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+
+            var mods: [String] = []
+            if flags.contains(.control) { mods.append("⌃") }
+            if flags.contains(.option) { mods.append("⌥") }
+            if flags.contains(.shift) { mods.append("⇧") }
+            if flags.contains(.command) { mods.append("⌘") }
+
+            var keyName: String?
+
+            switch event.keyCode {
+            case 53:
+                keyName = "Esc"
+            case 36:
+                keyName = "Return"
+            case 49:
+                keyName = "Space"
+            case 48:
+                keyName = "Tab"
+            case 51:
+                keyName = "Delete"
+            case 123:
+                keyName = "←"
+            case 124:
+                keyName = "→"
+            case 125:
+                keyName = "↓"
+            case 126:
+                keyName = "↑"
+            default:
+                if let chars = event.charactersIgnoringModifiers?.uppercased(), !chars.isEmpty {
+                    keyName = chars
+                }
+            }
+
+            if let key = keyName {
+                // If bare Esc was pressed without modifiers and user was NOT recording the Cancel action:
+                if key == "Esc" && mods.isEmpty && !self.label.lowercased().contains("cancel") {
+                    DispatchQueue.main.async {
+                        self.stopRecording()
+                    }
+                    return nil
+                }
+
+                DispatchQueue.main.async {
+                    self.binding = ShortcutBinding(key: key, modifiers: mods)
+                    self.stopRecording()
+                }
+                return nil
+            }
+
+            return nil
+        }
+    }
+
+    private func stopRecording() {
+        if let mon = monitor {
+            NSEvent.removeMonitor(mon)
+            monitor = nil
+        }
+        isRecording = false
+    }
+}
+
+// MARK: - Add New Custom Shortcut Sheet
+
+struct AddShortcutSheet: View {
+    @Binding var isPresented: Bool
+    var onAdd: (CustomShortcutItem) -> Void
+
+    @State private var name: String = ""
+    @State private var selectedAction: String = "Copy Selection"
+    @State private var recordedBinding = ShortcutBinding(key: "C", modifiers: ["⌘"])
+
+    private let availableActions = [
+        "Copy Selection",
+        "Upload & Share Link",
+        "Cancel Capture",
+        "Capture Selected Region",
+        "Capture Full Screen",
+        "Capture Window",
+        "Record Screen",
+        "OCR Text from Screen"
+    ]
+
+    var body: some View {
+        VStack(spacing: 16) {
+            Text("Add New Shortcut")
+                .font(.headline)
+                .padding(.top, 8)
+
+            Form {
+                TextField("Shortcut Name:", text: $name, prompt: Text("e.g. Quick Copy / Cloud Upload"))
+
+                Picker("Action:", selection: $selectedAction) {
+                    ForEach(availableActions, id: \.self) { act in
+                        Text(act).tag(act)
+                    }
+                }
+
+                HStack {
+                    Text("Shortcut Key:")
+                    Spacer()
+                    ShortcutRecorderRow(
+                        label: "",
+                        icon: "command",
+                        binding: $recordedBinding,
+                        defaultBinding: recordedBinding
+                    )
+                }
+            }
+            .formStyle(.grouped)
+
+            HStack {
+                Button("Cancel") {
+                    isPresented = false
+                }
+                .keyboardShortcut(.cancelAction)
+
+                Spacer()
+
+                Button("Add Shortcut") {
+                    let finalName = name.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? selectedAction : name
+                    let item = CustomShortcutItem(name: finalName, action: selectedAction, binding: recordedBinding)
+                    onAdd(item)
+                    isPresented = false
+                }
+                .keyboardShortcut(.defaultAction)
+                .buttonStyle(.borderedProminent)
+            }
+            .padding(.horizontal)
+            .padding(.bottom, 8)
+        }
+        .frame(width: 440, height: 280)
+        .padding()
     }
 }
 

@@ -7,6 +7,7 @@ public enum RegionCaptureAction {
     case copy(AnnotationDocument)
     case save(AnnotationDocument)
     case edit(AnnotationDocument)
+    case upload(AnnotationDocument)
 }
 
 /// Interactive multi-display transparent overlay window controller for region selection.
@@ -280,8 +281,9 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
         addSeparator()
 
         // 4. M4 Export Actions & Cancel
-        addActionButton(icon: "doc.on.doc.fill", tooltip: "Copy to Clipboard (↵)", action: #selector(didClickCopy), tint: NSColor.systemGreen)
-        addActionButton(icon: "square.and.arrow.down.fill", tooltip: "Save to File", action: #selector(didClickSave), tint: NSColor.systemBlue)
+        addActionButton(icon: "doc.on.doc.fill", tooltip: "Copy to Clipboard (⌘C / ↵)", action: #selector(didClickCopy), tint: NSColor.systemGreen)
+        addActionButton(icon: "icloud.and.arrow.up.fill", tooltip: "Upload & Copy Link (⌘U)", action: #selector(didClickUpload), tint: NSColor.systemTeal)
+        addActionButton(icon: "square.and.arrow.down.fill", tooltip: "Save to File (⌘S)", action: #selector(didClickSave), tint: NSColor.systemBlue)
         addActionButton(icon: "xmark.circle.fill", tooltip: "Cancel (Esc)", action: #selector(didClickCancel), tint: NSColor.systemRed)
 
         let totalWidth = currentX + 4
@@ -323,6 +325,11 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
     @objc private func didClickCopy() {
         commitInlineTextIfNeeded()
         finishSelection(with: .copy(document))
+    }
+
+    @objc private func didClickUpload() {
+        commitInlineTextIfNeeded()
+        finishSelection(with: .upload(document))
     }
 
     @objc private func didClickSave() {
@@ -628,6 +635,7 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
         let isCmd = flags.contains(.command)
         let isShift = flags.contains(.shift)
 
+        // 1. Undo / Redo
         if isCmd && event.charactersIgnoringModifiers?.lowercased() == "z" {
             if isShift {
                 performRedo()
@@ -637,14 +645,43 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
             return
         }
 
-        if event.keyCode == 53 { // ESC key
+        let settings = AppConfiguration.shared.captureSettings
+
+        // 2. Cancel Selection: Esc or configured shortcutCancel
+        if event.keyCode == 53 || settings.shortcutCancel.matches(event: event) {
             commitInlineTextIfNeeded()
             onCancel()
-        } else if event.keyCode == 36 || event.keyCode == 49 { // Enter or Space key
+            return
+        }
+
+        // 3. Copy Selection: Cmd + C, Enter, Space, or configured shortcutCopy
+        if (isCmd && event.charactersIgnoringModifiers?.lowercased() == "c") ||
+           settings.shortcutCopy.matches(event: event) ||
+           event.keyCode == 36 || event.keyCode == 49 {
             commitInlineTextIfNeeded()
             if hasActiveSelection {
                 finishSelection(with: .copy(document))
             }
+            return
+        }
+
+        // 4. Upload Selection: Cmd + U or configured shortcutUpload
+        if (isCmd && event.charactersIgnoringModifiers?.lowercased() == "u") ||
+           settings.shortcutUpload.matches(event: event) {
+            commitInlineTextIfNeeded()
+            if hasActiveSelection {
+                finishSelection(with: .upload(document))
+            }
+            return
+        }
+
+        // 5. Save: Cmd + S
+        if isCmd && event.charactersIgnoringModifiers?.lowercased() == "s" {
+            commitInlineTextIfNeeded()
+            if hasActiveSelection {
+                finishSelection(with: .save(document))
+            }
+            return
         }
     }
 
