@@ -32,13 +32,13 @@ public final class EditorWindowController: NSWindowController {
         let doc = AnnotationDocument(assetId: asset.id)
         self.undoRedoManager = UndoRedoManager(document: doc)
 
-        // Calculate initial window dimensions
+        // Calculate initial window dimensions with studio padding
         let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let maxW = screen.width * 0.8
-        let maxH = screen.height * 0.8
+        let maxW = screen.width * 0.85
+        let maxH = screen.height * 0.85
 
-        var winW = CGFloat(asset.pixelWidth) / 2.0
-        var winH = CGFloat(asset.pixelHeight) / 2.0
+        var winW = CGFloat(asset.pixelWidth) / 2.0 + 48 // include margin
+        var winH = CGFloat(asset.pixelHeight) / 2.0 + 48
 
         if winW > maxW || winH > maxH {
             let ratio = min(maxW / winW, maxH / winH)
@@ -46,21 +46,23 @@ public final class EditorWindowController: NSWindowController {
             winH *= ratio
         }
 
-        winW = max(winW, 600)
-        winH = max(winH, 450) + 80 // Include toolbar height
+        winW = max(winW, 700)
+        winH = max(winH, 500) + 52 // 52px for sleek toolbar
 
         let window = NSWindow(
             contentRect: NSRect(x: (screen.width - winW) / 2, y: (screen.height - winH) / 2, width: winW, height: winH),
-            styleMask: [.titled, .closable, .miniaturizable, .resizable],
+            styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
         )
         window.title = "Screenshot Editor — \(asset.title)"
+        window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
 
-        setupContentView(width: winW, height: winH - 80, initialTool: initialTool)
+        setupContentView(width: winW, height: winH - 52, initialTool: initialTool)
     }
 
     required init?(coder: NSCoder) {
@@ -87,9 +89,11 @@ public final class EditorWindowController: NSWindowController {
         )
         canvas.translatesAutoresizingMaskIntoConstraints = false
         canvas.currentTool = initialTool
+        canvas.onCopyRequested = { [weak self] in self?.handleCopy() }
+        canvas.onSaveRequested = { [weak self] in self?.handleExport() }
         self.canvasView = canvas
 
-        // 3. Setup Toolbar State Bindings
+        // 3. Setup Sleek Single-Row Toolbar
         let toolbarView = EditorToolbarContainer(
             undoRedoManager: undoRedoManager,
             canvasView: canvas,
@@ -102,14 +106,14 @@ public final class EditorWindowController: NSWindowController {
         let toolbarHost = NSHostingView(rootView: toolbarView)
         toolbarHost.translatesAutoresizingMaskIntoConstraints = false
 
-        containerView.addSubview(toolbarHost)
         containerView.addSubview(canvas)
+        containerView.addSubview(toolbarHost)
 
         NSLayoutConstraint.activate([
             toolbarHost.topAnchor.constraint(equalTo: containerView.topAnchor),
             toolbarHost.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             toolbarHost.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            toolbarHost.heightAnchor.constraint(equalToConstant: 80),
+            toolbarHost.heightAnchor.constraint(equalToConstant: 52),
 
             canvas.topAnchor.constraint(equalTo: toolbarHost.bottomAnchor),
             canvas.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -135,6 +139,7 @@ public final class EditorWindowController: NSWindowController {
             let format: ExportFormat = saveURL.pathExtension.lowercased() == "jpg" || saveURL.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
             try? ScreenCaptureService.shared.saveImage(compositeImage, format: format, to: saveURL)
             AppLogger.shared.editor.info("Exported flattened screenshot to: \(saveURL.lastPathComponent, privacy: .public)")
+            canvasView?.showToast("✓ Saved to Disk")
         }
     }
 
@@ -147,6 +152,7 @@ public final class EditorWindowController: NSWindowController {
         let nsImage = NSImage(cgImage: compositeImage, size: NSSize(width: compositeImage.width, height: compositeImage.height))
         pasteboard.writeObjects([nsImage])
         AppLogger.shared.editor.info("Copied annotated screenshot to pasteboard.")
+        canvasView?.showToast("✓ Copied to Clipboard")
     }
 
     private func handleClose() {
@@ -167,7 +173,6 @@ struct EditorToolbarContainer: View {
     @State private var selectedTool: EditorTool
     @State private var selectedColor: AnnotationColor = .red
     @State private var strokeWidth: Double = 3.0
-    @State private var textContent: String = "Text"
     @State private var fontSize: Double = 22.0
     @State private var blurRadius: Double = 20.0
 
@@ -193,13 +198,17 @@ struct EditorToolbarContainer: View {
             selectedTool: $selectedTool,
             selectedColor: $selectedColor,
             strokeWidth: $strokeWidth,
-            textContent: $textContent,
             fontSize: $fontSize,
             blurRadius: $blurRadius,
             onExport: onExport,
             onCopyToClipboard: onCopy,
             onClose: onClose
         )
+        .onAppear {
+            canvasView.onToolChanged = { newTool in
+                selectedTool = newTool
+            }
+        }
         .onChange(of: selectedTool) { _, newTool in
             canvasView.currentTool = newTool
         }
@@ -208,9 +217,6 @@ struct EditorToolbarContainer: View {
         }
         .onChange(of: strokeWidth) { _, newWidth in
             canvasView.currentStrokeWidth = newWidth
-        }
-        .onChange(of: textContent) { _, newText in
-            canvasView.currentTextContent = newText
         }
         .onChange(of: fontSize) { _, newSize in
             canvasView.currentFontSize = newSize

@@ -32,6 +32,7 @@
 		92CB9229C19FA9C9D0FE7632 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5A2E05947BFF4F022D2BBF8F /* SettingsView.swift */; };
 		9369F6C87F5E4CC6D464F98E /* UndoRedoTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E5E9335EB29D1F71BC1258C /* UndoRedoTests.swift */; };
 		959F22F3CF7769B45FE43C77 /* EditorToolbarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 65FC7635EAC81D83808521FB /* EditorToolbarView.swift */; };
+		971D73A94664447A3D3F7FD8 /* EditorTool.swift in Sources */ = {isa = PBXBuildFile; fileRef = 85913A00422B06DA28E29FD5 /* EditorTool.swift */; };
 		ABBA0A9F93E3647DA17E1791 /* ScreenCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 70E9BF49AE2295A39393C7B3 /* ScreenCaptureService.swift */; };
 		C5293D060378FCD17D64EA4B /* ExportCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = 592946F5C34356FA84AF916A /* ExportCompositor.swift */; };
 		C81C217A7B0159D4DC33DE3D /* AppErrorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 84AA8C79A438AD2118BF6DBE /* AppErrorTests.swift */; };
@@ -80,6 +81,7 @@
 		742D2471A42E336C67610445 /* RedactionRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RedactionRenderer.swift; sourceTree = "<group>"; };
 		752E4E66CB229AD24E799ACB /* HotKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyManager.swift; sourceTree = "<group>"; };
 		84AA8C79A438AD2118BF6DBE /* AppErrorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppErrorTests.swift; sourceTree = "<group>"; };
+		85913A00422B06DA28E29FD5 /* EditorTool.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorTool.swift; sourceTree = "<group>"; };
 		8980D4A840C884C62475FE9D /* StorageMode.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = StorageMode.swift; sourceTree = "<group>"; };
 		9892994A21ABCEFFD63686CC /* PermissionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionManager.swift; sourceTree = "<group>"; };
 		9B6A24DCE56FECDDC15420A3 /* AppLoggerTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLoggerTests.swift; sourceTree = "<group>"; };
@@ -103,6 +105,7 @@
 			isa = PBXGroup;
 			children = (
 				BD74BED221B569AA4405BAFD /* AnnotationCanvasView.swift */,
+				85913A00422B06DA28E29FD5 /* EditorTool.swift */,
 				65FC7635EAC81D83808521FB /* EditorToolbarView.swift */,
 				E958E7E2AD7420F343FBACF9 /* EditorWindowController.swift */,
 				592946F5C34356FA84AF916A /* ExportCompositor.swift */,
@@ -392,6 +395,7 @@
 				CC6EE5F1EB26CAD7DFBDE063 /* AppLogger.swift in Sources */,
 				4E10C9F6BED95D335416A229 /* CaptureCoordinator.swift in Sources */,
 				CEA2818592285264FF1D8DBA /* CaptureSettings.swift in Sources */,
+				971D73A94664447A3D3F7FD8 /* EditorTool.swift in Sources */,
 				959F22F3CF7769B45FE43C77 /* EditorToolbarView.swift in Sources */,
 				4FEDDB72AE2B4A3684324EA4 /* EditorWindowController.swift in Sources */,
 				C5293D060378FCD17D64EA4B /* ExportCompositor.swift in Sources */,
