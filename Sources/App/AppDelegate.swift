@@ -11,6 +11,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         AppLogger.shared.app.info("ScreenshotApp launched successfully.")
 
+        // Disable automatic termination so the menu bar status item and global hotkeys remain active indefinitely
+        ProcessInfo.processInfo.disableAutomaticTermination("Screenshot utility background runner")
+
         // Initialize Menu Bar controller
         menuBarController = MenuBarController(
             coordinator: AppCoordinator.shared,
@@ -33,6 +36,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start Global Keyboard Shortcuts
         HotKeyManager.shared.startMonitoring()
+    }
+
+    public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        return false
     }
 
     private func updateActivationPolicy(showInDock: Bool) {

@@ -22,6 +22,7 @@ Packages/
 Package.pins
 Package.resolved
 .swiftpm/
+*.profraw
 
 # Environment and Secrets
 .env
