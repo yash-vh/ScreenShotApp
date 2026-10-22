@@ -311,6 +311,7 @@
 			buildPhases = (
 				B7215A09520CAF379CE59658 /* Sources */,
 				B875CA4B282B6D6E9BAC534A /* Resources */,
+				F45FDEFF219619D8F9D76AF1 /* Stable Ad-Hoc Code Signing for TCC */,
 			);
 			buildRules = (
 			);
@@ -364,6 +365,27 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
+
+/* Begin PBXShellScriptBuildPhase section */
+		F45FDEFF219619D8F9D76AF1 /* Stable Ad-Hoc Code Signing for TCC */ = {
+			isa = PBXShellScriptBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+			);
+			inputFileListPaths = (
+			);
+			inputPaths = (
+			);
+			name = "Stable Ad-Hoc Code Signing for TCC";
+			outputFileListPaths = (
+			);
+			outputPaths = (
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+			shellPath = /bin/sh;
+			shellScript = "codesign --force --deep --sign - --identifier \"com.screenshotapp.mac\" --requirements '=designated => identifier \"com.screenshotapp.mac\"' \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n";
+		};
+/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		54DA17939B0644679CE34413 /* Sources */ = {

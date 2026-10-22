@@ -31,6 +31,11 @@ targets:
       GENERATE_INFOPLIST_FILE: NO
       CODE_SIGN_IDENTITY: "-"
       OTHER_CODE_SIGN_FLAGS: "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\""
+    postBuildScripts:
+      - name: Stable Ad-Hoc Code Signing for TCC
+        script: |
+          codesign --force --deep --sign - --identifier "com.screenshotapp.mac" --requirements '=designated => identifier "com.screenshotapp.mac"' "${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}"
+
 
   ScreenshotAppTests:
     type: bundle.unit-test

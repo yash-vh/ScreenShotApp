@@ -116,7 +116,7 @@ public final class AppCoordinator: ObservableObject {
     }
 
     public func hasScreenCapturePermission() -> Bool {
-        return PermissionManager.shared.checkScreenRecordingPermission()
+        return PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission()
     }
 
     // MARK: - Capture Handlers (Powered by CaptureCoordinator)

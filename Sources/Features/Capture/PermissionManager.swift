@@ -64,9 +64,25 @@ public final class PermissionManager: ObservableObject {
             }
         }
 
+        // Tertiary check: attempt live trial capture directly via ScreenCaptureService
+        do {
+            _ = try await ScreenCaptureService.shared.captureDisplay()
+            screenRecordingStatus = .authorized
+            isAuthorized = true
+            return true
+        } catch {
+            AppLogger.shared.capture.notice("ScreenCaptureService trial capture check: \(error.localizedDescription, privacy: .public)")
+        }
+
         screenRecordingStatus = .denied
         isAuthorized = false
         return false
+    }
+
+    /// Manually marks permission as authorized when a capture succeeds
+    public func markAuthorized() {
+        screenRecordingStatus = .authorized
+        isAuthorized = true
     }
 
     /// Displays an actionable dialog explaining how to grant permissions, with direct links to

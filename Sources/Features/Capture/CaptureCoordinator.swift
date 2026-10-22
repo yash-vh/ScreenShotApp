@@ -14,7 +14,7 @@ public final class CaptureCoordinator: ObservableObject {
     // MARK: - Public Triggers
 
     public func captureRegion() {
-        guard PermissionManager.shared.checkScreenRecordingPermission() else {
+        guard PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission() else {
             Task { @MainActor in
                 if await PermissionManager.shared.verifyScreenRecordingPermission() {
                     self.captureRegion()
@@ -32,6 +32,7 @@ public final class CaptureCoordinator: ObservableObject {
                     guard let self = self else { return }
                     do {
                         let cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
+                        PermissionManager.shared.markAuthorized()
                         self.processCapturedRegion(cgImage, title: "Region Capture", action: action)
                     } catch {
                         AppLogger.shared.capture.error("Region capture error: \(error.localizedDescription, privacy: .public)")
@@ -47,7 +48,7 @@ public final class CaptureCoordinator: ObservableObject {
     }
 
     public func captureFullScreen() {
-        guard PermissionManager.shared.checkScreenRecordingPermission() else {
+        guard PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission() else {
             Task { @MainActor in
                 if await PermissionManager.shared.verifyScreenRecordingPermission() {
                     self.captureFullScreen()
@@ -62,6 +63,7 @@ public final class CaptureCoordinator: ObservableObject {
         Task {
             do {
                 let cgImage = try await ScreenCaptureService.shared.captureDisplay(displayId: CGMainDisplayID())
+                PermissionManager.shared.markAuthorized()
                 self.processCapturedImage(cgImage, title: "Full Screen Capture")
             } catch {
                 AppLogger.shared.capture.error("Full screen capture error: \(error.localizedDescription, privacy: .public)")
@@ -72,7 +74,7 @@ public final class CaptureCoordinator: ObservableObject {
     }
 
     public func captureWindow() {
-        guard PermissionManager.shared.checkScreenRecordingPermission() else {
+        guard PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission() else {
             Task { @MainActor in
                 if await PermissionManager.shared.verifyScreenRecordingPermission() {
                     self.captureWindow()
@@ -90,6 +92,7 @@ public final class CaptureCoordinator: ObservableObject {
                     guard let self = self else { return }
                     do {
                         let cgImage = try await ScreenCaptureService.shared.captureWindow(windowId: windowId)
+                        PermissionManager.shared.markAuthorized()
                         self.processCapturedImage(cgImage, title: "Window Capture")
                     } catch {
                         AppLogger.shared.capture.error("Window capture error: \(error.localizedDescription, privacy: .public)")
