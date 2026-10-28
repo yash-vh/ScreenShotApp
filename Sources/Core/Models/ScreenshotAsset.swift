@@ -17,6 +17,9 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
     /// Native pixel dimensions
     public var pixelWidth: Int
     public var pixelHeight: Int
+
+    /// Pixels per screen point at capture time (2.0 on Retina displays); nil when unknown
+    public var scaleFactor: Double?
     public var fileSizeBytes: Int64
     
     /// Recognized on-device OCR text
@@ -41,6 +44,7 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
         exportFileURL: URL? = nil,
         pixelWidth: Int,
         pixelHeight: Int,
+        scaleFactor: Double? = nil,
         fileSizeBytes: Int64,
         ocrText: String? = nil,
         mediaType: MediaType = .image,
@@ -56,6 +60,7 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
         self.exportFileURL = exportFileURL
         self.pixelWidth = pixelWidth
         self.pixelHeight = pixelHeight
+        self.scaleFactor = scaleFactor
         self.fileSizeBytes = fileSizeBytes
         self.ocrText = ocrText
         self.mediaType = mediaType

@@ -1,16 +1,25 @@
 import AppKit
 import SwiftUI
+import Combine
 import CoreGraphics
 
 /// AppKit window controller managing the annotation editor interface.
 @MainActor
-public final class EditorWindowController: NSWindowController {
+public final class EditorWindowController: NSWindowController, NSWindowDelegate {
     public static var currentControllers: [UUID: EditorWindowController] = [:]
+
+    private static let toolbarHeight: CGFloat = 44
 
     private let asset: ScreenshotAsset
     private let undoRedoManager: UndoRedoManager
+    private let state: EditorState
     private var baseCGImage: CGImage?
     private var canvasView: AnnotationCanvasView?
+    private var recognitionOverlay: OCRResultOverlay?
+    private var recognitionResult: RecognitionResult?
+    private var lastSavedDocument: AnnotationDocument
+    private var isClosingConfirmed = false
+    private var cancellables = Set<AnyCancellable>()
 
     public static func present(for asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
         if let existing = currentControllers[asset.id] {
@@ -28,29 +37,30 @@ public final class EditorWindowController: NSWindowController {
     public init(asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
         self.asset = asset
 
-        // Load or create initial annotation document
-        let doc = AnnotationDocument(assetId: asset.id)
-        self.undoRedoManager = UndoRedoManager(document: doc)
-
-        // Calculate initial window dimensions with studio padding
-        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
-        let maxW = screen.width * 0.85
-        let maxH = screen.height * 0.85
-
-        var winW = CGFloat(asset.pixelWidth) / 2.0 + 48 // include margin
-        var winH = CGFloat(asset.pixelHeight) / 2.0 + 48
-
-        if winW > maxW || winH > maxH {
-            let ratio = min(maxW / winW, maxH / winH)
-            winW *= ratio
-            winH *= ratio
+        // 1. Load base image from disk
+        if let imageSource = CGImageSourceCreateWithURL(asset.originalFileURL as CFURL, nil),
+           let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
+            self.baseCGImage = cgImage
         }
 
-        winW = max(winW, 700)
-        winH = max(winH, 500) + 52 // 52px for sleek toolbar
+        let pixelsPerPoint = asset.scaleFactor ?? Double(NSScreen.main?.backingScaleFactor ?? 2.0)
+        let doc = AnnotationDocument(assetId: asset.id, pixelsPerPoint: pixelsPerPoint)
+        self.undoRedoManager = UndoRedoManager(document: doc)
+        self.lastSavedDocument = doc
+        self.state = EditorState(tool: initialTool)
+
+        // 2. Size the window to show the capture at (up to) its native point size
+        let screen = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        let maxW = screen.width * 0.85
+        let maxH = screen.height * 0.85 - Self.toolbarHeight
+        let pointW = CGFloat(asset.pixelWidth) / CGFloat(pixelsPerPoint) + 48
+        let pointH = CGFloat(asset.pixelHeight) / CGFloat(pixelsPerPoint) + 48
+        let ratio = min(1.0, maxW / max(pointW, 1), maxH / max(pointH, 1))
+        let winW = max(pointW * ratio, 920)
+        let winH = max(pointH * ratio, 520) + Self.toolbarHeight
 
         let window = NSWindow(
-            contentRect: NSRect(x: (screen.width - winW) / 2, y: (screen.height - winH) / 2, width: winW, height: winH),
+            contentRect: NSRect(x: 0, y: 0, width: winW, height: winH),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
             defer: false
@@ -59,61 +69,57 @@ public final class EditorWindowController: NSWindowController {
         window.titlebarAppearsTransparent = true
         window.backgroundColor = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
         window.isReleasedWhenClosed = false
+        window.contentMinSize = NSSize(width: 920, height: 420)
+        window.center()
 
         super.init(window: window)
+        window.delegate = self
 
-        setupContentView(width: winW, height: winH - 52, initialTool: initialTool)
+        setupContentView()
+        observeState()
     }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
     }
 
-    private func setupContentView(width: CGFloat, height: CGFloat, initialTool: EditorTool = .arrow) {
+    private func setupContentView() {
         guard let window = window else { return }
-
-        // 1. Load base image from disk
-        if let imageSource = CGImageSourceCreateWithURL(asset.originalFileURL as CFURL, nil),
-           let cgImage = CGImageSourceCreateImageAtIndex(imageSource, 0, nil) {
-            self.baseCGImage = cgImage
-        }
 
         let containerView = NSView(frame: window.contentView?.bounds ?? .zero)
         containerView.autoresizingMask = [.width, .height]
 
-        // 2. Setup Canvas
-        let canvas = AnnotationCanvasView(
-            frame: .zero,
-            undoRedoManager: undoRedoManager,
-            baseImage: baseCGImage
-        )
+        let canvas = AnnotationCanvasView(frame: .zero, undoRedoManager: undoRedoManager, state: state, baseImage: baseCGImage)
         canvas.translatesAutoresizingMaskIntoConstraints = false
-        canvas.currentTool = initialTool
         canvas.onCopyRequested = { [weak self] in self?.handleCopy() }
         canvas.onSaveRequested = { [weak self] in self?.handleExport() }
+        canvas.onCloseRequested = { [weak self] in self?.handleClose() }
         self.canvasView = canvas
 
-        // 3. Setup Sleek Single-Row Toolbar
-        let toolbarView = EditorToolbarContainer(
+        let toolbarView = EditorToolbarView(
             undoRedoManager: undoRedoManager,
-            canvasView: canvas,
-            initialTool: initialTool,
+            state: state,
+            onUndo: { [weak canvas] in canvas?.undo(nil) },
+            onRedo: { [weak canvas] in canvas?.redo(nil) },
+            onDelete: { [weak canvas] in canvas?.delete(nil) },
             onExport: { [weak self] in self?.handleExport() },
-            onCopy: { [weak self] in self?.handleCopy() },
+            onCopyToClipboard: { [weak self] in self?.handleCopy() },
             onClose: { [weak self] in self?.handleClose() }
         )
-
         let toolbarHost = NSHostingView(rootView: toolbarView)
         toolbarHost.translatesAutoresizingMaskIntoConstraints = false
 
         containerView.addSubview(canvas)
         containerView.addSubview(toolbarHost)
 
+        window.contentView = containerView
+
+        // Pin the toolbar below the (transparent) title bar so it never collides with the traffic lights
         NSLayoutConstraint.activate([
-            toolbarHost.topAnchor.constraint(equalTo: containerView.topAnchor),
+            toolbarHost.topAnchor.constraint(equalTo: (window.contentLayoutGuide as? NSLayoutGuide)?.topAnchor ?? containerView.topAnchor),
             toolbarHost.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
             toolbarHost.trailingAnchor.constraint(equalTo: containerView.trailingAnchor),
-            toolbarHost.heightAnchor.constraint(equalToConstant: 52),
+            toolbarHost.heightAnchor.constraint(equalToConstant: Self.toolbarHeight),
 
             canvas.topAnchor.constraint(equalTo: toolbarHost.bottomAnchor),
             canvas.leadingAnchor.constraint(equalTo: containerView.leadingAnchor),
@@ -121,108 +127,163 @@ public final class EditorWindowController: NSWindowController {
             canvas.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
         ])
 
-        window.contentView = containerView
+        window.initialFirstResponder = canvas
         window.makeFirstResponder(canvas)
+    }
+
+    private func observeState() {
+        state.$isShowingRecognition
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] showing in
+                self?.setRecognitionVisible(showing)
+            }
+            .store(in: &cancellables)
+
+        undoRedoManager.$document
+            .sink { [weak self] _ in
+                self?.recognitionOverlay?.needsDisplay = true
+                self?.recognitionOverlay?.needsLayout = true
+            }
+            .store(in: &cancellables)
+    }
+
+    // MARK: - Text Recognition (M4)
+
+    private func setRecognitionVisible(_ visible: Bool) {
+        guard visible else {
+            recognitionOverlay?.removeFromSuperview()
+            recognitionOverlay = nil
+            return
+        }
+        if let cached = recognitionResult {
+            showRecognitionOverlay(cached)
+            return
+        }
+        guard let base = baseCGImage else { return }
+
+        state.isRecognizing = true
+        Task { @MainActor [weak self] in
+            do {
+                let result = try await VisionService.shared.recognize(in: base)
+                guard let self = self else { return }
+                self.state.isRecognizing = false
+                self.recognitionResult = result
+                if self.state.isShowingRecognition {
+                    self.showRecognitionOverlay(result)
+                }
+            } catch {
+                AppLogger.shared.recognition.error("Text recognition failed: \(error.localizedDescription, privacy: .public)")
+                self?.state.isRecognizing = false
+                self?.state.isShowingRecognition = false
+                self?.canvasView?.showToast("Text recognition failed")
+            }
+        }
+    }
+
+    private func showRecognitionOverlay(_ result: RecognitionResult) {
+        guard let canvas = canvasView, recognitionOverlay == nil else { return }
+        let overlay = OCRResultOverlay(result: result) { [weak canvas] in canvas?.imageRect ?? .zero }
+        overlay.frame = canvas.bounds
+        overlay.autoresizingMask = [.width, .height]
+        overlay.onMessage = { [weak canvas] message in canvas?.showToast(message) }
+        overlay.onClose = { [weak self] in self?.state.isShowingRecognition = false }
+        canvas.addSubview(overlay)
+        recognitionOverlay = overlay
+
+        if result.isEmpty {
+            canvas.showToast("No text or QR codes found")
+        }
     }
 
     // MARK: - Export and Actions
 
+    private func renderComposite() -> CGImage? {
+        guard let base = baseCGImage else { return nil }
+        return ExportCompositor.shared.composite(baseImage: base, document: undoRedoManager.document)
+    }
+
     private func handleExport() {
-        guard let base = baseCGImage else { return }
-        let compositeImage = ExportCompositor.shared.composite(baseImage: base, document: undoRedoManager.document)
+        guard let compositeImage = renderComposite(), let window = window else { return }
 
         let panel = NSSavePanel()
         panel.allowedContentTypes = [.png, .jpeg]
-        panel.nameFieldStringValue = asset.originalFileURL.lastPathComponent
+        panel.directoryURL = asset.originalFileURL.deletingLastPathComponent()
+        let baseName = asset.originalFileURL.deletingPathExtension().lastPathComponent
+        panel.nameFieldStringValue = "\(baseName) (edited).png"
 
-        if panel.runModal() == .OK, let saveURL = panel.url {
-            let format: ExportFormat = saveURL.pathExtension.lowercased() == "jpg" || saveURL.pathExtension.lowercased() == "jpeg" ? .jpeg : .png
-            try? ScreenCaptureService.shared.saveImage(compositeImage, format: format, to: saveURL)
-            AppLogger.shared.editor.info("Exported flattened screenshot to: \(saveURL.lastPathComponent, privacy: .public)")
-            canvasView?.showToast("✓ Saved to Disk")
+        panel.beginSheetModal(for: window) { [weak self] response in
+            guard response == .OK, let saveURL = panel.url, let self = self else { return }
+            let ext = saveURL.pathExtension.lowercased()
+            let format: ExportFormat = (ext == "jpg" || ext == "jpeg") ? .jpeg : .png
+            do {
+                try ScreenCaptureService.shared.saveImage(
+                    compositeImage,
+                    format: format,
+                    jpegQuality: AppConfiguration.shared.captureSettings.jpegQuality,
+                    to: saveURL
+                )
+                self.lastSavedDocument = self.undoRedoManager.document
+                AppLogger.shared.editor.info("Exported flattened screenshot to: \(saveURL.lastPathComponent, privacy: .public)")
+                self.canvasView?.showToast("✓ Saved \(saveURL.lastPathComponent)")
+            } catch {
+                AppLogger.shared.editor.error("Export failed: \(error.localizedDescription, privacy: .public)")
+                self.canvasView?.showToast("Save failed: \(error.localizedDescription)")
+            }
         }
     }
 
     private func handleCopy() {
-        guard let base = baseCGImage else { return }
-        let compositeImage = ExportCompositor.shared.composite(baseImage: base, document: undoRedoManager.document)
+        guard let compositeImage = renderComposite() else { return }
 
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
         let nsImage = NSImage(cgImage: compositeImage, size: NSSize(width: compositeImage.width, height: compositeImage.height))
         pasteboard.writeObjects([nsImage])
+        lastSavedDocument = undoRedoManager.document
         AppLogger.shared.editor.info("Copied annotated screenshot to pasteboard.")
         canvasView?.showToast("✓ Copied to Clipboard")
     }
 
     private func handleClose() {
-        window?.close()
-        Self.currentControllers.removeValue(forKey: asset.id)
-    }
-}
-
-// MARK: - SwiftUI Toolbar Host Wrapper
-
-struct EditorToolbarContainer: View {
-    @ObservedObject var undoRedoManager: UndoRedoManager
-    let canvasView: AnnotationCanvasView
-    let onExport: () -> Void
-    let onCopy: () -> Void
-    let onClose: () -> Void
-
-    @State private var selectedTool: EditorTool
-    @State private var selectedColor: AnnotationColor = .red
-    @State private var strokeWidth: Double = 3.0
-    @State private var fontSize: Double = 22.0
-    @State private var blurRadius: Double = 20.0
-
-    init(
-        undoRedoManager: UndoRedoManager,
-        canvasView: AnnotationCanvasView,
-        initialTool: EditorTool = .arrow,
-        onExport: @escaping () -> Void,
-        onCopy: @escaping () -> Void,
-        onClose: @escaping () -> Void
-    ) {
-        self.undoRedoManager = undoRedoManager
-        self.canvasView = canvasView
-        self._selectedTool = State(initialValue: initialTool)
-        self.onExport = onExport
-        self.onCopy = onCopy
-        self.onClose = onClose
+        window?.performClose(nil)
     }
 
-    var body: some View {
-        EditorToolbarView(
-            undoRedoManager: undoRedoManager,
-            selectedTool: $selectedTool,
-            selectedColor: $selectedColor,
-            strokeWidth: $strokeWidth,
-            fontSize: $fontSize,
-            blurRadius: $blurRadius,
-            onExport: onExport,
-            onCopyToClipboard: onCopy,
-            onClose: onClose
-        )
-        .onAppear {
-            canvasView.onToolChanged = { newTool in
-                selectedTool = newTool
+    // MARK: - NSWindowDelegate
+
+    private var hasUnexportedChanges: Bool {
+        var current = undoRedoManager.document
+        current.modifiedAt = lastSavedDocument.modifiedAt
+        return current != lastSavedDocument
+    }
+
+    public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard hasUnexportedChanges, !isClosingConfirmed else { return true }
+
+        let alert = NSAlert()
+        alert.messageText = "Keep your annotations?"
+        alert.informativeText = "Your edits haven't been copied or saved. Copy the annotated screenshot to the clipboard before closing?"
+        alert.addButton(withTitle: "Copy & Close")
+        alert.addButton(withTitle: "Discard")
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: sender) { [weak self] response in
+            guard let self = self else { return }
+            switch response {
+            case .alertFirstButtonReturn:
+                self.handleCopy()
+                self.isClosingConfirmed = true
+                sender.close()
+            case .alertSecondButtonReturn:
+                self.isClosingConfirmed = true
+                sender.close()
+            default:
+                break
             }
         }
-        .onChange(of: selectedTool) { _, newTool in
-            canvasView.currentTool = newTool
-        }
-        .onChange(of: selectedColor) { _, newColor in
-            canvasView.currentStrokeColor = newColor
-        }
-        .onChange(of: strokeWidth) { _, newWidth in
-            canvasView.currentStrokeWidth = newWidth
-        }
-        .onChange(of: fontSize) { _, newSize in
-            canvasView.currentFontSize = newSize
-        }
-        .onChange(of: blurRadius) { _, newRad in
-            canvasView.currentBlurRadius = newRad
-        }
+        return false
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        Self.currentControllers.removeValue(forKey: asset.id)
     }
 }

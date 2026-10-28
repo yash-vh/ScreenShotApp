@@ -70,17 +70,28 @@
 
 ---
 
-#### **Milestone 4: Image Styling & Local Recognition** `[READY TO IMPLEMENT]`
+#### **Milestone 4: Image Styling & Local Recognition** `[COMPLETED & VERIFIED]`
 - **Target:** Days 12–14
-- **Status:** 🟡 **Next Up (Ready to start)**
-- **Technical Plan & Files to Implement:**
-  1. `Sources/Features/Styling/ImageComposer.swift`: Adds rounded corners, drop shadows, configurable padding, and solid/gradient presentation backgrounds.
-  2. `Sources/Features/Styling/BackgroundPresets.swift`: Curated modern gradient and solid backdrop color presets.
-  3. `Sources/Features/Recognition/VisionService.swift`: On-device asynchronous text recognition (`VNRecognizeTextRequest`) and barcode/QR detection (`VNDetectBarcodesRequest`).
-  4. `Sources/Features/Recognition/OCRResultOverlay.swift`: Visual bounding boxes and quick "Copy All Text" / "Copy QR Link" actions.
-- **Verification Tests to Build:**
-  - `Tests/UnitTests/ImageComposerTests.swift`: Background padding and corner radius composition tests.
-  - `Tests/UnitTests/VisionServiceTests.swift`: Text recognition bounding box and OCR text normalization tests.
+- **Status:** ✅ **Completed & Verified**
+- **Completion Sign-Off Checklist:**
+  - [x] **Image Composer:** `Styling/ImageComposer.swift` composes the flattened capture onto a backdrop with padding, rounded corners and drop shadow, scaled by the capture's pixels-per-point.
+  - [x] **Background Presets:** `Styling/BackgroundPresets.swift` with 6 gradient + 2 solid presets; editor Style popover (palette button) with live canvas preview and undoable changes.
+  - [x] **Vision Service:** `Recognition/VisionService.swift` runs on-device `VNRecognizeTextRequest` + `VNDetectBarcodesRequest` with reading-order sorting and text normalization. The accurate model is probed at launch and falls back to fast recognition on error/timeout.
+  - [x] **OCR Result Overlay:** `Recognition/OCRResultOverlay.swift` shows text/QR boxes in the editor (⇧⌘T or toolbar), click-to-copy, "Copy All Text", "Copy QR Link", "Open Link".
+  - [x] **Quick OCR capture:** ⇧⌘7 / ⌥⌘7 select a region and copy recognized text (or QR payload) with a confirmation HUD. Optional background OCR indexes `ocrText` on recent captures.
+  - [x] **Unit Testing:** `ImageComposerTests`, `VisionServiceTests`.
+
+#### **M1–M3 Stabilization Pass (post-review fixes)**
+- [x] Editor: one undo step per drag/resize/nudge/slider scrub (was one per mouse event); selecting an item no longer writes history; no-op updates ignored.
+- [x] Editor: move, 8-handle resize (⇧ keeps aspect), arrow endpoint editing, ⇧-constrained drawing, duplicate (⌘D), bring to front / send to back (⌘] / ⌘[), arrow-key nudge, right-click menu, delete button.
+- [x] Editor: shortcuts handled via `performKeyEquivalent` so ⌘Z/⇧⌘Z/⌘C/⌘S/⌘D/⌘W work without a menu bar; Esc deselects then closes; Return edits text.
+- [x] Editor: toolbar no longer under the traffic lights; toolbar ↔ selection style sync; inline text commit no longer duplicates; text editable in place with live color/size.
+- [x] Export: annotations were vertically flipped and text was dropped; stroke/font sizes now scale with Retina pixel density.
+- [x] Capture overlays: borderless overlay windows can become key (Esc/Return/⌘Z/typing now work); overlay annotations use the same y-down space as the editor; pixelate + "Open in Editor" (⌘E) added.
+- [x] Capture: ScreenCaptureKit captures at native Retina resolution (was 1× and mis-cropped regions); full-screen capture uses the display under the pointer; "Save automatically to disk" is respected.
+- [x] Hotkeys: Carbon hotkeys registered from Settings bindings (incl. custom capture shortcuts) and re-registered on change; ⇧-digit shortcuts recorded by key code (⇧⌘4 no longer saved as "$"); hotkeys suspended while recording a shortcut; ⌥⌘3–7 fallbacks.
+- [x] Menu bar: shows configured shortcuts; Recent Captures / "Annotate Last Capture" open the editor; recording item no longer fakes a recording (M6).
+- [x] Tests: `AnnotationCanvasInteractionTests`, `RegionOverlayAnnotationTests`, `ShortcutBindingTests`, extended `UndoRedoTests` / `ExportCompositorTests` — 50/50 passing.
 
 ---
 
@@ -140,9 +151,9 @@
 | Milestone | Target Days | Status | Unit Tests | Integration Tests |
 |---|---|:---:|:---:|:---:|
 | **M1: Foundation & App Shell** | Days 1–3 | **Done** | Pass | Pass |
-| **M2: Capture Engine** | Days 4–7 | In Progress | Planned | Planned |
-| **M3: Annotation & Redaction** | Days 8–11 | Planned | Planned | Planned |
-| **M4: Styling & Recognition** | Days 12–14 | Planned | Planned | Planned |
+| **M2: Capture Engine** | Days 4–7 | **Done** | Pass | Pass |
+| **M3: Annotation & Redaction** | Days 8–11 | **Done** | Pass | Pass |
+| **M4: Styling & Recognition** | Days 12–14 | **Done** | Pass | Pass |
 | **M5: Local History & Database** | Days 15–17 | Planned | Planned | Planned |
 | **M6: Screen Recording & GIF** | Days 18–21 | Planned | Planned | Planned |
 | **M7: Cloud Storage & Sharing** | Days 22–25 | Planned | Planned | Planned |

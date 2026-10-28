@@ -7,6 +7,7 @@ public final class WindowSelectionOverlayController: NSObject {
     public static let shared = WindowSelectionOverlayController()
 
     private var overlayWindows: [NSWindow] = []
+    private var isCursorPushed = false
     private var onWindowSelected: ((CGWindowID) -> Void)?
     private var onCancel: (() -> Void)?
 
@@ -23,22 +24,13 @@ public final class WindowSelectionOverlayController: NSObject {
         self.onWindowSelected = onSelect
         self.onCancel = onCancel
 
-        for screen in NSScreen.screens {
-            let window = NSWindow(
-                contentRect: screen.frame,
-                styleMask: [.borderless],
-                backing: .buffered,
-                defer: false,
-                screen: screen
-            )
-            window.level = .screenSaver
-            window.isOpaque = false
-            window.backgroundColor = .clear
-            window.hasShadow = false
-            window.ignoresMouseEvents = false
-            window.acceptsMouseMovedEvents = true
+        NSApp.activate(ignoringOtherApps: true)
 
-            let view = WindowHoverSelectionView(frame: screen.frame, screen: screen) { [weak self] windowId in
+        let keyScreen = OverlayWindow.screenUnderMouse
+        for screen in NSScreen.screens {
+            let window = OverlayWindow(screen: screen)
+
+            let view = WindowHoverSelectionView(frame: NSRect(origin: .zero, size: screen.frame.size), screen: screen) { [weak self] windowId in
                 self?.handleWindowSelected(windowId)
             } onCancel: { [weak self] in
                 self?.handleCancel()
@@ -46,13 +38,23 @@ public final class WindowSelectionOverlayController: NSObject {
 
             window.contentView = view
             overlayWindows.append(window)
-            window.makeKeyAndOrderFront(nil)
+            if screen == keyScreen {
+                window.makeKeyAndOrderFront(nil)
+            } else {
+                window.orderFrontRegardless()
+            }
+            window.makeFirstResponder(view)
+            view.refreshHover()
         }
-
-        NSApp.activate(ignoringOtherApps: true)
+        NSCursor.pointingHand.push()
+        isCursorPushed = true
     }
 
     public func dismiss() {
+        if isCursorPushed {
+            NSCursor.pop()
+            isCursorPushed = false
+        }
         for window in overlayWindows {
             window.orderOut(nil)
         }
@@ -61,7 +63,7 @@ public final class WindowSelectionOverlayController: NSObject {
 
     private func handleWindowSelected(_ windowId: CGWindowID) {
         dismiss()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
             self?.onWindowSelected?(windowId)
         }
     }
@@ -89,8 +91,8 @@ final class WindowHoverSelectionView: NSView {
         super.init(frame: frame)
 
         let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .mouseMoved],
+            rect: .zero,
+            options: [.activeAlways, .mouseMoved, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -104,8 +106,12 @@ final class WindowHoverSelectionView: NSView {
     override var acceptsFirstResponder: Bool { true }
 
     override func mouseMoved(with event: NSEvent) {
-        let mouseLoc = NSEvent.mouseLocation
-        findWindowUnderCursor(at: mouseLoc)
+        refreshHover()
+    }
+
+    /// Re-evaluates which window is under the pointer (also called on present, before any movement)
+    func refreshHover() {
+        findWindowUnderCursor(at: NSEvent.mouseLocation)
     }
 
     override func mouseDown(with event: NSEvent) {
@@ -117,9 +123,18 @@ final class WindowHoverSelectionView: NSView {
     }
 
     override func keyDown(with event: NSEvent) {
-        if event.keyCode == 53 { // ESC
+        switch event.keyCode {
+        case 53: // Esc
             onCancel()
+        case 36, 76, 49: // Return / Enter / Space capture the highlighted window
+            if let windowId = hoveredWindowId { onSelect(windowId) }
+        default:
+            super.keyDown(with: event)
         }
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        onCancel()
     }
 
     override func draw(_ dirtyRect: NSRect) {
@@ -153,6 +168,7 @@ final class WindowHoverSelectionView: NSView {
         guard let windowInfoList = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID) as? [[String: Any]] else {
             return
         }
+        let ownPID = Int(ProcessInfo.processInfo.processIdentifier)
 
         // Mouse point in CG coordinates (0,0 is primary display top-left)
         let primaryScreenHeight = NSScreen.screens.first?.frame.height ?? 0
@@ -163,14 +179,24 @@ final class WindowHoverSelectionView: NSView {
                   let rect = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
                   let winId = winInfo[kCGWindowNumber as String] as? CGWindowID,
                   let layer = winInfo[kCGWindowLayer as String] as? Int,
-                  layer == 0 else { continue } // Regular application windows are at layer 0
+                  layer == 0, // Regular application windows are at layer 0
+                  (winInfo[kCGWindowOwnerPID as String] as? Int) != ownPID,
+                  rect.width > 40, rect.height > 40 else { continue }
 
             if rect.contains(cgMousePoint) {
-                hoveredWindowFrame = rect
-                hoveredWindowId = winId
-                needsDisplay = true
+                if hoveredWindowId != winId || hoveredWindowFrame != rect {
+                    hoveredWindowFrame = rect
+                    hoveredWindowId = winId
+                    needsDisplay = true
+                }
                 return
             }
+        }
+
+        if hoveredWindowId != nil {
+            hoveredWindowFrame = nil
+            hoveredWindowId = nil
+            needsDisplay = true
         }
     }
 

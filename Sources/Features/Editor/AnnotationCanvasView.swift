@@ -2,68 +2,83 @@ import AppKit
 import CoreGraphics
 import Combine
 
-/// Interactive AppKit canvas view for drawing, in-place text editing, selecting, and manipulating annotations over a base image.
-public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
+/// Interactive AppKit canvas view for drawing, in-place text editing, selecting, moving, resizing,
+/// and manipulating annotations over a base image.
+public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItemValidation {
+    /// How the canvas lays out the screenshot
+    public enum Presentation {
+        /// Editor window: centered card on a dark studio backdrop, fit-to-window
+        case editor
+        /// Capture overlay: the image fills the view 1:1 in points (inset only by styling padding)
+        case embedded
+    }
+
+    /// Phases of a mouse gesture on empty canvas space with the select tool (embedded hosts use it to move the selection)
+    public enum BackgroundDragPhase {
+        case began, changed, ended
+    }
+
     public override var isFlipped: Bool { true }
+    public let presentation: Presentation
+    public override var acceptsFirstResponder: Bool { true }
+
+    public let undoRedoManager: UndoRedoManager
+    public let state: EditorState
 
     public var baseCGImage: CGImage? {
         didSet {
-            updateProcessedDisplayImage()
+            rebuildPreviewBase()
             needsDisplay = true
         }
     }
 
-    public let undoRedoManager: UndoRedoManager
-    public var currentTool: EditorTool = .arrow {
+    public var currentTool: EditorTool {
+        get { state.tool }
+        set { if state.tool != newValue { state.tool = newValue } }
+    }
+
+    // MARK: - Selection & Interaction State
+
+    public private(set) var selectedItemId: UUID? {
         didSet {
-            updateCursorForCurrentTool()
-            dismissInlineTextEditor()
+            guard oldValue != selectedItemId else { return }
+            if state.hasSelection != (selectedItemId != nil) {
+                state.hasSelection = selectedItemId != nil
+            }
+            syncStateFromSelection()
+            needsDisplay = true
         }
     }
 
-    public var currentStrokeColor: AnnotationColor = .red {
-        didSet {
-            updateSelectedAnnotationStyle()
-        }
+    private enum Handle: CaseIterable {
+        case topLeft, top, topRight, right, bottomRight, bottom, bottomLeft, left
     }
 
-    public var currentStrokeWidth: Double = 3.0 {
-        didSet {
-            updateSelectedAnnotationStyle()
-        }
+    private enum Interaction {
+        case drawing(start: CGPoint, current: CGPoint)
+        case moving(original: AnnotationItem, mouseStart: CGPoint)
+        case resizing(original: AnnotationItem, handle: Handle, grabOffset: CGVector)
+        case arrowEndpoint(original: AnnotationItem, index: Int)
     }
 
-    public var currentFontSize: Double = 22.0 {
-        didSet {
-            updateSelectedAnnotationText()
-        }
-    }
-
-    public var currentBlurRadius: Double = 20.0 {
-        didSet {
-            updateSelectedAnnotationBlurRadius()
-        }
-    }
-
-    /// Processed base image with live blur and pixelation applied
-    private var processedDisplayImage: CGImage?
-
-    // Drawing state
-    private var startPoint: CGPoint?
-    private var currentDragPoint: CGPoint?
+    private var interaction: Interaction?
+    private var interactionRegisteredUndo = false
     private var freehandPoints: [NormalizedPoint] = []
-    private var isDrawing = false
 
-    // Moving / Dragging existing items state
-    public var selectedItemId: UUID?
-    private var isDraggingItem = false
-    private var dragMouseStartPoint: CGPoint?
-    private var dragItemInitialOrigin: NormalizedPoint?
-    private var dragItemInitialPoints: [NormalizedPoint]?
+    /// Suppresses applying toolbar style changes back onto the selection while syncing from it
+    private var isSyncingFromSelection = false
 
     // Inline Text Editing
     private var activeInlineTextField: NSTextField?
-    private var activeEditingTextItem: AnnotationItem?
+    private var activeEditingTextItemId: UUID?
+    private var inlineTextOrigin: CGPoint = .zero
+    private var inlineTextColor: AnnotationColor = .red
+    private var inlineTextFontSize: Double = 22
+
+    // Live redaction preview (computed on a downscaled copy of the base image)
+    private var previewBaseImage: CGImage?
+    private var previewImage: CGImage?
+    private var previewRedactionItems: [AnnotationItem] = []
 
     // Floating Toast Notification
     private var toastMessage: String?
@@ -72,50 +87,70 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
     // Action Callbacks
     public var onCopyRequested: (() -> Void)?
     public var onSaveRequested: (() -> Void)?
-    public var onToolChanged: ((EditorTool) -> Void)?
+    public var onCloseRequested: (() -> Void)?
+    /// Return/Enter pressed with no text annotation selected
+    public var onConfirmRequested: (() -> Void)?
+    /// Receives select-tool drags that start on empty space; return false from `.began` to decline
+    public var onBackgroundDrag: ((BackgroundDragPhase, NSEvent) -> Bool)?
+    private var isForwardingBackgroundDrag = false
+
+    /// Whether an inline text field is currently being edited
+    public var isEditingText: Bool { activeInlineTextField != nil }
 
     private var cancellables = Set<AnyCancellable>()
 
-    // MARK: - Aspect-Fit Image Rect with Studio Padding
+    private static let backdropColor = NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1.0)
+    private static let selectionColor = NSColor.systemBlue
+    private static let handleSize: CGFloat = 8
+    private static let previewMaxDimension: CGFloat = 2400
 
-    /// Calculates the aspect-fit rectangle of the base screenshot centered with 24px margin.
-    public var imageRect: CGRect {
-        guard let base = baseCGImage else { return bounds }
-        let margin: CGFloat = 24.0
-        let availableBounds = bounds.insetBy(dx: margin, dy: margin)
+    // MARK: - Init
 
-        let imgW = CGFloat(base.width)
-        let imgH = CGFloat(base.height)
-        guard imgW > 0, imgH > 0, availableBounds.width > 0, availableBounds.height > 0 else { return bounds }
-
-        let scale = min(availableBounds.width / imgW, availableBounds.height / imgH)
-        let fitW = floor(imgW * scale)
-        let fitH = floor(imgH * scale)
-        let fitX = floor(availableBounds.minX + (availableBounds.width - fitW) / 2.0)
-        let fitY = floor(availableBounds.minY + (availableBounds.height - fitH) / 2.0)
-        return CGRect(x: fitX, y: fitY, width: fitW, height: fitH)
-    }
-
-    public init(frame: NSRect, undoRedoManager: UndoRedoManager, baseImage: CGImage? = nil) {
+    public init(frame: NSRect, undoRedoManager: UndoRedoManager, state: EditorState, baseImage: CGImage? = nil, presentation: Presentation = .editor) {
         self.undoRedoManager = undoRedoManager
+        self.state = state
         self.baseCGImage = baseImage
+        self.presentation = presentation
         super.init(frame: frame)
 
-        updateProcessedDisplayImage()
+        rebuildPreviewBase()
 
-        // Observe document changes to keep live blur and canvas in sync
         undoRedoManager.$document
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                self?.updateProcessedDisplayImage()
-                self?.needsDisplay = true
+            .sink { [weak self] doc in
+                self?.documentDidChange(doc)
             }
             .store(in: &cancellables)
 
-        // Tracking area for mouse movements and cursor updates
+        // @Published emits before the stored value changes, so every sink works from the emitted value
+        state.$tool
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] tool in
+                self?.toolDidChange(to: tool)
+            }
+            .store(in: &cancellables)
+
+        state.$color.dropFirst().sink { [weak self] color in
+            self?.updateInlineTextFieldStyle(color: color)
+            self?.applyToSelection(key: "color", where: { $0.type != .blur && $0.type != .pixelation }) { $0.strokeColor = color }
+        }.store(in: &cancellables)
+
+        state.$strokeWidth.dropFirst().sink { [weak self] width in
+            self?.applyToSelection(key: "width", where: { Self.strokedTypes.contains($0.type) }) { $0.strokeWidth = width }
+        }.store(in: &cancellables)
+
+        state.$fontSize.dropFirst().sink { [weak self] size in
+            self?.updateInlineTextFieldStyle(fontSize: size)
+            self?.applyFontSize(size)
+        }.store(in: &cancellables)
+
+        state.$blurRadius.dropFirst().sink { [weak self] radius in
+            self?.applyToSelection(key: "blur", where: { $0.type == .blur || $0.type == .pixelation }) { $0.blurRadius = radius }
+        }.store(in: &cancellables)
+
         let trackingArea = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .mouseMoved, .cursorUpdate],
+            rect: .zero,
+            options: [.activeInKeyWindow, .mouseMoved, .cursorUpdate, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -126,7 +161,64 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         fatalError("init(coder:) has not been implemented")
     }
 
-    public override var acceptsFirstResponder: Bool { true }
+    public override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+
+    public override func viewDidEndLiveResize() {
+        super.viewDidEndLiveResize()
+        repositionInlineTextField()
+    }
+
+    public override func resizeSubviews(withOldSize oldSize: NSSize) {
+        super.resizeSubviews(withOldSize: oldSize)
+        repositionInlineTextField()
+    }
+
+    // MARK: - Layout
+
+    private var document: AnnotationDocument { undoRedoManager.document }
+
+    private var pixelsPerPoint: CGFloat { CGFloat(max(document.pixelsPerPoint, 0.1)) }
+
+    /// Rect enclosing the styled card (image + padding) in view coordinates
+    public var styledRect: CGRect {
+        guard presentation == .editor else { return bounds }
+        guard let base = baseCGImage else { return bounds }
+        let margin: CGFloat = 24.0
+        let available = bounds.insetBy(dx: margin, dy: margin)
+        let pad = CGFloat(document.padding) * pixelsPerPoint
+        let contentW = CGFloat(base.width) + pad * 2
+        let contentH = CGFloat(base.height) + pad * 2
+        guard contentW > 0, contentH > 0, available.width > 0, available.height > 0 else { return bounds }
+
+        let scale = min(available.width / contentW, available.height / contentH, 1.0 / pixelsPerPoint)
+        let w = floor(contentW * scale)
+        let h = floor(contentH * scale)
+        return CGRect(x: floor(available.midX - w / 2), y: floor(available.midY - h / 2), width: w, height: h)
+    }
+
+    /// Aspect-fit rectangle of the base screenshot inside the styled card
+    public var imageRect: CGRect {
+        if presentation == .embedded {
+            // 1 view point == 1 annotation point; padding (in points) surrounds the image
+            let pad = CGFloat(document.padding)
+            return bounds.insetBy(dx: pad, dy: pad)
+        }
+        guard let base = baseCGImage, base.width > 0 else { return bounds }
+        let outer = styledRect
+        let pad = CGFloat(document.padding) * pixelsPerPoint
+        let scale = outer.width / (CGFloat(base.width) + pad * 2)
+        return outer.insetBy(dx: pad * scale, dy: pad * scale)
+    }
+
+    /// View points per annotation point at the current zoom level
+    public var displayScale: CGFloat {
+        guard let base = baseCGImage, base.width > 0 else { return 1 }
+        return imageRect.width / (CGFloat(base.width) / pixelsPerPoint)
+    }
+
+    private var renderer: AnnotationRenderer {
+        AnnotationRenderer(imageRect: imageRect, scale: displayScale)
+    }
 
     // MARK: - Toast Message
 
@@ -141,422 +233,635 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         }
     }
 
+    // MARK: - State Observation
+
+    private func documentDidChange(_ doc: AnnotationDocument) {
+        if let id = selectedItemId, !doc.items.contains(where: { $0.id == id }) {
+            selectedItemId = nil
+        }
+        updatePreviewIfNeeded(items: doc.items)
+        needsDisplay = true
+    }
+
+    private func toolDidChange(to tool: EditorTool) {
+        commitInlineTextEditor()
+        if tool != .select {
+            selectedItemId = nil
+        }
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self, let window = self.window else { return }
+            self.updateCursor(at: self.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+        }
+        needsDisplay = true
+    }
+
+    private static let strokedTypes: Set<AnnotationType> = [.arrow, .rectangle, .ellipse, .freehand]
+
+    private func syncStateFromSelection() {
+        guard let item = selectedItem else { return }
+        isSyncingFromSelection = true
+        defer { isSyncingFromSelection = false }
+
+        if item.type != .blur && item.type != .pixelation && state.color != item.strokeColor {
+            state.color = item.strokeColor
+        }
+        if Self.strokedTypes.contains(item.type) && state.strokeWidth != item.strokeWidth {
+            state.strokeWidth = item.strokeWidth
+        }
+        if item.type == .text, let size = item.fontSize, state.fontSize != size {
+            state.fontSize = size
+        }
+        if let radius = item.blurRadius, item.type == .blur || item.type == .pixelation, state.blurRadius != radius {
+            state.blurRadius = radius
+        }
+    }
+
+    /// Applies a toolbar style change to the selected annotation, coalescing slider scrubs into one undo step
+    private func applyToSelection(key: String, where applies: (AnnotationItem) -> Bool, _ mutate: (inout AnnotationItem) -> Void) {
+        guard !isSyncingFromSelection, activeEditingTextItemId == nil, let item = selectedItem, applies(item) else { return }
+        var updated = item
+        mutate(&updated)
+        undoRedoManager.updateItem(updated, coalescingKey: "\(key)-\(item.id)")
+    }
+
+    private func applyFontSize(_ size: Double) {
+        let origin = selectedItem.map { renderer.point(for: $0.bounds.origin) } ?? .zero
+        applyToSelection(key: "font", where: { $0.type == .text }) { updated in
+            updated.fontSize = size
+            if let text = updated.textContent {
+                updated.bounds = textBounds(for: text, origin: origin, fontSize: size)
+            }
+        }
+    }
+
+    private var selectedItem: AnnotationItem? {
+        guard let id = selectedItemId else { return nil }
+        return document.items.first { $0.id == id }
+    }
+
     // MARK: - Keyboard Handling
 
-    public override func keyDown(with event: NSEvent) {
-        let isCmd = event.modifierFlags.contains(.command)
-        let isShift = event.modifierFlags.contains(.shift)
-        let key = event.charactersIgnoringModifiers?.lowercased()
-
-        // Cmd+C -> Copy
-        if isCmd && key == "c" {
-            onCopyRequested?()
-            showToast("✓ Copied to Clipboard")
-            return
+    public override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard event.window == nil || event.window === window, flags.contains(.command) else {
+            return super.performKeyEquivalent(with: event)
         }
 
-        // Cmd+S -> Save
-        if isCmd && key == "s" {
-            onSaveRequested?()
-            return
-        }
-
-        // Cmd+Z -> Undo / Redo
-        if isCmd && key == "z" {
-            if isShift {
-                undoRedoManager.redo()
-            } else {
-                undoRedoManager.undo()
+        // While typing, route standard editing shortcuts to the field editor (works without an Edit menu)
+        if let editor = activeInlineTextField?.currentEditor() as? NSTextView {
+            let action: Selector?
+            switch event.charactersIgnoringModifiers?.lowercased() {
+            case "a": action = #selector(NSText.selectAll(_:))
+            case "c": action = #selector(NSText.copy(_:))
+            case "v": action = #selector(NSText.paste(_:))
+            case "x": action = #selector(NSText.cut(_:))
+            case "z":
+                if flags.contains(.shift) { editor.undoManager?.redo() } else { editor.undoManager?.undo() }
+                return true
+            default: action = nil
             }
-            needsDisplay = true
+            if let action = action, NSApp.sendAction(action, to: editor, from: self) {
+                return true
+            }
+            return super.performKeyEquivalent(with: event)
+        }
+
+        return handleCommandKey(event, flags: flags) || super.performKeyEquivalent(with: event)
+    }
+
+    private func handleCommandKey(_ event: NSEvent, flags: NSEvent.ModifierFlags) -> Bool {
+        let key = event.charactersIgnoringModifiers?.lowercased() ?? ""
+        let isShift = flags.contains(.shift)
+
+        switch (event.keyCode, key) {
+        case (_, "t") where isShift:
+            state.isShowingRecognition.toggle()
+        case (_, "z") where isShift, (_, "y"):
+            redo(nil)
+        case (_, "z"):
+            undo(nil)
+        case (_, "c"):
+            copy(nil)
+        case (_, "s"):
+            saveDocument(nil)
+        case (_, "d"):
+            duplicate(nil)
+        case (_, "w"):
+            onCloseRequested?()
+        case (_, "]"):
+            bringToFront(nil)
+        case (_, "["):
+            sendToBack(nil)
+        case (51, _), (117, _):
+            delete(nil)
+        default:
+            return false
+        }
+        return true
+    }
+
+    public override func keyDown(with event: NSEvent) {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if flags.contains(.command) {
+            if !handleCommandKey(event, flags: flags) { super.keyDown(with: event) }
             return
         }
 
-        // Delete / Backspace key to remove selected item
-        if event.keyCode == 51 || event.keyCode == 117 {
-            if let selectedId = selectedItemId {
-                undoRedoManager.removeItem(id: selectedId)
-                selectedItemId = nil
-                updateProcessedDisplayImage()
-                needsDisplay = true
+        switch event.keyCode {
+        case 51, 117: // Delete / Forward Delete
+            if selectedItemId != nil { delete(nil) } else { NSSound.beep() }
+            return
+        case 53: // Escape
+            cancelOperation(nil)
+            return
+        case 36, 76: // Return / Enter: edit selected text, otherwise confirm (e.g. copy in the capture overlay)
+            if let item = selectedItem, item.type == .text {
+                startInlineTextEditor(for: item)
+            } else if let confirm = onConfirmRequested {
+                confirm()
+            } else {
+                super.keyDown(with: event)
+            }
+            return
+        case 123, 124, 125, 126: // Arrow keys nudge the selection
+            nudgeSelection(keyCode: event.keyCode, large: flags.contains(.shift))
+            return
+        default:
+            break
+        }
+
+        guard flags.isDisjoint(with: [.control, .option]),
+              let key = event.charactersIgnoringModifiers?.lowercased(),
+              let tool = Self.toolShortcuts[key] else {
+            super.keyDown(with: event)
+            return
+        }
+        currentTool = tool
+    }
+
+    public static let toolShortcuts: [String: EditorTool] = [
+        "v": .select, "a": .arrow, "r": .rectangle, "o": .ellipse, "p": .freehand,
+        "h": .highlight, "t": .text, "b": .blur, "x": .pixelate
+    ]
+
+    public override func cancelOperation(_ sender: Any?) {
+        if interaction != nil {
+            cancelInteraction()
+        } else if selectedItemId != nil {
+            selectedItemId = nil
+        } else {
+            onCloseRequested?()
+        }
+    }
+
+    private func nudgeSelection(keyCode: UInt16, large: Bool) {
+        guard let item = selectedItem else { return }
+        let iRect = imageRect
+        guard iRect.width > 0, iRect.height > 0 else { return }
+        let step: CGFloat = large ? 10 : 1
+        var dx: CGFloat = 0, dy: CGFloat = 0
+        switch keyCode {
+        case 123: dx = -step
+        case 124: dx = step
+        case 125: dy = step
+        default: dy = -step
+        }
+        let moved = Self.translated(item, dx: dx / iRect.width, dy: dy / iRect.height)
+        undoRedoManager.updateItem(moved, coalescingKey: "nudge-\(item.id)")
+    }
+
+    // MARK: - Responder Actions (Edit menu & shortcuts)
+
+    @objc public func undo(_ sender: Any?) {
+        commitInlineTextEditor()
+        cancelInteraction()
+        undoRedoManager.undo()
+    }
+
+    @objc public func redo(_ sender: Any?) {
+        commitInlineTextEditor()
+        cancelInteraction()
+        undoRedoManager.redo()
+    }
+
+    @objc public func copy(_ sender: Any?) {
+        commitInlineTextEditor()
+        onCopyRequested?()
+    }
+
+    @objc public func saveDocument(_ sender: Any?) {
+        commitInlineTextEditor()
+        onSaveRequested?()
+    }
+
+    @objc public func delete(_ sender: Any?) {
+        guard let id = selectedItemId else { return }
+        undoRedoManager.removeItem(id: id)
+        selectedItemId = nil
+    }
+
+    @objc public func duplicate(_ sender: Any?) {
+        guard let item = selectedItem else { return }
+        let iRect = imageRect
+        let offset: CGFloat = 16
+        var copy = Self.translated(item, dx: offset / max(iRect.width, 1), dy: offset / max(iRect.height, 1))
+        copy = AnnotationItem(
+            type: copy.type, bounds: copy.bounds, strokeColor: copy.strokeColor, fillColor: copy.fillColor,
+            strokeWidth: copy.strokeWidth, textContent: copy.textContent, fontSize: copy.fontSize,
+            points: copy.points, blurRadius: copy.blurRadius
+        )
+        undoRedoManager.addItem(copy)
+        selectedItemId = copy.id
+    }
+
+    @objc public func bringToFront(_ sender: Any?) {
+        guard let id = selectedItemId else { return }
+        undoRedoManager.reorderItem(id: id, toFront: true)
+    }
+
+    @objc public func sendToBack(_ sender: Any?) {
+        guard let id = selectedItemId else { return }
+        undoRedoManager.reorderItem(id: id, toFront: false)
+    }
+
+    @objc public func editText(_ sender: Any?) {
+        guard let item = selectedItem, item.type == .text else { return }
+        startInlineTextEditor(for: item)
+    }
+
+    public func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
+        switch menuItem.action {
+        case #selector(undo(_:)): return undoRedoManager.canUndo
+        case #selector(redo(_:)): return undoRedoManager.canRedo
+        case #selector(delete(_:)), #selector(duplicate(_:)), #selector(bringToFront(_:)), #selector(sendToBack(_:)):
+            return selectedItemId != nil
+        case #selector(editText(_:)): return selectedItem?.type == .text
+        default: return true
+        }
+    }
+
+    public override func menu(for event: NSEvent) -> NSMenu? {
+        let loc = convert(event.locationInWindow, from: nil)
+        guard let hit = findItem(at: loc, forSelectTool: true) else { return nil }
+        commitInlineTextEditor()
+        selectedItemId = hit.id
+
+        let menu = NSMenu()
+        if hit.type == .text {
+            menu.addItem(withTitle: "Edit Text", action: #selector(editText(_:)), keyEquivalent: "\r")
+            menu.addItem(.separator())
+        }
+        menu.addItem(withTitle: "Duplicate", action: #selector(duplicate(_:)), keyEquivalent: "d")
+        menu.addItem(withTitle: "Bring to Front", action: #selector(bringToFront(_:)), keyEquivalent: "]")
+        menu.addItem(withTitle: "Send to Back", action: #selector(sendToBack(_:)), keyEquivalent: "[")
+        menu.addItem(.separator())
+        menu.addItem(withTitle: "Delete", action: #selector(delete(_:)), keyEquivalent: "")
+        menu.items.forEach { $0.target = self }
+        return menu
+    }
+
+    // MARK: - Live Redaction Preview
+
+    private func rebuildPreviewBase() {
+        guard let base = baseCGImage else {
+            previewBaseImage = nil
+            previewImage = nil
+            return
+        }
+        let longEdge = CGFloat(max(base.width, base.height))
+        if longEdge > Self.previewMaxDimension, let scaled = Self.downscale(base, factor: Self.previewMaxDimension / longEdge) {
+            previewBaseImage = scaled
+        } else {
+            previewBaseImage = base
+        }
+        previewRedactionItems = []
+        previewImage = nil
+        updatePreviewIfNeeded(items: document.items, force: true)
+    }
+
+    private func updatePreviewIfNeeded(items: [AnnotationItem], force: Bool = false) {
+        let redactions = items.filter { $0.type == .blur || $0.type == .pixelation }
+        guard force || redactions != previewRedactionItems else { return }
+        previewRedactionItems = redactions
+
+        guard let preview = previewBaseImage, let base = baseCGImage, !redactions.isEmpty else {
+            previewImage = nil
+            return
+        }
+
+        // Radii are authored in full-resolution pixels; scale them to the preview copy
+        let factor = Double(preview.width) / Double(base.width)
+        let scaled = redactions.map { item -> AnnotationItem in
+            var copy = item
+            copy.blurRadius = (item.blurRadius ?? 20.0) * factor
+            return copy
+        }
+        previewImage = ExportCompositor.applyRedactions(to: preview, items: scaled)
+    }
+
+    private static func downscale(_ image: CGImage, factor: CGFloat) -> CGImage? {
+        let w = max(Int(CGFloat(image.width) * factor), 1)
+        let h = max(Int(CGFloat(image.height) * factor), 1)
+        guard let ctx = CGContext(
+            data: nil, width: w, height: h, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        ctx.interpolationQuality = .high
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: w, height: h))
+        return ctx.makeImage()
+    }
+
+    // MARK: - Mouse Events
+
+    public override func mouseDown(with event: NSEvent) {
+        window?.makeFirstResponder(self)
+        undoRedoManager.breakCoalescing()
+        let loc = convert(event.locationInWindow, from: nil)
+
+        // Clicking anywhere outside an active inline text editor commits it
+        if activeInlineTextField != nil {
+            commitInlineTextEditor()
+            return
+        }
+
+        // Double-click on text edits it in place
+        if event.clickCount == 2, let hit = findItem(at: loc, forSelectTool: true), hit.type == .text {
+            selectedItemId = hit.id
+            startInlineTextEditor(for: hit)
+            return
+        }
+
+        // Handles of the current selection take priority (resize / arrow endpoints)
+        if let item = selectedItem {
+            if item.type == .arrow, let index = arrowEndpointIndex(of: item, at: loc) {
+                beginInteraction(.arrowEndpoint(original: item, index: index))
+                return
+            }
+            if let handle = handle(of: item, at: loc) {
+                // Remember where inside the handle the pointer grabbed so the edge doesn't jump
+                let edge = edgePoint(of: renderer.rect(for: item.bounds), handle: handle)
+                beginInteraction(.resizing(original: item, handle: handle, grabOffset: CGVector(dx: loc.x - edge.x, dy: loc.y - edge.y)))
                 return
             }
         }
 
-        // Single-key tool shortcuts (when not editing text)
-        if activeInlineTextField == nil && !isCmd {
-            switch key {
-            case "v": switchTool(.select)
-            case "a": switchTool(.arrow)
-            case "r": switchTool(.rectangle)
-            case "o": switchTool(.ellipse)
-            case "p": switchTool(.freehand)
-            case "h": switchTool(.highlight)
-            case "t": switchTool(.text)
-            case "b": switchTool(.blur)
-            case "x": switchTool(.pixelate)
-            default: super.keyDown(with: event)
-            }
+        // Select & move an existing annotation
+        if let hit = findItem(at: loc, forSelectTool: currentTool == .select) {
+            selectedItemId = hit.id
+            beginInteraction(.moving(original: hit, mouseStart: loc))
             return
         }
 
-        super.keyDown(with: event)
-    }
-
-    private func switchTool(_ tool: EditorTool) {
-        currentTool = tool
-        onToolChanged?(tool)
-        needsDisplay = true
-    }
-
-    // MARK: - Live Blur Redaction Processing
-
-    public func updateProcessedDisplayImage() {
-        guard let base = baseCGImage else {
-            processedDisplayImage = nil
-            return
-        }
-
-        let redactionItems = undoRedoManager.document.items.filter { $0.type == .blur || $0.type == .pixelation }
-        guard !redactionItems.isEmpty else {
-            processedDisplayImage = base
-            return
-        }
-
-        var current = base
-        let imgW = Double(base.width)
-        let imgH = Double(base.height)
-
-        for item in redactionItems {
-            let pixelRect = CGRect(
-                x: item.bounds.origin.x * imgW,
-                y: item.bounds.origin.y * imgH,
-                width: item.bounds.width * imgW,
-                height: item.bounds.height * imgH
-            )
-
-            if item.type == .blur {
-                current = RedactionRenderer.shared.applyBlur(to: current, in: pixelRect, radius: item.blurRadius ?? 20.0)
-            } else {
-                current = RedactionRenderer.shared.applyPixelation(to: current, in: pixelRect, scale: item.blurRadius ?? 16.0)
-            }
-        }
-
-        processedDisplayImage = current
-    }
-
-    // MARK: - Mouse Events (Selecting, In-Place Text, Moving, and Drawing)
-
-    public override func mouseDown(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-        let iRect = imageRect
-
-        // If clicking outside an active inline text editor, commit it
-        if let textField = activeInlineTextField {
-            if !textField.frame.contains(loc) {
-                commitInlineTextEditor()
-            }
-            return
-        }
-
-        guard iRect.contains(loc) else {
+        if currentTool == .select {
             selectedItemId = nil
-            needsDisplay = true
+            if let handler = onBackgroundDrag, handler(.began, event) {
+                isForwardingBackgroundDrag = true
+            }
             return
         }
 
-        // Double-click check for editing existing text
-        if event.clickCount == 2, let hitItem = findItem(at: loc), hitItem.type == .text {
-            startInlineTextEditor(for: hitItem, at: denormalize(rect: hitItem.bounds))
+        guard imageRect.contains(loc) else {
+            selectedItemId = nil
             return
         }
 
-        // 1. Text Tool Click -> Spawn in-place text editor directly where clicked
         if currentTool == .text {
+            selectedItemId = nil
             startNewInlineTextEditor(at: loc)
             return
         }
 
-        // 2. Check if clicking on an existing annotation to select or move it
-        if let hitItem = findItem(at: loc) {
-            selectedItemId = hitItem.id
-            isDraggingItem = true
-            dragMouseStartPoint = loc
-            dragItemInitialOrigin = hitItem.bounds.origin
-            dragItemInitialPoints = hitItem.points
-            isDrawing = false
-
-            currentStrokeColor = hitItem.strokeColor
-            currentStrokeWidth = hitItem.strokeWidth
-            if let r = hitItem.blurRadius {
-                currentBlurRadius = r
-            }
-
-            needsDisplay = true
-            return
-        }
-
-        // 3. Click outside any existing item in Select mode -> deselect
-        if currentTool == .select {
-            selectedItemId = nil
-            needsDisplay = true
-            return
-        }
-
-        // 4. Start drawing a new shape / arrow / redact
+        // Start drawing a new annotation
         selectedItemId = nil
-        startPoint = loc
-        currentDragPoint = loc
-        isDrawing = true
-
         if currentTool == .freehand {
             freehandPoints = [normalize(point: loc)]
         }
-
-        needsDisplay = true
+        beginInteraction(.drawing(start: loc, current: loc))
     }
 
     public override func mouseDragged(with event: NSEvent) {
-        let loc = convert(event.locationInWindow, from: nil)
-
-        // Handle moving an already selected item
-        if isDraggingItem, let selectedId = selectedItemId,
-           let start = dragMouseStartPoint, let initOrigin = dragItemInitialOrigin,
-           let itemIndex = undoRedoManager.document.items.firstIndex(where: { $0.id == selectedId }) {
-
-            let iRect = imageRect
-            guard iRect.width > 0, iRect.height > 0 else { return }
-
-            let deltaX = (loc.x - start.x) / iRect.width
-            let deltaY = (loc.y - start.y) / iRect.height
-
-            var item = undoRedoManager.document.items[itemIndex]
-            let newX = max(0.0, min(1.0 - item.bounds.width, initOrigin.x + deltaX))
-            let newY = max(0.0, min(1.0 - item.bounds.height, initOrigin.y + deltaY))
-            item.bounds.origin = NormalizedPoint(x: newX, y: newY)
-
-            if let initPoints = dragItemInitialPoints {
-                item.points = initPoints.map { pt in
-                    NormalizedPoint(
-                        x: max(0.0, min(1.0, pt.x + deltaX)),
-                        y: max(0.0, min(1.0, pt.y + deltaY))
-                    )
-                }
-            }
-
-            undoRedoManager.updateItem(item)
-
-            if item.type == .blur || item.type == .pixelation {
-                updateProcessedDisplayImage()
-            }
-
-            needsDisplay = true
+        if isForwardingBackgroundDrag {
+            _ = onBackgroundDrag?(.changed, event)
             return
         }
+        guard let interaction = interaction else { return }
+        let loc = convert(event.locationInWindow, from: nil)
+        let shift = event.modifierFlags.contains(.shift)
+        let iRect = imageRect
+        guard iRect.width > 0, iRect.height > 0 else { return }
 
-        guard isDrawing else { return }
-        currentDragPoint = loc
+        switch interaction {
+        case .drawing(let start, _):
+            let clamped = clampToImage(loc)
+            let current = shift ? constrained(from: start, to: clamped, tool: currentTool) : clamped
+            self.interaction = .drawing(start: start, current: current)
+            if currentTool == .freehand {
+                freehandPoints.append(normalize(point: clamped))
+            }
 
-        if currentTool == .freehand {
-            freehandPoints.append(normalize(point: loc))
+        case .moving(let original, let mouseStart):
+            var dx = (loc.x - mouseStart.x) / iRect.width
+            var dy = (loc.y - mouseStart.y) / iRect.height
+            if shift {
+                if abs(dx) > abs(dy) { dy = 0 } else { dx = 0 }
+            }
+            applyInteractive(Self.translated(original, dx: dx, dy: dy))
+
+        case .resizing(let original, let handle, let grabOffset):
+            let target = clampToImage(CGPoint(x: loc.x - grabOffset.dx, y: loc.y - grabOffset.dy))
+            applyInteractive(resized(original, handle: handle, to: target, keepAspect: shift))
+
+        case .arrowEndpoint(let original, let index):
+            guard var pts = original.points, pts.count >= 2 else { return }
+            let anchor = renderer.point(for: pts[1 - index])
+            let target = shift ? constrained(from: anchor, to: clampToImage(loc), tool: .arrow) : clampToImage(loc)
+            pts[index] = normalize(point: target)
+            var updated = original
+            updated.points = pts
+            updated.bounds = Self.boundingRect(of: pts)
+            applyInteractive(updated)
         }
-
         needsDisplay = true
     }
 
     public override func mouseUp(with event: NSEvent) {
-        if isDraggingItem {
-            isDraggingItem = false
-            dragMouseStartPoint = nil
-            dragItemInitialOrigin = nil
-            dragItemInitialPoints = nil
-            updateProcessedDisplayImage()
-            needsDisplay = true
+        if isForwardingBackgroundDrag {
+            isForwardingBackgroundDrag = false
+            _ = onBackgroundDrag?(.ended, event)
             return
         }
+        guard let interaction = interaction else { return }
+        self.interaction = nil
+        interactionRegisteredUndo = false
 
-        guard isDrawing, let start = startPoint, let current = currentDragPoint else { return }
-        isDrawing = false
-
-        let normStart = normalize(point: start)
-        let normCurrent = normalize(point: current)
-
-        if abs(normCurrent.x - normStart.x) > 0.005 || abs(normCurrent.y - normStart.y) > 0.005 || currentTool == .freehand {
-            let normRect = NormalizedRect(
-                x: min(normStart.x, normCurrent.x),
-                y: min(normStart.y, normCurrent.y),
-                width: abs(normCurrent.x - normStart.x),
-                height: abs(normCurrent.y - normStart.y)
-            )
-            commitAnnotation(normRect: normRect, startPoint: normStart, endPoint: normCurrent)
+        if case .drawing(let start, let current) = interaction {
+            commitDrawing(from: start, to: current)
         }
-
-        startPoint = nil
-        currentDragPoint = nil
         freehandPoints.removeAll()
+        updateCursor(at: convert(event.locationInWindow, from: nil))
         needsDisplay = true
     }
 
-    // MARK: - In-Place Text Editor Spawning
-
-    private func startNewInlineTextEditor(at loc: CGPoint) {
-        dismissInlineTextEditor()
-
-        let initialFrame = NSRect(x: loc.x, y: loc.y, width: 220, height: max(CGFloat(currentFontSize) + 12, 34))
-        let textField = createConfiguredTextField(frame: initialFrame)
-        textField.placeholderString = "Type text..."
-
-        addSubview(textField)
-        window?.makeFirstResponder(textField)
-        self.activeInlineTextField = textField
-        self.activeEditingTextItem = nil
+    public override func mouseMoved(with event: NSEvent) {
+        updateCursor(at: convert(event.locationInWindow, from: nil))
     }
 
-    private func startInlineTextEditor(for item: AnnotationItem, at rect: CGRect) {
-        dismissInlineTextEditor()
-
-        let frame = NSRect(x: rect.origin.x, y: rect.origin.y, width: max(rect.width, 180), height: max(rect.height, 34))
-        let textField = createConfiguredTextField(frame: frame)
-        textField.stringValue = item.textContent ?? ""
-
-        addSubview(textField)
-        window?.makeFirstResponder(textField)
-        self.activeInlineTextField = textField
-        self.activeEditingTextItem = item
+    public override func cursorUpdate(with event: NSEvent) {
+        updateCursor(at: convert(event.locationInWindow, from: nil))
     }
 
-    private func createConfiguredTextField(frame: NSRect) -> NSTextField {
-        let tf = NSTextField(frame: frame)
-        tf.font = NSFont.systemFont(ofSize: CGFloat(currentFontSize), weight: .semibold)
-        let cgColor = CGColor(
-            red: CGFloat(currentStrokeColor.red),
-            green: CGFloat(currentStrokeColor.green),
-            blue: CGFloat(currentStrokeColor.blue),
-            alpha: 1.0
-        )
-        tf.textColor = NSColor(cgColor: cgColor) ?? .white
-        tf.isBezeled = true
-        tf.bezelStyle = .roundedBezel
-        tf.backgroundColor = NSColor.black.withAlphaComponent(0.65)
-        tf.focusRingType = .exterior
-        tf.delegate = self
-        return tf
+    private func beginInteraction(_ newInteraction: Interaction) {
+        interaction = newInteraction
+        interactionRegisteredUndo = false
+        needsDisplay = true
     }
 
-    private func commitInlineTextEditor() {
-        guard let tf = activeInlineTextField else { return }
-        let text = tf.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+    /// Applies a live gesture mutation, registering exactly one undo step on the first real change
+    private func applyInteractive(_ item: AnnotationItem) {
+        guard let current = document.items.first(where: { $0.id == item.id }), current != item else { return }
+        if !interactionRegisteredUndo {
+            undoRedoManager.beginInteractiveChange()
+            interactionRegisteredUndo = true
+        }
+        undoRedoManager.updateItem(item, registerUndo: false)
+    }
 
-        if !text.isEmpty {
-            let font = NSFont.systemFont(ofSize: CGFloat(currentFontSize), weight: .semibold)
-            let textSize = (text as NSString).size(withAttributes: [.font: font])
-            let boxW = max(textSize.width + 12, 40)
-            let boxH = max(textSize.height + 6, 24)
+    private func cancelInteraction() {
+        guard let active = interaction else { return }
+        interaction = nil
+        freehandPoints.removeAll()
+        switch active {
+        case .moving(let original, _), .resizing(let original, _, _), .arrowEndpoint(let original, _):
+            if interactionRegisteredUndo {
+                undoRedoManager.updateItem(original, registerUndo: false)
+            }
+        case .drawing:
+            break
+        }
+        interactionRegisteredUndo = false
+        needsDisplay = true
+    }
 
-            let normOrigin = normalize(point: CGPoint(x: tf.frame.minX, y: tf.frame.minY))
-            let iRect = imageRect
-            let normW = boxW / iRect.width
-            let normH = boxH / iRect.height
-            let normRect = NormalizedRect(x: normOrigin.x, y: normOrigin.y, width: normW, height: normH)
+    // MARK: - Geometry Helpers
 
-            if let existing = activeEditingTextItem {
-                var updated = existing
-                updated.textContent = text
-                updated.bounds = normRect
-                undoRedoManager.updateItem(updated)
+    private func clampToImage(_ p: CGPoint) -> CGPoint {
+        let r = imageRect
+        return CGPoint(x: min(max(p.x, r.minX), r.maxX), y: min(max(p.y, r.minY), r.maxY))
+    }
+
+    /// Shift-constrains a drag: squares/circles for shapes, 45° steps for arrows
+    private func constrained(from start: CGPoint, to end: CGPoint, tool: EditorTool) -> CGPoint {
+        let dx = end.x - start.x
+        let dy = end.y - start.y
+        if tool == .arrow {
+            let angle = (atan2(dy, dx) / (.pi / 4)).rounded() * (.pi / 4)
+            let length = hypot(dx, dy)
+            return clampToImage(CGPoint(x: start.x + cos(angle) * length, y: start.y + sin(angle) * length))
+        }
+        guard tool != .freehand else { return end }
+        let side = max(abs(dx), abs(dy))
+        return clampToImage(CGPoint(x: start.x + (dx < 0 ? -side : side), y: start.y + (dy < 0 ? -side : side)))
+    }
+
+    /// Translates an item by a normalized delta, clamped so the whole item stays inside the image
+    static func translated(_ item: AnnotationItem, dx: Double, dy: Double) -> AnnotationItem {
+        let b = item.bounds
+        let clampedDX = min(max(dx, -b.origin.x), 1.0 - (b.origin.x + b.width))
+        let clampedDY = min(max(dy, -b.origin.y), 1.0 - (b.origin.y + b.height))
+        var moved = item
+        moved.bounds = NormalizedRect(x: b.origin.x + clampedDX, y: b.origin.y + clampedDY, width: b.width, height: b.height)
+        moved.points = item.points?.map { NormalizedPoint(x: $0.x + clampedDX, y: $0.y + clampedDY) }
+        return moved
+    }
+
+    static func boundingRect(of points: [NormalizedPoint]) -> NormalizedRect {
+        guard let first = points.first else { return NormalizedRect(x: 0, y: 0, width: 0, height: 0) }
+        var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+        for p in points.dropFirst() {
+            minX = min(minX, p.x); maxX = max(maxX, p.x)
+            minY = min(minY, p.y); maxY = max(maxY, p.y)
+        }
+        return NormalizedRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+    }
+
+    private func resized(_ original: AnnotationItem, handle: Handle, to loc: CGPoint, keepAspect: Bool) -> AnnotationItem {
+        let old = renderer.rect(for: original.bounds)
+        var minX = old.minX, maxX = old.maxX, minY = old.minY, maxY = old.maxY
+
+        switch handle {
+        case .topLeft: minX = loc.x; minY = loc.y
+        case .top: minY = loc.y
+        case .topRight: maxX = loc.x; minY = loc.y
+        case .right: maxX = loc.x
+        case .bottomRight: maxX = loc.x; maxY = loc.y
+        case .bottom: maxY = loc.y
+        case .bottomLeft: minX = loc.x; maxY = loc.y
+        case .left: minX = loc.x
+        }
+
+        var newRect = CGRect(x: min(minX, maxX), y: min(minY, maxY), width: abs(maxX - minX), height: abs(maxY - minY))
+        if keepAspect, old.width > 0, old.height > 0, [.topLeft, .topRight, .bottomLeft, .bottomRight].contains(handle) {
+            let ratio = old.width / old.height
+            if newRect.width / max(newRect.height, 0.001) > ratio {
+                newRect.size.width = newRect.height * ratio
             } else {
-                let newItem = AnnotationItem(
-                    type: .text,
-                    bounds: normRect,
-                    strokeColor: currentStrokeColor,
-                    textContent: text,
-                    fontSize: currentFontSize
-                )
-                undoRedoManager.addItem(newItem)
-                selectedItemId = newItem.id
+                newRect.size.height = newRect.width / ratio
+            }
+            if handle == .topLeft || handle == .bottomLeft { newRect.origin.x = old.maxX - newRect.width }
+            if handle == .topLeft || handle == .topRight { newRect.origin.y = old.maxY - newRect.height }
+        }
+
+        let normOrigin = normalize(point: newRect.origin)
+        let normMax = normalize(point: CGPoint(x: newRect.maxX, y: newRect.maxY))
+        let newBounds = NormalizedRect(x: normOrigin.x, y: normOrigin.y, width: normMax.x - normOrigin.x, height: normMax.y - normOrigin.y)
+
+        var updated = original
+        updated.bounds = newBounds
+
+        // Freehand strokes scale with their bounding box
+        if let pts = original.points, original.type == .freehand {
+            let ob = original.bounds
+            updated.points = pts.map { p in
+                let fx = ob.width > 0 ? (p.x - ob.origin.x) / ob.width : 0
+                let fy = ob.height > 0 ? (p.y - ob.origin.y) / ob.height : 0
+                return NormalizedPoint(x: newBounds.origin.x + fx * newBounds.width, y: newBounds.origin.y + fy * newBounds.height)
             }
         }
-
-        dismissInlineTextEditor()
-        needsDisplay = true
+        return updated
     }
 
-    private func dismissInlineTextEditor() {
-        if let tf = activeInlineTextField {
-            tf.removeFromSuperview()
-            activeInlineTextField = nil
-            activeEditingTextItem = nil
-            window?.makeFirstResponder(self)
-        }
-    }
+    // MARK: - Hit Testing
 
-    public func controlTextDidEndEditing(_ obj: Notification) {
-        commitInlineTextEditor()
-    }
+    /// Finds the top-most annotation under `point`. Outlined shapes only hit near their stroke
+    /// unless `forSelectTool` is set, so drawing tools can still start new shapes inside them.
+    private func findItem(at point: CGPoint, forSelectTool: Bool) -> AnnotationItem? {
+        let r = renderer
+        for item in document.items.reversed() {
+            let rect = r.rect(for: item.bounds)
+            let tolerance = max(CGFloat(item.strokeWidth) * r.scale / 2, 0) + 6
 
-    // MARK: - Annotation Commit
-
-    private func commitAnnotation(normRect: NormalizedRect, startPoint: NormalizedPoint, endPoint: NormalizedPoint) {
-        let itemType: AnnotationType
-        var blurRad: Double? = nil
-        var pointsToStore: [NormalizedPoint]? = nil
-
-        switch currentTool {
-        case .arrow:
-            itemType = .arrow
-            pointsToStore = [startPoint, endPoint]
-        case .rectangle:
-            itemType = .rectangle
-        case .ellipse:
-            itemType = .ellipse
-        case .highlight:
-            itemType = .highlight
-        case .blur:
-            itemType = .blur
-            blurRad = currentBlurRadius
-        case .pixelate:
-            itemType = .pixelation
-            blurRad = currentBlurRadius
-        case .freehand:
-            itemType = .freehand
-            pointsToStore = freehandPoints
-        default:
-            return
-        }
-
-        let item = AnnotationItem(
-            type: itemType,
-            bounds: normRect,
-            strokeColor: currentStrokeColor,
-            strokeWidth: currentStrokeWidth,
-            points: pointsToStore,
-            blurRadius: blurRad
-        )
-
-        undoRedoManager.addItem(item)
-        selectedItemId = item.id
-
-        if item.type == .blur || item.type == .pixelation {
-            updateProcessedDisplayImage()
-        }
-    }
-
-    private func findItem(at point: CGPoint) -> AnnotationItem? {
-        for item in undoRedoManager.document.items.reversed() {
-            if item.type == .arrow, let pts = item.points, pts.count >= 2 {
-                let p0 = denormalize(point: pts[0])
-                let p1 = denormalize(point: pts[1])
-                let minX = min(p0.x, p1.x) - 10
-                let maxX = max(p0.x, p1.x) + 10
-                let minY = min(p0.y, p1.y) - 10
-                let maxY = max(p0.y, p1.y) + 10
-                let arrowBox = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
-                if arrowBox.contains(point) {
+            switch item.type {
+            case .arrow:
+                guard let pts = item.points, pts.count >= 2 else { continue }
+                if Self.distance(from: point, toSegment: r.point(for: pts[0]), r.point(for: pts[1])) <= tolerance {
                     return item
                 }
-            } else {
-                let rect = denormalize(rect: item.bounds)
-                if rect.insetBy(dx: -6, dy: -6).contains(point) {
+            case .freehand:
+                guard let pts = item.points?.map({ r.point(for: $0) }), pts.count > 1 else { continue }
+                for i in 1..<pts.count where Self.distance(from: point, toSegment: pts[i - 1], pts[i]) <= tolerance {
+                    return item
+                }
+            case .rectangle:
+                if forSelectTool ? rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point)
+                    : (rect.insetBy(dx: -tolerance, dy: -tolerance).contains(point) && !rect.insetBy(dx: tolerance, dy: tolerance).contains(point)) {
+                    return item
+                }
+            case .ellipse:
+                if Self.ellipseHit(point, in: rect, tolerance: tolerance, filled: forSelectTool) {
+                    return item
+                }
+            case .text, .highlight, .blur, .pixelation:
+                if rect.insetBy(dx: -4, dy: -4).contains(point) {
                     return item
                 }
             }
@@ -564,104 +869,500 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         return nil
     }
 
-    private func updateSelectedAnnotationStyle() {
-        guard let selectedId = selectedItemId,
-              let item = undoRedoManager.document.items.first(where: { $0.id == selectedId }) else { return }
-        var updated = item
-        updated.strokeColor = currentStrokeColor
-        updated.strokeWidth = currentStrokeWidth
-        undoRedoManager.updateItem(updated)
+    private static func distance(from p: CGPoint, toSegment a: CGPoint, _ b: CGPoint) -> CGFloat {
+        let dx = b.x - a.x, dy = b.y - a.y
+        let lengthSquared = dx * dx + dy * dy
+        guard lengthSquared > 0 else { return hypot(p.x - a.x, p.y - a.y) }
+        let t = max(0, min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / lengthSquared))
+        return hypot(p.x - (a.x + t * dx), p.y - (a.y + t * dy))
+    }
+
+    private static func ellipseHit(_ p: CGPoint, in rect: CGRect, tolerance: CGFloat, filled: Bool) -> Bool {
+        let rx = rect.width / 2, ry = rect.height / 2
+        guard rx > 0, ry > 0 else { return false }
+        let nx = (p.x - rect.midX), ny = (p.y - rect.midY)
+        let outer = pow(nx / (rx + tolerance), 2) + pow(ny / (ry + tolerance), 2)
+        guard outer <= 1 else { return false }
+        if filled { return true }
+        let innerRX = rx - tolerance, innerRY = ry - tolerance
+        guard innerRX > 0, innerRY > 0 else { return true }
+        return pow(nx / innerRX, 2) + pow(ny / innerRY, 2) >= 1
+    }
+
+    private func supportsResizeHandles(_ item: AnnotationItem) -> Bool {
+        [.rectangle, .ellipse, .highlight, .blur, .pixelation, .freehand].contains(item.type)
+    }
+
+    private func handlePoints(for rect: CGRect) -> [(Handle, CGPoint)] {
+        let r = rect.insetBy(dx: -4, dy: -4)
+        return [
+            (.topLeft, CGPoint(x: r.minX, y: r.minY)),
+            (.top, CGPoint(x: r.midX, y: r.minY)),
+            (.topRight, CGPoint(x: r.maxX, y: r.minY)),
+            (.right, CGPoint(x: r.maxX, y: r.midY)),
+            (.bottomRight, CGPoint(x: r.maxX, y: r.maxY)),
+            (.bottom, CGPoint(x: r.midX, y: r.maxY)),
+            (.bottomLeft, CGPoint(x: r.minX, y: r.maxY)),
+            (.left, CGPoint(x: r.minX, y: r.midY))
+        ]
+    }
+
+    /// The point on the item's (un-inset) bounds that a handle controls
+    private func edgePoint(of rect: CGRect, handle: Handle) -> CGPoint {
+        switch handle {
+        case .topLeft: return CGPoint(x: rect.minX, y: rect.minY)
+        case .top: return CGPoint(x: rect.midX, y: rect.minY)
+        case .topRight: return CGPoint(x: rect.maxX, y: rect.minY)
+        case .right: return CGPoint(x: rect.maxX, y: rect.midY)
+        case .bottomRight: return CGPoint(x: rect.maxX, y: rect.maxY)
+        case .bottom: return CGPoint(x: rect.midX, y: rect.maxY)
+        case .bottomLeft: return CGPoint(x: rect.minX, y: rect.maxY)
+        case .left: return CGPoint(x: rect.minX, y: rect.midY)
+        }
+    }
+
+    private func handle(of item: AnnotationItem, at point: CGPoint) -> Handle? {
+        guard supportsResizeHandles(item) else { return nil }
+        let hitRadius = Self.handleSize
+        for (handle, center) in handlePoints(for: renderer.rect(for: item.bounds))
+        where abs(point.x - center.x) <= hitRadius && abs(point.y - center.y) <= hitRadius {
+            return handle
+        }
+        return nil
+    }
+
+    private func arrowEndpointIndex(of item: AnnotationItem, at point: CGPoint) -> Int? {
+        guard let pts = item.points, pts.count >= 2 else { return nil }
+        for index in [1, 0] where hypot(point.x - renderer.point(for: pts[index]).x, point.y - renderer.point(for: pts[index]).y) <= Self.handleSize + 2 {
+            return index
+        }
+        return nil
+    }
+
+    // MARK: - Cursor
+
+    private func updateCursor(at loc: CGPoint) {
+        guard interaction == nil else { return }
+        if let item = selectedItem {
+            if item.type == .arrow, arrowEndpointIndex(of: item, at: loc) != nil {
+                NSCursor.crosshair.set(); return
+            }
+            if let handle = handle(of: item, at: loc) {
+                switch handle {
+                case .left, .right: NSCursor.resizeLeftRight.set()
+                case .top, .bottom: NSCursor.resizeUpDown.set()
+                default: NSCursor.crosshair.set()
+                }
+                return
+            }
+        }
+        if findItem(at: loc, forSelectTool: currentTool == .select) != nil {
+            NSCursor.openHand.set()
+            return
+        }
+        switch currentTool {
+        case .select: NSCursor.arrow.set()
+        case .text: (imageRect.contains(loc) ? NSCursor.iBeam : NSCursor.arrow).set()
+        default: (imageRect.contains(loc) ? NSCursor.crosshair : NSCursor.arrow).set()
+        }
+    }
+
+    // MARK: - Annotation Commit
+
+    private func commitDrawing(from start: CGPoint, to end: CGPoint) {
+        let normStart = normalize(point: start)
+        let normEnd = normalize(point: end)
+        let minDragPoints: CGFloat = 4
+
+        let itemType: AnnotationType
+        var points: [NormalizedPoint]?
+        var bounds = NormalizedRect(
+            x: min(normStart.x, normEnd.x),
+            y: min(normStart.y, normEnd.y),
+            width: abs(normEnd.x - normStart.x),
+            height: abs(normEnd.y - normStart.y)
+        )
+
+        switch currentTool {
+        case .freehand:
+            guard freehandPoints.count > 1 else { return }
+            itemType = .freehand
+            points = freehandPoints
+            bounds = Self.boundingRect(of: freehandPoints)
+        case .arrow:
+            guard hypot(end.x - start.x, end.y - start.y) >= minDragPoints * 2 else { return }
+            itemType = .arrow
+            points = [normStart, normEnd]
+        default:
+            guard abs(end.x - start.x) >= minDragPoints, abs(end.y - start.y) >= minDragPoints else { return }
+            switch currentTool {
+            case .rectangle: itemType = .rectangle
+            case .ellipse: itemType = .ellipse
+            case .highlight: itemType = .highlight
+            case .blur: itemType = .blur
+            case .pixelate: itemType = .pixelation
+            default: return
+            }
+        }
+
+        let isRedaction = itemType == .blur || itemType == .pixelation
+        let item = AnnotationItem(
+            type: itemType,
+            bounds: bounds,
+            strokeColor: isRedaction ? .black : state.color,
+            strokeWidth: state.strokeWidth,
+            points: points,
+            blurRadius: isRedaction ? state.blurRadius : nil
+        )
+        undoRedoManager.addItem(item)
+        selectedItemId = item.id
+    }
+
+    // MARK: - In-Place Text Editor
+
+    private func startNewInlineTextEditor(at loc: CGPoint) {
+        commitInlineTextEditor()
+        presentInlineTextField(text: "", origin: loc, color: state.color, fontSize: state.fontSize)
+        activeEditingTextItemId = nil
+    }
+
+    private func startInlineTextEditor(for item: AnnotationItem) {
+        commitInlineTextEditor()
+        selectedItemId = item.id
+        presentInlineTextField(
+            text: item.textContent ?? "",
+            origin: renderer.point(for: item.bounds.origin),
+            color: item.strokeColor,
+            fontSize: item.fontSize ?? state.fontSize
+        )
+        activeEditingTextItemId = item.id
         needsDisplay = true
     }
 
-    private func updateSelectedAnnotationText() {
-        guard let selectedId = selectedItemId,
-              let item = undoRedoManager.document.items.first(where: { $0.id == selectedId }),
-              item.type == .text else { return }
-        var updated = item
-        updated.fontSize = currentFontSize
-        undoRedoManager.updateItem(updated)
+    private func presentInlineTextField(text: String, origin: CGPoint, color: AnnotationColor, fontSize: Double) {
+        inlineTextOrigin = CGPoint(
+            x: (origin.x - imageRect.minX) / max(imageRect.width, 1),
+            y: (origin.y - imageRect.minY) / max(imageRect.height, 1)
+        )
+
+        let tf = NSTextField(frame: .zero)
+        tf.stringValue = text
+        tf.placeholderString = "Type text…"
+        tf.isBezeled = false
+        tf.isBordered = false
+        tf.drawsBackground = true
+        tf.backgroundColor = NSColor.black.withAlphaComponent(0.35)
+        tf.focusRingType = .none
+        tf.wantsLayer = true
+        tf.layer?.cornerRadius = 4
+        tf.layer?.borderWidth = 1
+        tf.layer?.borderColor = Self.selectionColor.cgColor
+        tf.cell?.isScrollable = true
+        tf.cell?.wraps = false
+        tf.delegate = self
+
+        addSubview(tf)
+        activeInlineTextField = tf
+        updateInlineTextFieldStyle(color: color, fontSize: fontSize)
+        window?.makeFirstResponder(tf)
+        tf.currentEditor()?.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+    }
+
+    private func updateInlineTextFieldStyle(color: AnnotationColor? = nil, fontSize: Double? = nil) {
+        guard let tf = activeInlineTextField else { return }
+        let c = color ?? inlineTextColor
+        let points = fontSize ?? inlineTextFontSize
+        inlineTextColor = c
+        inlineTextFontSize = points
+        let size = CGFloat(points) * displayScale
+        tf.font = AnnotationRenderer.font(ofSize: size)
+        tf.textColor = NSColor(srgbRed: c.red, green: c.green, blue: c.blue, alpha: 1)
+        repositionInlineTextField()
+    }
+
+    private func repositionInlineTextField() {
+        guard let tf = activeInlineTextField else { return }
+        let iRect = imageRect
+        let origin = CGPoint(x: iRect.minX + inlineTextOrigin.x * iRect.width, y: iRect.minY + inlineTextOrigin.y * iRect.height)
+        let font = tf.font ?? AnnotationRenderer.font(ofSize: 22)
+        let content = tf.stringValue.isEmpty ? (tf.placeholderString ?? " ") : tf.stringValue
+        let size = (content as NSString).size(withAttributes: [.font: font])
+        let width = min(max(size.width + 24, 120), max(iRect.maxX - origin.x, 120))
+        tf.frame = NSRect(x: origin.x, y: origin.y, width: width, height: ceil(font.ascender - font.descender + font.leading) + 6)
+    }
+
+    public func controlTextDidChange(_ obj: Notification) {
+        repositionInlineTextField()
+    }
+
+    public func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        switch commandSelector {
+        case #selector(NSResponder.cancelOperation(_:)):
+            dismissInlineTextEditor()
+            return true
+        case #selector(NSResponder.insertNewline(_:)):
+            commitInlineTextEditor()
+            return true
+        default:
+            return false
+        }
+    }
+
+    public func controlTextDidEndEditing(_ obj: Notification) {
+        commitInlineTextEditor()
+    }
+
+    private func textBounds(for text: String, origin: CGPoint, fontSize: Double) -> NormalizedRect {
+        let iRect = imageRect
+        let size = AnnotationRenderer.textSize(text, fontSize: CGFloat(fontSize) * displayScale)
+        let normOrigin = normalize(point: origin)
+        return NormalizedRect(
+            x: normOrigin.x,
+            y: normOrigin.y,
+            width: min(size.width / max(iRect.width, 1), 1.0 - normOrigin.x),
+            height: min(size.height / max(iRect.height, 1), 1.0 - normOrigin.y)
+        )
+    }
+
+    private func commitInlineTextEditor() {
+        guard let tf = activeInlineTextField else { return }
+        // Detach first: removing the field ends editing, which re-enters this method via the delegate
+        activeInlineTextField = nil
+        let editingId = activeEditingTextItemId
+        activeEditingTextItemId = nil
+        let text = tf.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let origin = CGPoint(x: tf.frame.minX, y: tf.frame.minY)
+        tf.delegate = nil
+        tf.removeFromSuperview()
+        window?.makeFirstResponder(self)
+
+        if let id = editingId, let existing = document.items.first(where: { $0.id == id }) {
+            if text.isEmpty {
+                undoRedoManager.removeItem(id: id)
+            } else {
+                var updated = existing
+                updated.textContent = text
+                updated.strokeColor = inlineTextColor
+                updated.fontSize = inlineTextFontSize
+                updated.bounds = textBounds(for: text, origin: origin, fontSize: inlineTextFontSize)
+                undoRedoManager.updateItem(updated)
+            }
+        } else if !text.isEmpty {
+            let item = AnnotationItem(
+                type: .text,
+                bounds: textBounds(for: text, origin: origin, fontSize: inlineTextFontSize),
+                strokeColor: inlineTextColor,
+                textContent: text,
+                fontSize: inlineTextFontSize
+            )
+            undoRedoManager.addItem(item)
+            selectedItemId = item.id
+        }
         needsDisplay = true
     }
 
-    private func updateSelectedAnnotationBlurRadius() {
-        guard let selectedId = selectedItemId,
-              let item = undoRedoManager.document.items.first(where: { $0.id == selectedId }),
-              (item.type == .blur || item.type == .pixelation) else { return }
-        var updated = item
-        updated.blurRadius = currentBlurRadius
-        undoRedoManager.updateItem(updated)
-        updateProcessedDisplayImage()
+    private func dismissInlineTextEditor() {
+        guard let tf = activeInlineTextField else { return }
+        activeInlineTextField = nil
+        activeEditingTextItemId = nil
+        tf.delegate = nil
+        tf.removeFromSuperview()
+        window?.makeFirstResponder(self)
         needsDisplay = true
     }
 
-    // MARK: - Drawing (Studio Backdrop, Floating Card Shadow, and Vector Layers)
+    // MARK: - Drawing
 
     public override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        // 1. Draw Sleek Dark Studio Canvas Backdrop
-        NSColor(calibratedRed: 0.11, green: 0.11, blue: 0.13, alpha: 1.0).setFill()
-        dirtyRect.fill()
+        if presentation == .editor {
+            Self.backdropColor.setFill()
+            dirtyRect.fill()
+        }
 
         let iRect = imageRect
         guard iRect.width > 0, iRect.height > 0 else { return }
 
-        // 2. Draw Floating Card Ambient Drop Shadow
-        context.saveGState()
-        let shadowColor = NSColor.black.withAlphaComponent(0.40).cgColor
-        context.setShadow(offset: CGSize(width: 0, height: -6), blur: 18, color: shadowColor)
-        let roundedCard = NSBezierPath(roundedRect: iRect, xRadius: 8, yRadius: 8)
-        NSColor.black.setFill()
-        roundedCard.fill()
-        context.restoreGState()
+        drawStyledCard(in: context, imageRect: iRect)
 
-        // 3. Draw Screenshot inside rounded border
-        context.saveGState()
-        roundedCard.addClip()
-
-        if let displayImg = processedDisplayImage ?? baseCGImage {
-            let nsImage = NSImage(cgImage: displayImg, size: iRect.size)
-            nsImage.draw(in: iRect)
-        }
-        context.restoreGState()
-
-        // Crisp 1px card border
-        NSColor(white: 1.0, alpha: 0.12).setStroke()
-        roundedCard.lineWidth = 1.0
-        roundedCard.stroke()
-
-        // 4. Draw committed annotations
-        for item in undoRedoManager.document.items {
-            drawItem(item, in: context)
+        let r = renderer
+        for item in document.items where item.id != activeEditingTextItemId {
+            r.draw(item, in: context)
         }
 
-        // 5. Draw active in-progress shape
-        if isDrawing, let start = startPoint, let current = currentDragPoint {
+        if case .drawing(let start, let current)? = interaction {
             drawInProgressItem(from: start, to: current, in: context)
         }
 
-        // 6. Draw Toast HUD if active
+        if let item = selectedItem, activeInlineTextField == nil || activeEditingTextItemId != item.id {
+            drawSelection(for: item, in: context)
+        }
+
         if let toast = toastMessage {
             drawToastOverlay(toast, in: context)
         }
     }
 
+    /// Draws backdrop, shadow, rounded clipping and the (live-redacted) screenshot
+    private func drawStyledCard(in context: CGContext, imageRect iRect: CGRect) {
+        let doc = document
+        let scale = displayScale
+        let outer = styledRect
+
+        if doc.hasStyling {
+            if let preset = BackgroundPresets.preset(id: doc.backgroundPresetID) {
+                ImageComposer.fill(preset: preset, in: context, rect: outer, flipped: true)
+            } else if let color = doc.backgroundColor {
+                context.setFillColor(CGColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha))
+                context.fill(outer)
+            } else if doc.padding > 0 {
+                Self.drawCheckerboard(in: outer, context: context)
+            }
+        }
+
+        let isEditor = presentation == .editor
+        let corner = doc.hasStyling ? CGFloat(doc.cornerRadius) * scale : (isEditor ? 6 : 0)
+        let cardPath = CGPath(roundedRect: iRect, cornerWidth: min(corner, iRect.width / 2), cornerHeight: min(corner, iRect.height / 2), transform: nil)
+
+        // Shadow: the user's styled shadow, or a subtle studio shadow when unstyled
+        let shadowBlur = doc.hasStyling ? CGFloat(doc.shadowRadius) * scale : (isEditor ? 18 : 0)
+        if shadowBlur > 0 {
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: -shadowBlur * 0.35), blur: shadowBlur, color: NSColor.black.withAlphaComponent(0.45).cgColor)
+            context.addPath(cardPath)
+            context.setFillColor(NSColor.black.cgColor)
+            context.fillPath()
+            context.restoreGState()
+        }
+
+        context.saveGState()
+        context.addPath(cardPath)
+        context.clip()
+        if let img = previewImage ?? previewBaseImage ?? baseCGImage {
+            context.interpolationQuality = .high
+            // CGContext draws images y-up; flip locally inside the image rect
+            context.translateBy(x: iRect.minX, y: iRect.maxY)
+            context.scaleBy(x: 1, y: -1)
+            context.draw(img, in: CGRect(origin: .zero, size: iRect.size))
+        }
+        context.restoreGState()
+
+        if !doc.hasStyling && isEditor {
+            context.addPath(cardPath)
+            context.setStrokeColor(NSColor(white: 1.0, alpha: 0.12).cgColor)
+            context.setLineWidth(1)
+            context.strokePath()
+        }
+    }
+
+    private static func drawCheckerboard(in rect: CGRect, context: CGContext) {
+        context.saveGState()
+        context.clip(to: rect)
+        context.setFillColor(NSColor(white: 0.30, alpha: 1).cgColor)
+        context.fill(rect)
+        context.setFillColor(NSColor(white: 0.22, alpha: 1).cgColor)
+        let size: CGFloat = 10
+        var y = rect.minY
+        var row = 0
+        while y < rect.maxY {
+            var x = rect.minX + (row % 2 == 0 ? 0 : size)
+            while x < rect.maxX {
+                context.fill(CGRect(x: x, y: y, width: size, height: size))
+                x += size * 2
+            }
+            y += size
+            row += 1
+        }
+        context.restoreGState()
+    }
+
+    private func drawInProgressItem(from start: CGPoint, to current: CGPoint, in context: CGContext) {
+        let rect = CGRect(x: min(start.x, current.x), y: min(start.y, current.y), width: abs(current.x - start.x), height: abs(current.y - start.y))
+
+        switch currentTool {
+        case .blur, .pixelate:
+            context.saveGState()
+            context.setFillColor(NSColor.black.withAlphaComponent(0.35).cgColor)
+            context.fill(rect)
+            context.setStrokeColor(NSColor.white.cgColor)
+            context.setLineWidth(1.0)
+            context.setLineDash(phase: 0, lengths: [4, 4])
+            context.stroke(rect)
+            context.restoreGState()
+            return
+        default:
+            break
+        }
+
+        let type: AnnotationType
+        var points: [NormalizedPoint]?
+        switch currentTool {
+        case .rectangle: type = .rectangle
+        case .ellipse: type = .ellipse
+        case .highlight: type = .highlight
+        case .arrow:
+            type = .arrow
+            points = [normalize(point: start), normalize(point: current)]
+        case .freehand:
+            type = .freehand
+            points = freehandPoints
+        default: return
+        }
+
+        let normOrigin = normalize(point: rect.origin)
+        let normMax = normalize(point: CGPoint(x: rect.maxX, y: rect.maxY))
+        let preview = AnnotationItem(
+            type: type,
+            bounds: NormalizedRect(x: normOrigin.x, y: normOrigin.y, width: normMax.x - normOrigin.x, height: normMax.y - normOrigin.y),
+            strokeColor: state.color,
+            strokeWidth: state.strokeWidth,
+            points: points
+        )
+        renderer.draw(preview, in: context)
+    }
+
+    private func drawSelection(for item: AnnotationItem, in context: CGContext) {
+        let r = renderer
+        context.saveGState()
+        defer { context.restoreGState() }
+
+        context.setStrokeColor(Self.selectionColor.cgColor)
+        context.setFillColor(NSColor.white.cgColor)
+        context.setLineWidth(1.5)
+
+        if item.type == .arrow, let pts = item.points, pts.count >= 2 {
+            for p in pts.prefix(2) {
+                let c = r.point(for: p)
+                let handleRect = CGRect(x: c.x - 5, y: c.y - 5, width: 10, height: 10)
+                context.fillEllipse(in: handleRect)
+                context.strokeEllipse(in: handleRect)
+            }
+            return
+        }
+
+        let rect = r.rect(for: item.bounds).insetBy(dx: -4, dy: -4)
+        context.setLineDash(phase: 0, lengths: [4, 3])
+        context.stroke(rect)
+        context.setLineDash(phase: 0, lengths: [])
+
+        guard supportsResizeHandles(item) else { return }
+        let s = Self.handleSize
+        for (_, c) in handlePoints(for: r.rect(for: item.bounds)) {
+            let handleRect = CGRect(x: c.x - s / 2, y: c.y - s / 2, width: s, height: s)
+            context.fill(handleRect)
+            context.stroke(handleRect)
+        }
+    }
+
     private func drawToastOverlay(_ text: String, in context: CGContext) {
-        let font = NSFont.systemFont(ofSize: 13, weight: .semibold)
         let attrs: [NSAttributedString.Key: Any] = [
-            .font: font,
+            .font: NSFont.systemFont(ofSize: 13, weight: .semibold),
             .foregroundColor: NSColor.white
         ]
         let textSize = (text as NSString).size(withAttributes: attrs)
-
-        let toastW = textSize.width + 32
-        let toastH: CGFloat = 36
-        let toastX = bounds.midX - toastW / 2
-        let toastY = bounds.maxY - 56
-
-        let toastRect = CGRect(x: toastX, y: toastY, width: toastW, height: toastH)
+        let toastRect = CGRect(x: bounds.midX - (textSize.width + 32) / 2, y: bounds.maxY - 56, width: textSize.width + 32, height: 36)
         let toastPath = NSBezierPath(roundedRect: toastRect, xRadius: 18, yRadius: 18)
 
         context.saveGState()
@@ -670,235 +1371,18 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate {
         toastPath.fill()
         context.restoreGState()
 
-        // Subtle border
         NSColor(white: 1.0, alpha: 0.20).setStroke()
         toastPath.lineWidth = 1.0
         toastPath.stroke()
 
-        let textPoint = CGPoint(x: toastX + 16, y: toastY + (toastH - textSize.height) / 2)
-        (text as NSString).draw(at: textPoint, withAttributes: attrs)
-    }
-
-    private func drawItem(_ item: AnnotationItem, in context: CGContext) {
-        let rect = denormalize(rect: item.bounds)
-        context.saveGState()
-
-        let strokeCG = CGColor(
-            red: CGFloat(item.strokeColor.red),
-            green: CGFloat(item.strokeColor.green),
-            blue: CGFloat(item.strokeColor.blue),
-            alpha: CGFloat(item.strokeColor.alpha)
-        )
-        context.setStrokeColor(strokeCG)
-        context.setLineWidth(CGFloat(item.strokeWidth))
-        context.setLineCap(.round)
-        context.setLineJoin(.round)
-
-        switch item.type {
-        case .rectangle:
-            context.stroke(rect)
-        case .ellipse:
-            context.strokeEllipse(in: rect)
-        case .arrow:
-            if let pts = item.points, pts.count >= 2 {
-                drawDynamicArrow(from: denormalize(point: pts[0]), to: denormalize(point: pts[1]), strokeColor: strokeCG, lineWidth: CGFloat(item.strokeWidth), context: context)
-            } else {
-                drawDynamicArrow(from: CGPoint(x: rect.minX, y: rect.minY), to: CGPoint(x: rect.maxX, y: rect.maxY), strokeColor: strokeCG, lineWidth: CGFloat(item.strokeWidth), context: context)
-            }
-        case .highlight:
-            let highlightColor = CGColor(
-                red: CGFloat(item.strokeColor.red),
-                green: CGFloat(item.strokeColor.green),
-                blue: CGFloat(item.strokeColor.blue),
-                alpha: 0.35
-            )
-            context.setFillColor(highlightColor)
-            context.fill(rect)
-        case .blur, .pixelation:
-            // Handled via live image processing; draw border when selected
-            if selectedItemId == item.id {
-                context.setStrokeColor(NSColor.systemBlue.cgColor)
-                context.setLineWidth(1.5)
-                context.stroke(rect)
-            }
-        case .freehand:
-            if let points = item.points, points.count > 1 {
-                let p0 = denormalize(point: points[0])
-                context.move(to: p0)
-                for i in 1..<points.count {
-                    context.addLine(to: denormalize(point: points[i]))
-                }
-                context.strokePath()
-            }
-        case .text:
-            if let text = item.textContent {
-                let attrs: [NSAttributedString.Key: Any] = [
-                    .font: NSFont.systemFont(ofSize: CGFloat(item.fontSize ?? 22.0), weight: .semibold),
-                    .foregroundColor: NSColor(cgColor: strokeCG) ?? .red
-                ]
-                (text as NSString).draw(in: rect, withAttributes: attrs)
-            }
-        }
-
-        // Draw selection handles if this item is selected
-        if selectedItemId == item.id {
-            drawSelectionBorder(around: rect, in: context)
-        }
-
-        context.restoreGState()
-    }
-
-    private func drawInProgressItem(from start: CGPoint, to current: CGPoint, in context: CGContext) {
-        let rect = CGRect(
-            x: min(start.x, current.x),
-            y: min(start.y, current.y),
-            width: abs(current.x - start.x),
-            height: abs(current.y - start.y)
-        )
-
-        context.saveGState()
-        let strokeCG = CGColor(
-            red: CGFloat(currentStrokeColor.red),
-            green: CGFloat(currentStrokeColor.green),
-            blue: CGFloat(currentStrokeColor.blue),
-            alpha: CGFloat(currentStrokeColor.alpha)
-        )
-        context.setStrokeColor(strokeCG)
-        context.setLineWidth(CGFloat(currentStrokeWidth))
-        context.setLineCap(.round)
-
-        switch currentTool {
-        case .rectangle:
-            context.stroke(rect)
-        case .ellipse:
-            context.strokeEllipse(in: rect)
-        case .arrow:
-            drawDynamicArrow(from: start, to: current, strokeColor: strokeCG, lineWidth: CGFloat(currentStrokeWidth), context: context)
-        case .highlight:
-            let highlightColor = CGColor(
-                red: CGFloat(currentStrokeColor.red),
-                green: CGFloat(currentStrokeColor.green),
-                blue: CGFloat(currentStrokeColor.blue),
-                alpha: 0.35
-            )
-            context.setFillColor(highlightColor)
-            context.fill(rect)
-        case .blur, .pixelate:
-            context.setFillColor(NSColor.black.withAlphaComponent(0.35).cgColor)
-            context.fill(rect)
-            context.setStrokeColor(NSColor.white.cgColor)
-            context.setLineWidth(1.0)
-            context.setLineDash(phase: 0, lengths: [4, 4])
-            context.stroke(rect)
-        case .freehand:
-            if freehandPoints.count > 1 {
-                let p0 = denormalize(point: freehandPoints[0])
-                context.move(to: p0)
-                for pt in freehandPoints.dropFirst() {
-                    context.addLine(to: denormalize(point: pt))
-                }
-                context.strokePath()
-            }
-        default:
-            break
-        }
-
-        context.restoreGState()
-    }
-
-    private func drawSelectionBorder(around rect: CGRect, in context: CGContext) {
-        context.setStrokeColor(NSColor.systemBlue.cgColor)
-        context.setLineWidth(1.5)
-        context.setLineDash(phase: 0, lengths: [4, 3])
-        let insetRect = rect.insetBy(dx: -4, dy: -4)
-        context.stroke(insetRect)
-
-        // Draw 4 corner handles
-        context.setLineDash(phase: 0, lengths: [])
-        context.setFillColor(NSColor.white.cgColor)
-        let handleSize: CGFloat = 8.0
-        let corners = [
-            CGPoint(x: insetRect.minX - handleSize/2, y: insetRect.minY - handleSize/2),
-            CGPoint(x: insetRect.maxX - handleSize/2, y: insetRect.minY - handleSize/2),
-            CGPoint(x: insetRect.minX - handleSize/2, y: insetRect.maxY - handleSize/2),
-            CGPoint(x: insetRect.maxX - handleSize/2, y: insetRect.maxY - handleSize/2)
-        ]
-        for c in corners {
-            let handleRect = CGRect(origin: c, size: CGSize(width: handleSize, height: handleSize))
-            context.fill(handleRect)
-            context.stroke(handleRect)
-        }
-    }
-
-    private func drawDynamicArrow(from start: CGPoint, to end: CGPoint, strokeColor: CGColor, lineWidth: CGFloat, context: CGContext) {
-        let length = hypot(end.x - start.x, end.y - start.y)
-        guard length > 2 else { return }
-
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let headLength: CGFloat = max(lineWidth * 3.5, 14.0)
-        let headAngle: CGFloat = .pi / 6.0
-
-        let bodyEnd = CGPoint(
-            x: end.x - (headLength * 0.6) * cos(angle),
-            y: end.y - (headLength * 0.6) * sin(angle)
-        )
-
-        context.move(to: start)
-        context.addLine(to: bodyEnd)
-        context.strokePath()
-
-        let p1 = CGPoint(
-            x: end.x - headLength * cos(angle - headAngle),
-            y: end.y - headLength * sin(angle - headAngle)
-        )
-        let p2 = CGPoint(
-            x: end.x - headLength * cos(angle + headAngle),
-            y: end.y - headLength * sin(angle + headAngle)
-        )
-
-        context.setFillColor(strokeColor)
-        context.move(to: end)
-        context.addLine(to: p1)
-        context.addLine(to: p2)
-        context.closePath()
-        context.fillPath()
-    }
-
-    private func updateCursorForCurrentTool() {
-        switch currentTool {
-        case .select: NSCursor.arrow.set()
-        case .text: NSCursor.iBeam.set()
-        default: NSCursor.crosshair.set()
-        }
+        (text as NSString).draw(at: CGPoint(x: toastRect.minX + 16, y: toastRect.minY + (toastRect.height - textSize.height) / 2), withAttributes: attrs)
     }
 
     // MARK: - Coordinate Transformations
 
     private func normalize(point: CGPoint) -> NormalizedPoint {
         let iRect = imageRect
-        guard iRect.width > 0, iRect.height > 0 else {
-            return NormalizedPoint(x: 0, y: 0)
-        }
-        let nx = (point.x - iRect.origin.x) / iRect.width
-        let ny = (point.y - iRect.origin.y) / iRect.height
-        return NormalizedPoint(x: nx, y: ny)
-    }
-
-    private func denormalize(point: NormalizedPoint) -> CGPoint {
-        let iRect = imageRect
-        return CGPoint(
-            x: iRect.origin.x + point.x * iRect.width,
-            y: iRect.origin.y + point.y * iRect.height
-        )
-    }
-
-    private func denormalize(rect: NormalizedRect) -> CGRect {
-        let iRect = imageRect
-        return CGRect(
-            x: iRect.origin.x + rect.origin.x * iRect.width,
-            y: iRect.origin.y + rect.origin.y * iRect.height,
-            width: rect.width * iRect.width,
-            height: rect.height * iRect.height
-        )
+        guard iRect.width > 0, iRect.height > 0 else { return NormalizedPoint(x: 0, y: 0) }
+        return NormalizedPoint(x: (point.x - iRect.minX) / iRect.width, y: (point.y - iRect.minY) / iRect.height)
     }
 }

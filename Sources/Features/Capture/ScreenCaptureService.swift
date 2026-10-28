@@ -25,8 +25,10 @@ public actor ScreenCaptureService {
 
                 let filter = SCContentFilter(display: targetDisplay, excludingWindows: [])
                 let configuration = SCStreamConfiguration()
-                configuration.width = targetDisplay.width
-                configuration.height = targetDisplay.height
+                // SCDisplay dimensions are in points; capture at native pixel resolution
+                let pixelScale = CGFloat(filter.pointPixelScale)
+                configuration.width = Int(CGFloat(targetDisplay.width) * pixelScale)
+                configuration.height = Int(CGFloat(targetDisplay.height) * pixelScale)
                 configuration.showsCursor = false
                 configuration.scalesToFit = false
 
@@ -55,8 +57,10 @@ public actor ScreenCaptureService {
                 if let targetWindow = content.windows.first(where: { $0.windowID == windowId }) {
                     let filter = SCContentFilter(desktopIndependentWindow: targetWindow)
                     let configuration = SCStreamConfiguration()
-                    configuration.width = Int(targetWindow.frame.width)
-                    configuration.height = Int(targetWindow.frame.height)
+                    let pixelScale = CGFloat(filter.pointPixelScale)
+                    configuration.width = Int(targetWindow.frame.width * pixelScale)
+                    configuration.height = Int(targetWindow.frame.height * pixelScale)
+                    configuration.ignoreShadowsSingleWindow = true
                     configuration.showsCursor = false
 
                     let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: configuration)
@@ -100,8 +104,15 @@ public actor ScreenCaptureService {
         let displayId = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? CGMainDisplayID()
         let fullImage = try await captureDisplay(displayId: displayId)
 
-        // Crop to the target region
-        guard let cropped = fullImage.cropping(to: pixelRect) else {
+        // Crop to the target region, using the actual capture scale in case it differs from the backing scale
+        let actualScale = CGFloat(fullImage.width) / screenFrame.width
+        let scaledRect = CGRect(
+            x: pixelRect.origin.x / scale * actualScale,
+            y: pixelRect.origin.y / scale * actualScale,
+            width: pixelRect.width / scale * actualScale,
+            height: pixelRect.height / scale * actualScale
+        ).integral
+        guard let cropped = fullImage.cropping(to: scaledRect) else {
             throw AppError.captureFailed(reason: "Failed to crop full screen image to region: \(pixelRect)")
         }
 

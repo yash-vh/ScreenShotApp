@@ -29,6 +29,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     public func rebuildMenu() {
+        let settings = config.captureSettings
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
@@ -37,9 +38,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let regionItem = NSMenuItem(
             title: "Capture Selected Area",
             action: #selector(didSelectCaptureRegion),
-            keyEquivalent: "4"
+            keyEquivalent: ""
         )
-        regionItem.keyEquivalentModifierMask = [.command, .shift]
+        applyShortcut(settings.shortcutRegion, to: regionItem)
         regionItem.image = NSImage(systemSymbolName: "crop", accessibilityDescription: nil)
         regionItem.target = self
         menu.addItem(regionItem)
@@ -47,9 +48,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let fullScreenItem = NSMenuItem(
             title: "Capture Full Screen",
             action: #selector(didSelectCaptureFullScreen),
-            keyEquivalent: "3"
+            keyEquivalent: ""
         )
-        fullScreenItem.keyEquivalentModifierMask = [.command, .shift]
+        applyShortcut(settings.shortcutFullScreen, to: fullScreenItem)
         fullScreenItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
         fullScreenItem.target = self
         menu.addItem(fullScreenItem)
@@ -57,9 +58,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let windowItem = NSMenuItem(
             title: "Capture Window",
             action: #selector(didSelectCaptureWindow),
-            keyEquivalent: "5"
+            keyEquivalent: ""
         )
-        windowItem.keyEquivalentModifierMask = [.command, .shift]
+        applyShortcut(settings.shortcutWindow, to: windowItem)
         windowItem.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: nil)
         windowItem.target = self
         menu.addItem(windowItem)
@@ -67,23 +68,23 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // 2. Screen Recording & OCR
-        let recordTitle = coordinator.isRecordingActive ? "Stop Screen Recording" : "Record Screen..."
+        let recordTitle = "Record Screen…"
         let recordingItem = NSMenuItem(
             title: recordTitle,
             action: #selector(didSelectToggleRecording),
-            keyEquivalent: "6"
+            keyEquivalent: ""
         )
-        recordingItem.keyEquivalentModifierMask = [.command, .shift]
-        recordingItem.image = NSImage(systemSymbolName: coordinator.isRecordingActive ? "stop.circle.fill" : "record.circle", accessibilityDescription: nil)
+        applyShortcut(settings.shortcutRecording, to: recordingItem)
+        recordingItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
         recordingItem.target = self
         menu.addItem(recordingItem)
 
         let ocrItem = NSMenuItem(
             title: "OCR Text from Screen",
             action: #selector(didSelectOcr),
-            keyEquivalent: "7"
+            keyEquivalent: ""
         )
-        ocrItem.keyEquivalentModifierMask = [.command, .shift]
+        applyShortcut(settings.shortcutQuickOcr, to: ocrItem)
         ocrItem.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: nil)
         ocrItem.target = self
         menu.addItem(ocrItem)
@@ -115,6 +116,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
                 recentMenu.addItem(item)
             }
         }
+        if let latest = coordinator.recentAssets.first {
+            let editLatest = NSMenuItem(title: "Annotate Last Capture", action: #selector(didSelectOpenRecentAsset(_:)), keyEquivalent: "")
+            editLatest.target = self
+            editLatest.representedObject = latest
+            editLatest.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)
+            menu.addItem(editLatest)
+        }
+
         let recentSubmenuItem = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
         recentSubmenuItem.submenu = recentMenu
         menu.addItem(recentSubmenuItem)
@@ -145,6 +154,18 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem?.menu = menu
     }
 
+    /// Mirrors the user's configured global shortcut on a menu item (display only; Carbon handles the hotkey)
+    private func applyShortcut(_ binding: ShortcutBinding, to item: NSMenuItem) {
+        guard binding.isValidGlobalHotKey, let code = binding.keyCode, let name = KeyCodeMap.name(for: code), name.count == 1 else { return }
+        item.keyEquivalent = name.lowercased()
+        var mask: NSEvent.ModifierFlags = []
+        if binding.modifiers.contains("⌘") { mask.insert(.command) }
+        if binding.modifiers.contains("⇧") { mask.insert(.shift) }
+        if binding.modifiers.contains("⌥") { mask.insert(.option) }
+        if binding.modifiers.contains("⌃") { mask.insert(.control) }
+        item.keyEquivalentModifierMask = mask
+    }
+
     // MARK: - Menu Actions
 
     @objc private func didSelectCaptureRegion() {
@@ -169,8 +190,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     }
 
     @objc private func didSelectOpenRecentAsset(_ sender: NSMenuItem) {
-        if let asset = sender.representedObject as? ScreenshotAsset {
-            NSWorkspace.shared.open(asset.originalFileURL)
+        guard let asset = sender.representedObject as? ScreenshotAsset else { return }
+        if FileManager.default.fileExists(atPath: asset.originalFileURL.path) {
+            coordinator.openEditor(for: asset)
+        } else {
+            CaptureHUD.shared.show(title: "Capture file not found", detail: asset.originalFileURL.lastPathComponent, symbol: "exclamationmark.triangle.fill")
         }
     }
 

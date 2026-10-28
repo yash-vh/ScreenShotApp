@@ -134,12 +134,17 @@ public final class AppCoordinator: ObservableObject {
     }
 
     private func toggleScreenRecording() {
-        isRecordingActive.toggle()
-        AppLogger.shared.recording.info("Screen recording state changed: active = \(self.isRecordingActive)")
+        // Screen recording ships in Milestone 6; don't pretend a recording started
+        AppLogger.shared.recording.info("Screen recording requested; not yet available.")
+        CaptureHUD.shared.show(
+            title: "Screen recording is coming soon",
+            detail: "Video & GIF capture arrives with Milestone 6.",
+            symbol: "record.circle"
+        )
     }
 
     private func startOcrCapture() {
         AppLogger.shared.recognition.debug("Starting OCR capture mode.")
-        CaptureCoordinator.shared.captureRegion()
+        CaptureCoordinator.shared.captureText()
     }
 }

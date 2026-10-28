@@ -3,14 +3,15 @@ import SwiftUI
 /// Modern, streamlined single-row glassmorphic toolbar for the Screenshot Editor.
 public struct EditorToolbarView: View {
     @ObservedObject var undoRedoManager: UndoRedoManager
-    @Binding var selectedTool: EditorTool
-    @Binding var selectedColor: AnnotationColor
-    @Binding var strokeWidth: Double
-    @Binding var fontSize: Double
-    @Binding var blurRadius: Double
+    @ObservedObject var state: EditorState
+    var onUndo: () -> Void
+    var onRedo: () -> Void
+    var onDelete: () -> Void
     var onExport: () -> Void
     var onCopyToClipboard: () -> Void
     var onClose: () -> Void
+
+    @State private var isShowingStyle = false
 
     private let standardColors: [AnnotationColor] = [
         .red,
@@ -22,160 +23,112 @@ public struct EditorToolbarView: View {
         .black
     ]
 
+    private static let toolOrder: [(EditorTool, String)] = [
+        (.select, "V"), (.arrow, "A"), (.rectangle, "R"), (.ellipse, "O"), (.freehand, "P"),
+        (.highlight, "H"), (.text, "T"), (.blur, "B"), (.pixelate, "X")
+    ]
+
     public init(
         undoRedoManager: UndoRedoManager,
-        selectedTool: Binding<EditorTool>,
-        selectedColor: Binding<AnnotationColor>,
-        strokeWidth: Binding<Double>,
-        fontSize: Binding<Double>,
-        blurRadius: Binding<Double>,
+        state: EditorState,
+        onUndo: @escaping () -> Void,
+        onRedo: @escaping () -> Void,
+        onDelete: @escaping () -> Void,
         onExport: @escaping () -> Void,
         onCopyToClipboard: @escaping () -> Void,
         onClose: @escaping () -> Void
     ) {
         self.undoRedoManager = undoRedoManager
-        self._selectedTool = selectedTool
-        self._selectedColor = selectedColor
-        self._strokeWidth = strokeWidth
-        self._fontSize = fontSize
-        self._blurRadius = blurRadius
+        self.state = state
+        self.onUndo = onUndo
+        self.onRedo = onRedo
+        self.onDelete = onDelete
         self.onExport = onExport
         self.onCopyToClipboard = onCopyToClipboard
         self.onClose = onClose
     }
 
     public var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             // MARK: - 1. Tools Group
             HStack(spacing: 2) {
-                toolButton(.select, shortcut: "V")
-                toolButton(.arrow, shortcut: "A")
-                toolButton(.rectangle, shortcut: "R")
-                toolButton(.ellipse, shortcut: "O")
-                toolButton(.freehand, shortcut: "P")
-                toolButton(.highlight, shortcut: "H")
-                toolButton(.text, shortcut: "T")
-                toolButton(.blur, shortcut: "B")
-                toolButton(.pixelate, shortcut: "X")
+                ForEach(Self.toolOrder, id: \.0) { tool, shortcut in
+                    toolButton(tool, shortcut: shortcut)
+                }
             }
             .padding(3)
             .background(RoundedRectangle(cornerRadius: 9).fill(Color.secondary.opacity(0.12)))
 
+            // MARK: - 2. Contextual Properties (Color, Thickness, or Intensity)
+            contextualProperties
+                .padding(.horizontal, 6)
+                .padding(.vertical, 3)
+                .frame(height: 28)
+                .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.08)))
+
             Divider().frame(height: 20)
 
-            // MARK: - 2. Contextual Properties (Color, Thickness, or Intensity)
-            if selectedTool == .blur || selectedTool == .pixelate {
-                // Redaction slider
-                HStack(spacing: 6) {
-                    Image(systemName: selectedTool == .blur ? "drop.fill" : "checkerboard.rectangle")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-
-                    Slider(value: $blurRadius, in: 8...60, step: 2)
-                        .frame(width: 80)
-
-                    Text("\(Int(blurRadius))px")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 32, alignment: .leading)
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.08)))
-            } else if selectedTool == .text {
-                // Text size controls
-                HStack(spacing: 6) {
-                    Image(systemName: "textformat.size")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
-
-                    Slider(value: $fontSize, in: 14...64, step: 2)
-                        .frame(width: 75)
-
-                    Text("\(Int(fontSize))pt")
-                        .font(.system(size: 11, design: .monospaced))
-                        .foregroundColor(.secondary)
-                        .frame(width: 30, alignment: .leading)
-
-                    Divider().frame(height: 16)
-
-                    colorChips
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.08)))
-            } else {
-                // Shapes, arrow, pen, highlight: Color & Thickness
-                HStack(spacing: 8) {
-                    colorChips
-
-                    Divider().frame(height: 16)
-
-                    // Stroke thickness chips
-                    HStack(spacing: 3) {
-                        thicknessButton(width: 2.0, label: "Fine")
-                        thicknessButton(width: 4.0, label: "Medium")
-                        thicknessButton(width: 8.0, label: "Bold")
-                    }
-                }
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.08)))
+            // MARK: - 3. History & Layer Actions
+            HStack(spacing: 2) {
+                iconButton("arrow.uturn.backward", help: "Undo (⌘Z)", enabled: undoRedoManager.canUndo, action: onUndo)
+                iconButton("arrow.uturn.forward", help: "Redo (⇧⌘Z)", enabled: undoRedoManager.canRedo, action: onRedo)
+                iconButton("trash", help: "Delete Selection (⌫)", enabled: state.hasSelection, action: onDelete)
             }
 
             Divider().frame(height: 20)
 
-            // MARK: - 3. Undo / Redo
+            // MARK: - 4. Styling & Recognition
             HStack(spacing: 2) {
                 Button {
-                    undoRedoManager.undo()
+                    isShowingStyle.toggle()
                 } label: {
-                    Image(systemName: "arrow.uturn.backward")
+                    Image(systemName: "paintpalette")
                         .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
+                        .frame(width: 28, height: 26)
+                        .background(undoRedoManager.document.hasStyling ? Color.accentColor.opacity(0.25) : Color.clear)
+                        .cornerRadius(6)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!undoRedoManager.canUndo)
-                .opacity(undoRedoManager.canUndo ? 1.0 : 0.35)
-                .help("Undo (⌘Z)")
+                .help("Background, Padding & Shadow")
+                .popover(isPresented: $isShowingStyle, arrowEdge: .bottom) {
+                    StylePanel(undoRedoManager: undoRedoManager)
+                }
 
                 Button {
-                    undoRedoManager.redo()
+                    state.isShowingRecognition.toggle()
                 } label: {
-                    Image(systemName: "arrow.uturn.forward")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 26, height: 26)
-                        .contentShape(Rectangle())
+                    Group {
+                        if state.isRecognizing {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "text.viewfinder")
+                                .font(.system(size: 12, weight: .semibold))
+                        }
+                    }
+                    .frame(width: 28, height: 26)
+                    .background(state.isShowingRecognition ? Color.accentColor : Color.clear)
+                    .foregroundColor(state.isShowingRecognition ? .white : .primary)
+                    .cornerRadius(6)
+                    .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .disabled(!undoRedoManager.canRedo)
-                .opacity(undoRedoManager.canRedo ? 1.0 : 0.35)
-                .help("Redo (⇧⌘Z)")
+                .help("Recognize Text & QR Codes (⇧⌘T)")
             }
 
-            Spacer()
+            Spacer(minLength: 8)
 
-            // MARK: - 4. Direct Actions
+            // MARK: - 5. Direct Actions
             HStack(spacing: 8) {
-                // Copy Button (Primary Blue)
-                Button {
-                    onCopyToClipboard()
-                } label: {
+                Button(action: onCopyToClipboard) {
                     HStack(spacing: 5) {
-                        Image(systemName: "doc.on.doc.fill")
-                            .font(.system(size: 11))
-                        Text("Copy")
-                            .font(.system(size: 12, weight: .semibold))
+                        Image(systemName: "doc.on.doc.fill").font(.system(size: 11))
+                        Text("Copy").font(.system(size: 12, weight: .semibold))
                     }
                     .padding(.horizontal, 11)
                     .padding(.vertical, 5)
                     .background(
-                        LinearGradient(
-                            colors: [Color.accentColor, Color.accentColor.opacity(0.85)],
-                            startPoint: .top,
-                            endPoint: .bottom
-                        )
+                        LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.85)], startPoint: .top, endPoint: .bottom)
                     )
                     .foregroundColor(.white)
                     .cornerRadius(6)
@@ -184,94 +137,250 @@ public struct EditorToolbarView: View {
                 .buttonStyle(.plain)
                 .help("Copy to Clipboard (⌘C)")
 
-                // Save Button
-                Button {
-                    onExport()
-                } label: {
-                    HStack(spacing: 5) {
-                        Image(systemName: "square.and.arrow.down")
-                            .font(.system(size: 11))
-                        Text("Save")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .padding(.horizontal, 10)
-                    .padding(.vertical, 5)
-                    .background(Color.secondary.opacity(0.12))
-                    .cornerRadius(6)
+                Button(action: onExport) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12, weight: .medium))
+                        .frame(width: 28, height: 24)
+                        .background(Color.secondary.opacity(0.12))
+                        .cornerRadius(6)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Save to Disk (⌘S)")
+                .help("Save As… (⌘S)")
 
-                // Done Button
-                Button {
-                    onClose()
-                } label: {
+                Button(action: onClose) {
                     Text("Done")
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
-                        .padding(.horizontal, 8)
+                        .padding(.horizontal, 6)
                         .padding(.vertical, 5)
+                        .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Close Editor (Esc)")
             }
         }
-        .padding(.horizontal, 14)
+        .padding(.horizontal, 12)
         .padding(.vertical, 7)
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Helpers
+    // MARK: - Contextual Properties
 
     @ViewBuilder
+    private var contextualProperties: some View {
+        if state.tool == .blur || state.tool == .pixelate {
+            HStack(spacing: 6) {
+                Image(systemName: state.tool == .blur ? "drop.fill" : "checkerboard.rectangle")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Slider(value: $state.blurRadius, in: 8...60, step: 2)
+                    .frame(width: 80)
+                Text("\(Int(state.blurRadius))px")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 32, alignment: .leading)
+            }
+        } else if state.tool == .text {
+            HStack(spacing: 6) {
+                Image(systemName: "textformat.size")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                Slider(value: $state.fontSize, in: 12...72, step: 2)
+                    .frame(width: 70)
+                Text("\(Int(state.fontSize))pt")
+                    .font(.system(size: 11, design: .monospaced))
+                    .foregroundColor(.secondary)
+                    .frame(width: 30, alignment: .leading)
+                Divider().frame(height: 16)
+                colorChips
+            }
+        } else {
+            HStack(spacing: 8) {
+                colorChips
+                if state.tool != .highlight {
+                    Divider().frame(height: 16)
+                    HStack(spacing: 3) {
+                        thicknessButton(width: 2.0, label: "Fine")
+                        thicknessButton(width: 4.0, label: "Medium")
+                        thicknessButton(width: 8.0, label: "Bold")
+                    }
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
     private func toolButton(_ tool: EditorTool, shortcut: String) -> some View {
         Button {
-            selectedTool = tool
+            state.tool = tool
         } label: {
             Image(systemName: tool.systemIcon)
-                .font(.system(size: 12, weight: selectedTool == tool ? .bold : .medium))
+                .font(.system(size: 12, weight: state.tool == tool ? .bold : .medium))
                 .frame(width: 28, height: 26)
-                .background(selectedTool == tool ? Color.accentColor : Color.clear)
-                .foregroundColor(selectedTool == tool ? .white : .primary)
+                .background(state.tool == tool ? Color.accentColor : Color.clear)
+                .foregroundColor(state.tool == tool ? .white : .primary)
                 .cornerRadius(6)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help("\(tool.rawValue) (\(shortcut))")
     }
 
+    private func iconButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 12, weight: .semibold))
+                .frame(width: 26, height: 26)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .disabled(!enabled)
+        .opacity(enabled ? 1.0 : 0.35)
+        .help(help)
+    }
+
     private var colorChips: some View {
         HStack(spacing: 5) {
-            ForEach(0..<standardColors.count, id: \.self) { i in
-                let color = standardColors[i]
+            ForEach(standardColors, id: \.self) { color in
                 Circle()
                     .fill(Color(red: color.red, green: color.green, blue: color.blue))
                     .frame(width: 14, height: 14)
+                    .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
                     .overlay(
                         Circle()
-                            .stroke(Color.primary, lineWidth: selectedColor == color ? 2 : 0)
+                            .stroke(Color.primary, lineWidth: state.color == color ? 2 : 0)
                             .padding(-2)
                     )
                     .contentShape(Circle())
                     .onTapGesture {
-                        selectedColor = color
+                        state.color = color
                     }
             }
         }
     }
 
-    @ViewBuilder
     private func thicknessButton(width: Double, label: String) -> some View {
         Button {
-            strokeWidth = width
+            state.strokeWidth = width
         } label: {
             Circle()
                 .fill(Color.primary)
                 .frame(width: CGFloat(width + 1), height: CGFloat(width + 1))
                 .frame(width: 20, height: 20)
-                .background(strokeWidth == width ? Color.accentColor.opacity(0.2) : Color.clear)
+                .background(state.strokeWidth == width ? Color.accentColor.opacity(0.25) : Color.clear)
                 .cornerRadius(4)
+                .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(label)
+    }
+}
+
+// MARK: - Style Panel (M4 Image Styling)
+
+/// Popover controls for presentation backdrop, padding, corner radius and drop shadow.
+struct StylePanel: View {
+    @ObservedObject var undoRedoManager: UndoRedoManager
+
+    private var document: AnnotationDocument { undoRedoManager.document }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Background").font(.system(size: 12, weight: .semibold))
+
+            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 8), count: 5), spacing: 8) {
+                swatch(selected: document.backgroundPresetID == nil && document.backgroundColor == nil, help: "None") {
+                    ZStack {
+                        RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15))
+                        Image(systemName: "nosign").font(.system(size: 12)).foregroundColor(.secondary)
+                    }
+                } action: {
+                    update("background") { $0.backgroundPresetID = nil; $0.backgroundColor = nil }
+                }
+
+                ForEach(BackgroundPresets.all) { preset in
+                    swatch(selected: document.backgroundPresetID == preset.id, help: preset.name) {
+                        RoundedRectangle(cornerRadius: 6).fill(
+                            LinearGradient(
+                                colors: preset.colors.map { Color(red: $0.red, green: $0.green, blue: $0.blue) },
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
+                        )
+                    } action: {
+                        update("background") { doc in
+                            doc.backgroundPresetID = preset.id
+                            doc.backgroundColor = nil
+                            // A backdrop is invisible without padding: give it sensible defaults on first use
+                            if doc.padding == 0 { doc.padding = 48 }
+                            if doc.cornerRadius == 0 { doc.cornerRadius = 10 }
+                            if doc.shadowRadius == 0 { doc.shadowRadius = 24 }
+                        }
+                    }
+                }
+            }
+
+            Divider()
+
+            slider("Padding", value: \.padding, range: 0...160, unit: "pt")
+            slider("Corners", value: \.cornerRadius, range: 0...48, unit: "pt")
+            slider("Shadow", value: \.shadowRadius, range: 0...80, unit: "pt")
+
+            HStack {
+                Spacer()
+                Button("Reset Style") {
+                    update("reset") { doc in
+                        doc.backgroundPresetID = nil
+                        doc.backgroundColor = nil
+                        doc.padding = 0
+                        doc.cornerRadius = 0
+                        doc.shadowRadius = 0
+                    }
+                }
+                .disabled(!document.hasStyling)
+            }
+        }
+        .padding(14)
+        .frame(width: 250)
+    }
+
+    private func update(_ key: String, _ mutate: (inout AnnotationDocument) -> Void) {
+        undoRedoManager.updateDocument(coalescingKey: "style-\(key)", mutate)
+    }
+
+    private func swatch<Content: View>(selected: Bool, help: String, @ViewBuilder content: () -> Content, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            content()
+                .frame(width: 30, height: 30)
+                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.accentColor, lineWidth: selected ? 2 : 0).padding(-2))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+    }
+
+    private func slider(_ title: String, value: WritableKeyPath<AnnotationDocument, Double>, range: ClosedRange<Double>, unit: String) -> some View {
+        HStack(spacing: 8) {
+            Text(title)
+                .font(.system(size: 11))
+                .frame(width: 52, alignment: .leading)
+            Slider(
+                value: Binding(
+                    get: { document[keyPath: value] },
+                    set: { newValue in update(title) { $0[keyPath: value] = newValue } }
+                ),
+                in: range,
+                step: 2,
+                onEditingChanged: { editing in
+                    if !editing { undoRedoManager.breakCoalescing() }
+                }
+            )
+            Text("\(Int(document[keyPath: value]))\(unit)")
+                .font(.system(size: 11, design: .monospaced))
+                .foregroundColor(.secondary)
+                .frame(width: 40, alignment: .trailing)
+        }
     }
 }

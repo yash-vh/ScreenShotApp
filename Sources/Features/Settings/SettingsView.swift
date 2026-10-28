@@ -171,6 +171,7 @@ struct CaptureSettingsTab: View {
 
 struct ShortcutsSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
+    @ObservedObject private var hotKeys = HotKeyManager.shared
     @State private var showingAddSheet = false
 
     var body: some View {
@@ -233,6 +234,17 @@ struct ShortcutsSettingsTab: View {
                     binding: $config.captureSettings.shortcutQuickOcr,
                     defaultBinding: ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
                 )
+
+                VStack(alignment: .leading, spacing: 4) {
+                    Label("⌥⌘3 / ⌥⌘4 / ⌥⌘5 / ⌥⌘6 / ⌥⌘7 always work as backups.", systemImage: "info.circle")
+                    Text("macOS reserves ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshot tool. To use them here, turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.")
+                        .foregroundColor(.secondary)
+                    if !hotKeys.failedBindings.isEmpty {
+                        Label("Unavailable (in use by another app): \(hotKeys.failedBindings.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
+                            .foregroundColor(.orange)
+                    }
+                }
+                .font(.caption)
             }
 
             Section(header: Text("User Custom Shortcuts").font(.headline)) {
@@ -365,6 +377,8 @@ struct ShortcutRecorderRow: View {
     private func startRecording() {
         stopRecording()
         isRecording = true
+        // Release global hotkeys so the keys being recorded aren't swallowed by Carbon
+        HotKeyManager.shared.suspend()
 
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
             let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
@@ -375,31 +389,10 @@ struct ShortcutRecorderRow: View {
             if flags.contains(.shift) { mods.append("⇧") }
             if flags.contains(.command) { mods.append("⌘") }
 
-            var keyName: String?
-
-            switch event.keyCode {
-            case 53:
-                keyName = "Esc"
-            case 36:
-                keyName = "Return"
-            case 49:
-                keyName = "Space"
-            case 48:
-                keyName = "Tab"
-            case 51:
-                keyName = "Delete"
-            case 123:
-                keyName = "←"
-            case 124:
-                keyName = "→"
-            case 125:
-                keyName = "↓"
-            case 126:
-                keyName = "↑"
-            default:
-                if let chars = event.charactersIgnoringModifiers?.uppercased(), !chars.isEmpty {
-                    keyName = chars
-                }
+            // Record by key code so Shift doesn't turn "4" into "$"
+            var keyName = KeyCodeMap.name(for: event.keyCode)
+            if keyName == nil, let chars = event.charactersIgnoringModifiers?.uppercased(), !chars.isEmpty {
+                keyName = chars
             }
 
             if let key = keyName {
@@ -426,6 +419,9 @@ struct ShortcutRecorderRow: View {
         if let mon = monitor {
             NSEvent.removeMonitor(mon)
             monitor = nil
+        }
+        if isRecording {
+            HotKeyManager.shared.resume()
         }
         isRecording = false
     }

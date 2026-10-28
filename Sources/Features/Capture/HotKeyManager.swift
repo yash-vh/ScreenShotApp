@@ -1,5 +1,6 @@
 import AppKit
 import Carbon
+import Combine
 
 // Global C-function pointer for Carbon event callback
 private func carbonHotKeyEventHandler(
@@ -26,33 +27,26 @@ private func carbonHotKeyEventHandler(
     return noErr
 }
 
-/// Robust global hotkey manager combining Carbon RegisterEventHotKey and AppKit monitors.
-/// Works from any running macOS application without requiring extra Accessibility permissions.
+/// System-wide hotkey manager built on Carbon `RegisterEventHotKey`.
+///
+/// Hotkeys are registered from the user's bindings in `CaptureSettings` (including custom capture
+/// shortcuts) and re-registered whenever those settings change. Works from any application without
+/// Accessibility permission. ⌥⌘3–7 are always registered as fallbacks because macOS reserves
+/// ⇧⌘3/4/5 for its own screenshot tool unless the user disables them.
 @MainActor
-public final class HotKeyManager {
+public final class HotKeyManager: ObservableObject {
     public static let shared = HotKeyManager()
 
-    // Carbon event refs
+    private static let signature = OSType(0x534E4150) // 'SNAP'
+
     private var eventHandlerRef: EventHandlerRef?
     private var registeredHotKeyRefs: [EventHotKeyRef] = []
+    private var actionsByID: [UInt32: CaptureActionType] = [:]
+    private var settingsObserver: AnyCancellable?
+    private var isSuspended = false
 
-    // AppKit monitors
-    private var globalMonitor: Any?
-    private var localMonitor: Any?
-
-    public enum ActionID: UInt32 {
-        case region = 1
-        case fullScreen = 2
-        case window = 3
-        case recording = 4
-        case ocr = 5
-
-        case regionAlt = 11
-        case fullScreenAlt = 12
-        case windowAlt = 13
-        case recordingAlt = 14
-        case ocrAlt = 15
-    }
+    /// Bindings that failed to register (usually taken by macOS or another app), keyed by display string
+    @Published public private(set) var failedBindings: [String] = []
 
     private init() {}
 
@@ -60,213 +54,134 @@ public final class HotKeyManager {
 
     public func startMonitoring() {
         stopMonitoring()
-
-        // 1. Install Carbon event handler
         installCarbonEventHandler()
+        registerHotKeys(from: AppConfiguration.shared.captureSettings)
 
-        // 2. Register system-wide Carbon hotkeys
-        registerCarbonHotKeys()
-
-        // 3. Register AppKit Local Monitor (when ScreenshotApp is active)
-        localMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            if self?.handleNSEvent(event) == true {
-                return nil // Consume event
+        settingsObserver = AppConfiguration.shared.$captureSettings
+            .map(Self.hotKeySignature)
+            .removeDuplicates()
+            .dropFirst()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self, !self.isSuspended else { return }
+                self.registerHotKeys(from: AppConfiguration.shared.captureSettings)
             }
-            return event
-        }
 
-        // 4. Register AppKit Global Monitor (as additional fallback)
-        globalMonitor = NSEvent.addGlobalMonitorForEvents(matching: .keyDown) { [weak self] event in
-            Task { @MainActor [weak self] in
-                self?.handleNSEvent(event)
-            }
-        }
-
-        AppLogger.shared.capture.info("Keyboard shortcut monitoring successfully registered (Carbon + NSEvent).")
+        AppLogger.shared.capture.info("Global keyboard shortcuts registered (\(self.registeredHotKeyRefs.count) hotkeys).")
     }
 
     public func stopMonitoring() {
-        // Unregister Carbon HotKeys
-        for ref in registeredHotKeyRefs {
-            UnregisterEventHotKey(ref)
-        }
-        registeredHotKeyRefs.removeAll()
-
+        settingsObserver = nil
+        unregisterHotKeys()
         if let handler = eventHandlerRef {
             RemoveEventHandler(handler)
             eventHandlerRef = nil
         }
-
-        // Remove AppKit monitors
-        if let local = localMonitor {
-            NSEvent.removeMonitor(local)
-            localMonitor = nil
-        }
-        if let global = globalMonitor {
-            NSEvent.removeMonitor(global)
-            globalMonitor = nil
-        }
     }
 
-    // MARK: - Carbon Registration
+    /// Temporarily releases all hotkeys (e.g. while the user records a new shortcut in Settings)
+    public func suspend() {
+        guard !isSuspended else { return }
+        isSuspended = true
+        unregisterHotKeys()
+    }
+
+    public func resume() {
+        guard isSuspended else { return }
+        isSuspended = false
+        registerHotKeys(from: AppConfiguration.shared.captureSettings)
+    }
+
+    // MARK: - Registration
 
     private func installCarbonEventHandler() {
-        var eventType = EventTypeSpec(
-            eventClass: OSType(kEventClassKeyboard),
-            eventKind: UInt32(kEventHotKeyPressed)
-        )
-        InstallEventHandler(
-            GetApplicationEventTarget(),
-            carbonHotKeyEventHandler,
-            1,
-            &eventType,
-            nil,
-            &eventHandlerRef
-        )
+        var eventType = EventTypeSpec(eventClass: OSType(kEventClassKeyboard), eventKind: UInt32(kEventHotKeyPressed))
+        InstallEventHandler(GetApplicationEventTarget(), carbonHotKeyEventHandler, 1, &eventType, nil, &eventHandlerRef)
     }
 
-    private func registerCarbonHotKeys() {
-        let signature = OSType(0x534E4150) // 'SNAP'
-
-        // Modifiers
-        let shiftCmd = UInt32(cmdKey | shiftKey)
-        let optionCmd = UInt32(cmdKey | optionKey)
-
-        // Standard Shift+Cmd shortcuts
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_4), modifiers: shiftCmd, id: .region, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_3), modifiers: shiftCmd, id: .fullScreen, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_5), modifiers: shiftCmd, id: .window, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_6), modifiers: shiftCmd, id: .recording, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_7), modifiers: shiftCmd, id: .ocr, signature: signature)
-
-        // Safe Option+Cmd (Alt+Cmd) shortcuts (so they are NEVER blocked by macOS built-in screenshot utility)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_4), modifiers: optionCmd, id: .regionAlt, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_3), modifiers: optionCmd, id: .fullScreenAlt, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_5), modifiers: optionCmd, id: .windowAlt, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_6), modifiers: optionCmd, id: .recordingAlt, signature: signature)
-        registerSingleHotKey(keyCode: UInt32(kVK_ANSI_7), modifiers: optionCmd, id: .ocrAlt, signature: signature)
+    /// Everything that affects registration, so unrelated settings edits don't churn hotkeys
+    private static func hotKeySignature(_ settings: CaptureSettings) -> [String] {
+        bindings(from: settings).map { "\($0.action.rawValue)|\($0.binding.displayString)" }
     }
 
-    private func registerSingleHotKey(keyCode: UInt32, modifiers: UInt32, id: ActionID, signature: OSType) {
-        let hotKeyID = EventHotKeyID(signature: signature, id: id.rawValue)
-        var hotKeyRef: EventHotKeyRef?
-        let err = RegisterEventHotKey(
-            keyCode,
-            modifiers,
-            hotKeyID,
-            GetApplicationEventTarget(),
-            0,
-            &hotKeyRef
-        )
-        if err == noErr, let ref = hotKeyRef {
-            registeredHotKeyRefs.append(ref)
-        }
-    }
-
-    // MARK: - Event Dispatchers
-
-    public func handleHotKeyTriggered(id: UInt32) {
-        guard let action = ActionID(rawValue: id) else { return }
-
-        switch action {
-        case .region, .regionAlt:
-            AppLogger.shared.capture.info("Global shortcut fired: Region Capture")
-            CaptureCoordinator.shared.captureRegion()
-
-        case .fullScreen, .fullScreenAlt:
-            AppLogger.shared.capture.info("Global shortcut fired: Full Screen Capture")
-            CaptureCoordinator.shared.captureFullScreen()
-
-        case .window, .windowAlt:
-            AppLogger.shared.capture.info("Global shortcut fired: Window Capture")
-            CaptureCoordinator.shared.captureWindow()
-
-        case .recording, .recordingAlt:
-            AppLogger.shared.capture.info("Global shortcut fired: Screen Recording")
-            AppCoordinator.shared.triggerCapture(type: .recording)
-
-        case .ocr, .ocrAlt:
-            AppLogger.shared.capture.info("Global shortcut fired: OCR Capture")
-            AppCoordinator.shared.triggerCapture(type: .ocr)
-        }
-    }
-
-    @discardableResult
-    private func handleNSEvent(_ event: NSEvent) -> Bool {
-        let settings = AppConfiguration.shared.captureSettings
-
-        if settings.shortcutRegion.matches(event: event) {
-            CaptureCoordinator.shared.captureRegion()
-            return true
-        }
-        if settings.shortcutFullScreen.matches(event: event) {
-            CaptureCoordinator.shared.captureFullScreen()
-            return true
-        }
-        if settings.shortcutWindow.matches(event: event) {
-            CaptureCoordinator.shared.captureWindow()
-            return true
-        }
-        if settings.shortcutRecording.matches(event: event) {
-            AppCoordinator.shared.triggerCapture(type: .recording)
-            return true
-        }
-        if settings.shortcutQuickOcr.matches(event: event) {
-            AppCoordinator.shared.triggerCapture(type: .ocr)
-            return true
-        }
-
-        // Custom shortcuts
-        for item in settings.customShortcuts {
-            if item.binding.matches(event: event) {
-                switch item.action {
-                case "Capture Selected Region":
-                    CaptureCoordinator.shared.captureRegion()
-                    return true
-                case "Capture Full Screen":
-                    CaptureCoordinator.shared.captureFullScreen()
-                    return true
-                case "Capture Window":
-                    CaptureCoordinator.shared.captureWindow()
-                    return true
-                case "Record Screen":
-                    AppCoordinator.shared.triggerCapture(type: .recording)
-                    return true
-                case "OCR Text from Screen":
-                    AppCoordinator.shared.triggerCapture(type: .ocr)
-                    return true
-                default:
-                    break
-                }
+    private static func bindings(from settings: CaptureSettings) -> [(action: CaptureActionType, binding: ShortcutBinding)] {
+        var result: [(CaptureActionType, ShortcutBinding)] = [
+            (.region, settings.shortcutRegion),
+            (.fullScreen, settings.shortcutFullScreen),
+            (.window, settings.shortcutWindow),
+            (.recording, settings.shortcutRecording),
+            (.ocr, settings.shortcutQuickOcr)
+        ]
+        for custom in settings.customShortcuts {
+            if let action = CaptureActionType(customActionName: custom.action) {
+                result.append((action, custom.binding))
             }
         }
-
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isCmdShift = flags.contains([.command, .shift])
-        let isCmdOption = flags.contains([.command, .option])
-
-        guard isCmdShift || isCmdOption, let chars = event.charactersIgnoringModifiers else {
-            return false
+        // Always-available fallbacks that macOS does not reserve
+        let fallbacks: [(CaptureActionType, String)] = [(.fullScreen, "3"), (.region, "4"), (.window, "5"), (.recording, "6"), (.ocr, "7")]
+        for (action, key) in fallbacks {
+            result.append((action, ShortcutBinding(key: key, modifiers: ["⌥", "⌘"])))
         }
+        return result
+    }
 
-        switch chars {
-        case "4":
-            CaptureCoordinator.shared.captureRegion()
-            return true
-        case "3":
-            CaptureCoordinator.shared.captureFullScreen()
-            return true
-        case "5":
-            CaptureCoordinator.shared.captureWindow()
-            return true
-        case "6":
-            AppCoordinator.shared.triggerCapture(type: .recording)
-            return true
-        case "7":
-            AppCoordinator.shared.triggerCapture(type: .ocr)
-            return true
-        default:
-            return false
+    private func registerHotKeys(from settings: CaptureSettings) {
+        unregisterHotKeys()
+
+        var seen = Set<String>()
+        var failures: [String] = []
+        var nextID: UInt32 = 1
+
+        for (action, binding) in Self.bindings(from: settings) {
+            guard binding.isValidGlobalHotKey, let keyCode = binding.keyCode else { continue }
+            let identity = "\(keyCode)-\(binding.carbonModifiers)"
+            guard seen.insert(identity).inserted else { continue }
+
+            let hotKeyID = EventHotKeyID(signature: Self.signature, id: nextID)
+            var hotKeyRef: EventHotKeyRef?
+            let status = RegisterEventHotKey(UInt32(keyCode), binding.carbonModifiers, hotKeyID, GetApplicationEventTarget(), 0, &hotKeyRef)
+
+            if status == noErr, let ref = hotKeyRef {
+                registeredHotKeyRefs.append(ref)
+                actionsByID[nextID] = action
+            } else {
+                failures.append(binding.displayString)
+                AppLogger.shared.capture.notice("Could not register hotkey \(binding.displayString, privacy: .public) (status \(status)).")
+            }
+            nextID += 1
+        }
+        failedBindings = failures
+    }
+
+    private func unregisterHotKeys() {
+        for ref in registeredHotKeyRefs {
+            UnregisterEventHotKey(ref)
+        }
+        registeredHotKeyRefs.removeAll()
+        actionsByID.removeAll()
+    }
+
+    // MARK: - Dispatch
+
+    public func handleHotKeyTriggered(id: UInt32) {
+        guard !isSuspended, let action = actionsByID[id] else { return }
+        // Ignore repeats while an overlay is already up
+        if CaptureCoordinator.shared.isCapturing && action != .recording { return }
+        AppLogger.shared.capture.info("Global shortcut fired: \(action.rawValue, privacy: .public)")
+        AppCoordinator.shared.triggerCapture(type: action)
+    }
+}
+
+extension CaptureActionType {
+    /// Maps the action names offered in Settings › Shortcuts › Add New Shortcut to capture actions
+    init?(customActionName: String) {
+        switch customActionName {
+        case "Capture Selected Region": self = .region
+        case "Capture Full Screen": self = .fullScreen
+        case "Capture Window": self = .window
+        case "Record Screen": self = .recording
+        case "OCR Text from Screen": self = .ocr
+        default: return nil
         }
     }
 }

@@ -103,16 +103,24 @@ public struct AnnotationItem: Identifiable, Codable, Sendable, Equatable {
     }
 }
 
-/// Persistent annotation document holding base metadata and all vector layers
+/// Persistent annotation document holding base metadata and all vector layers.
+///
+/// All geometry uses a normalized, top-left origin coordinate space (y grows downward).
+/// Stroke widths, font sizes, padding, corner radius, and shadow radius are expressed in
+/// points; `pixelsPerPoint` converts them to the base image's pixel grid at export time.
 public struct AnnotationDocument: Identifiable, Codable, Sendable, Equatable {
     public let id: UUID
     public var assetId: UUID
     public var createdAt: Date
     public var modifiedAt: Date
     public var items: [AnnotationItem]
-    
+
+    /// Base image pixels per annotation point (2.0 for Retina captures)
+    public var pixelsPerPoint: Double
+
     // Background styling presets
     public var backgroundColor: AnnotationColor?
+    public var backgroundPresetID: String?
     public var padding: Double
     public var cornerRadius: Double
     public var shadowRadius: Double
@@ -123,7 +131,9 @@ public struct AnnotationDocument: Identifiable, Codable, Sendable, Equatable {
         createdAt: Date = Date(),
         modifiedAt: Date = Date(),
         items: [AnnotationItem] = [],
+        pixelsPerPoint: Double = 1.0,
         backgroundColor: AnnotationColor? = nil,
+        backgroundPresetID: String? = nil,
         padding: Double = 0.0,
         cornerRadius: Double = 0.0,
         shadowRadius: Double = 0.0
@@ -133,9 +143,31 @@ public struct AnnotationDocument: Identifiable, Codable, Sendable, Equatable {
         self.createdAt = createdAt
         self.modifiedAt = modifiedAt
         self.items = items
+        self.pixelsPerPoint = pixelsPerPoint
         self.backgroundColor = backgroundColor
+        self.backgroundPresetID = backgroundPresetID
         self.padding = padding
         self.cornerRadius = cornerRadius
         self.shadowRadius = shadowRadius
+    }
+
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(UUID.self, forKey: .id)
+        self.assetId = try container.decode(UUID.self, forKey: .assetId)
+        self.createdAt = try container.decode(Date.self, forKey: .createdAt)
+        self.modifiedAt = try container.decode(Date.self, forKey: .modifiedAt)
+        self.items = try container.decodeIfPresent([AnnotationItem].self, forKey: .items) ?? []
+        self.pixelsPerPoint = try container.decodeIfPresent(Double.self, forKey: .pixelsPerPoint) ?? 1.0
+        self.backgroundColor = try container.decodeIfPresent(AnnotationColor.self, forKey: .backgroundColor)
+        self.backgroundPresetID = try container.decodeIfPresent(String.self, forKey: .backgroundPresetID)
+        self.padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? 0.0
+        self.cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0.0
+        self.shadowRadius = try container.decodeIfPresent(Double.self, forKey: .shadowRadius) ?? 0.0
+    }
+
+    /// Whether any presentation styling (backdrop, padding, rounding, shadow) is applied
+    public var hasStyling: Bool {
+        padding > 0 || cornerRadius > 0 || shadowRadius > 0 || backgroundColor != nil || backgroundPresetID != nil
     }
 }

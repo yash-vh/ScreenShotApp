@@ -36,6 +36,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Start Global Keyboard Shortcuts
         HotKeyManager.shared.startMonitoring()
+
+        // Detect on-device OCR model availability ahead of the first recognition request
+        VisionService.shared.prewarm()
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

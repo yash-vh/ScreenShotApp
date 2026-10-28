@@ -1,5 +1,6 @@
 import Foundation
 import AppKit
+import Carbon.HIToolbox
 
 /// Image format options for exported screenshots
 public enum ExportFormat: String, Codable, Sendable, CaseIterable {
@@ -38,40 +39,45 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
     }
 
     public var displayString: String {
-        modifiers.joined() + key
+        let order = ["⌃", "⌥", "⇧", "⌘"]
+        let sortedModifiers = order.filter { modifiers.contains($0) }
+        return sortedModifiers.joined() + KeyCodeMap.canonicalName(for: key)
+    }
+
+    /// Virtual key code of the bound key, if recognised
+    public var keyCode: UInt16? {
+        KeyCodeMap.keyCode(for: key)
+    }
+
+    /// Carbon modifier mask for `RegisterEventHotKey`
+    public var carbonModifiers: UInt32 {
+        var mask: UInt32 = 0
+        if modifiers.contains("⌘") { mask |= UInt32(cmdKey) }
+        if modifiers.contains("⇧") { mask |= UInt32(shiftKey) }
+        if modifiers.contains("⌥") { mask |= UInt32(optionKey) }
+        if modifiers.contains("⌃") { mask |= UInt32(controlKey) }
+        return mask
+    }
+
+    /// Whether this binding is usable as a system-wide hotkey (needs ⌘, ⌃ or ⌥, or a function key)
+    public var isValidGlobalHotKey: Bool {
+        guard keyCode != nil else { return false }
+        return modifiers.contains("⌘") || modifiers.contains("⌃") || modifiers.contains("⌥") || key.uppercased().hasPrefix("F")
     }
 
     public func matches(event: NSEvent) -> Bool {
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let hasCmd = flags.contains(.command)
-        let hasShift = flags.contains(.shift)
-        let hasOpt = flags.contains(.option)
-        let hasCtrl = flags.contains(.control)
-
-        let wantCmd = modifiers.contains("⌘")
-        let wantShift = modifiers.contains("⇧")
-        let wantOpt = modifiers.contains("⌥")
-        let wantCtrl = modifiers.contains("⌃")
-
-        guard hasCmd == wantCmd, hasShift == wantShift, hasOpt == wantOpt, hasCtrl == wantCtrl else {
+        guard flags.contains(.command) == modifiers.contains("⌘"),
+              flags.contains(.shift) == modifiers.contains("⇧"),
+              flags.contains(.option) == modifiers.contains("⌥"),
+              flags.contains(.control) == modifiers.contains("⌃") else {
             return false
         }
 
-        if key.lowercased() == "esc" && event.keyCode == 53 {
-            return true
+        if let code = keyCode {
+            return event.keyCode == code
         }
-        if key.lowercased() == "return" && event.keyCode == 36 {
-            return true
-        }
-        if key.lowercased() == "space" && event.keyCode == 49 {
-            return true
-        }
-
-        if let chars = event.charactersIgnoringModifiers?.uppercased() {
-            return chars == key.uppercased()
-        }
-
-        return false
+        return event.charactersIgnoringModifiers?.uppercased() == key.uppercased()
     }
 }
 
