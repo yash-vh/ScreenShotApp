@@ -179,6 +179,10 @@ public final class AppConfiguration: ObservableObject {
         if let data = defaults.data(forKey: Keys.captureSettings),
            let settings = try? JSONDecoder().decode(CaptureSettings.self, from: data) {
             self.captureSettings = settings
+            // Persist decode-time migrations (e.g. shortcuts moved off macOS's screenshot keys)
+            if let migrated = try? JSONEncoder().encode(settings), migrated != data {
+                defaults.set(migrated, forKey: Keys.captureSettings)
+            }
         } else {
             self.captureSettings = CaptureSettings.default
         }

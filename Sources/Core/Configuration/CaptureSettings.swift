@@ -240,11 +240,13 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         let legacyCustom = !(customSaveDirectory ?? "").isEmpty
         self.saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? (legacyCustom ? .custom : .desktop)
         self.fileNamePrefix = try container.decodeIfPresent(String.self, forKey: .fileNamePrefix) ?? "Screenshot"
-        // Earlier versions defaulted to ⇧⌘3–7, which collide with macOS's screenshot tool; move those to ⌥⌘
+        // Earlier versions defaulted to ⇧⌘3–7, which collide with macOS's screenshot tool, and could store
+        // shifted characters (")") that no key produces. Both fall back to the ⌥⌘ defaults.
         func capture(_ key: CodingKeys, legacyKey: String, default fallback: ShortcutBinding) throws -> ShortcutBinding {
             guard let stored = try container.decodeIfPresent(ShortcutBinding.self, forKey: key) else { return fallback }
             let legacyDefault = ShortcutBinding(key: legacyKey, modifiers: ["⇧", "⌘"])
-            return stored.isMacOSScreenshotShortcut || stored == legacyDefault ? fallback : stored
+            let unusable = !stored.isValidGlobalHotKey || stored.isMacOSScreenshotShortcut
+            return unusable || stored == legacyDefault ? fallback : stored
         }
         self.shortcutRegion = try capture(.shortcutRegion, legacyKey: "4", default: .defaultRegion)
         self.shortcutFullScreen = try capture(.shortcutFullScreen, legacyKey: "3", default: .defaultFullScreen)

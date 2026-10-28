@@ -100,6 +100,28 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(decoded.shortcutWindow.displayString, "⌃⌥W")
     }
 
+    func testUnusableStoredShortcutFallsBackToDefault() throws {
+        var legacy = CaptureSettings.default
+        legacy.shortcutRegion = ShortcutBinding(key: ")", modifiers: ["⇧", "⌘"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+    }
+
+    @MainActor
+    func testMigratedShortcutsArePersisted() throws {
+        let suite = "ShortcutMigration-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var legacy = CaptureSettings.default
+        legacy.shortcutFullScreen = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+        defaults.set(try JSONEncoder().encode(legacy), forKey: "com.screenshotapp.captureSettings")
+
+        _ = AppConfiguration(defaults: defaults)
+
+        let stored = try JSONDecoder().decode(CaptureSettings.self, from: XCTUnwrap(defaults.data(forKey: "com.screenshotapp.captureSettings")))
+        XCTAssertEqual(stored.shortcutFullScreen, .defaultFullScreen)
+    }
+
     func testCaptureSettingsDecodeIgnoresRemovedEditorFlag() throws {
         let json = #"{"openInEditor":true,"copyToClipboard":false}"#
         let settings = try JSONDecoder().decode(CaptureSettings.self, from: Data(json.utf8))
