@@ -21,7 +21,7 @@ public enum CaptureActionType: String, Sendable, CaseIterable {
     }
 }
 
-/// Central application orchestrator managing workflow between capture, editor, and UI windows.
+/// Central application orchestrator managing workflow between capture and UI windows.
 @MainActor
 public final class AppCoordinator: ObservableObject {
     public static let shared = AppCoordinator()
@@ -122,11 +122,6 @@ public final class AppCoordinator: ObservableObject {
 
     public func openLibrary() {
         LibraryWindowController.present()
-    }
-
-    public func openEditor(for asset: ScreenshotAsset) {
-        AppLogger.shared.editor.info("Opening editor for asset: \(asset.title, privacy: .public)")
-        EditorWindowController.present(for: asset)
     }
 
     public func openPrivacySettings() {

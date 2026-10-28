@@ -250,8 +250,10 @@ public final class CaptureCoordinator: ObservableObject {
 
         AppLogger.shared.capture.info("Successfully processed capture asset: \(asset.dimensionsString, privacy: .public)")
 
-        if settings.openInEditor {
-            AppCoordinator.shared.openEditor(for: asset)
+        if settings.copyToClipboard {
+            CaptureHUD.shared.show(title: "Copied to Clipboard", symbol: "doc.on.clipboard.fill", duration: 1.4)
+        } else {
+            CaptureHUD.shared.show(title: "Saved Screenshot", detail: asset.originalFileURL.lastPathComponent, symbol: "square.and.arrow.down.fill", duration: 1.8)
         }
     }
 
@@ -259,20 +261,15 @@ public final class CaptureCoordinator: ObservableObject {
         let settings = AppConfiguration.shared.captureSettings
 
         // 1. Composite in-place annotations if any were drawn directly on the overlay
-        //    ("Open in Editor" keeps the raw capture so overlay annotations stay editable in the editor)
         let finalImage: CGImage
         let forceSave: Bool
         let overlayDocument: AnnotationDocument
         switch action {
-        case .copy(let doc), .save(let doc), .edit(let doc), .upload(let doc), .defaultAction(let doc):
+        case .copy(let doc), .save(let doc), .upload(let doc), .defaultAction(let doc):
             overlayDocument = doc
         }
-        if case .edit = action {
-            finalImage = cgImage
-        } else {
-            let hasEdits = !overlayDocument.items.isEmpty || overlayDocument.hasStyling
-            finalImage = hasEdits ? ExportCompositor.shared.composite(baseImage: cgImage, document: overlayDocument) : cgImage
-        }
+        let hasAnnotations = !overlayDocument.items.isEmpty || overlayDocument.hasStyling
+        finalImage = hasAnnotations ? ExportCompositor.shared.composite(baseImage: cgImage, document: overlayDocument) : cgImage
         if case .save = action { forceSave = true } else { forceSave = false }
 
         if settings.playCaptureSound {
@@ -299,15 +296,9 @@ public final class CaptureCoordinator: ObservableObject {
             CaptureHUD.shared.show(title: "Saved Screenshot", detail: fileURL.lastPathComponent, symbol: "square.and.arrow.down.fill", duration: 1.8)
             AppLogger.shared.capture.info("Region captured and saved to disk: \(fileURL.lastPathComponent, privacy: .public)")
 
-        case .edit:
-            EditorWindowController.present(for: asset, document: overlayDocument)
-
         case .defaultAction:
             if settings.copyToClipboard {
                 copyImageToPasteboard(cgImage: finalImage)
-            }
-            if settings.openInEditor {
-                EditorWindowController.present(for: asset)
             }
         }
     }

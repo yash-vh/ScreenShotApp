@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// A trailing action button on the editor toolbar (Save, Upload, Open in Editor, …)
+/// A trailing action button on the editor toolbar (Save, Upload, …)
 public struct EditorToolbarAction: Identifiable {
     public let id: String
     public let symbol: String

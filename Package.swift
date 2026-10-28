@@ -20,7 +20,8 @@ let package = Package(
             exclude: [
                 "Resources/Info.plist",
                 "Resources/ScreenshotApp.entitlements",
-                "Resources/Assets.xcassets"
+                "Resources/Assets.xcassets",
+                "Resources/LaunchAgents"
             ]
         ),
         .testTarget(

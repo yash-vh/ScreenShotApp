@@ -1,9 +1,9 @@
 # 1-Month Production Delivery & Milestone Plan
 
-**Project:** ScreenshotApp (macOS Native Utility)  
-**Target Delivery Window:** 4 Weeks (30 Days)  
-**Deployment Target:** macOS 14.0+ (Sonoma, Sequoia)  
-**Distribution:** Direct Website Download (Signed, Notarized DMG)  
+**Project:** ScreenshotApp (macOS Native Utility)
+**Target Delivery Window:** 4 Weeks (30 Days)
+**Deployment Target:** macOS 14.0+ (Sonoma, Sequoia)
+**Distribution:** Direct Website Download (Signed, Notarized DMG)
 
 ---
 
@@ -23,6 +23,7 @@
 ### Week 1: Core Shell, System Integration & Capture Engine
 
 #### **Milestone 1: Foundation & App Shell** `[COMPLETED & VERIFIED]`
+
 - **Target:** Days 1–3
 - **Status:** ✅ **Completed & Verified**
 - **Completion Sign-Off Checklist:**
@@ -41,6 +42,7 @@
 ---
 
 #### **Milestone 2: Screen Capture Engine** `[COMPLETED & VERIFIED]`
+
 - **Target:** Days 4–7
 - **Status:** ✅ **Completed & Verified**
 - **Completion Sign-Off Checklist:**
@@ -57,6 +59,7 @@
 ### Week 2: Editing, Privacy Redaction, Styling & Vision
 
 #### **Milestone 3: Annotation Editor & True Redaction** `[COMPLETED & VERIFIED]`
+
 - **Target:** Days 8–11
 - **Status:** ✅ **Completed & Verified**
 - **Completion Sign-Off Checklist:**
@@ -71,6 +74,7 @@
 ---
 
 #### **Milestone 4: Image Styling & Local Recognition** `[COMPLETED & VERIFIED]`
+
 - **Target:** Days 12–14
 - **Status:** ✅ **Completed & Verified**
 - **Completion Sign-Off Checklist:**
@@ -82,6 +86,7 @@
   - [x] **Unit Testing:** `ImageComposerTests`, `VisionServiceTests`.
 
 #### **M1–M3 Stabilization Pass (post-review fixes)**
+
 - [x] Editor: one undo step per drag/resize/nudge/slider scrub (was one per mouse event); selecting an item no longer writes history; no-op updates ignored.
 - [x] Editor: move, 8-handle resize (⇧ keeps aspect), arrow endpoint editing, ⇧-constrained drawing, duplicate (⌘D), bring to front / send to back (⌘] / ⌘[), arrow-key nudge, right-click menu, delete button.
 - [x] Editor: shortcuts handled via `performKeyEquivalent` so ⌘Z/⇧⌘Z/⌘C/⌘S/⌘D/⌘W work without a menu bar; Esc deselects then closes; Return edits text.
@@ -97,7 +102,10 @@
 
 ### Week 3: Storage, History & Screen Recording
 
-#### **Milestone 5: Local History & Metadata Store**
+#### \*\*
+
+\*\*
+
 - **Target:** Days 15–17
 - **Scope:**
   - [x] SwiftData schema for persistent asset indexing and search.
@@ -108,6 +116,7 @@
   - [x] Missing file recovery and stale database record pruning.
 
 #### **Milestone 6: Screen & Audio Recording**
+
 - **Target:** Days 18–21
 - **Scope:**
   - [x] `RecordingCoordinator` based on `ScreenCaptureKit` stream APIs.
@@ -123,6 +132,7 @@
 ### Week 4: Cloud Sharing, Hardening, Signing & Launch
 
 #### **Milestone 7: Cloud Storage & Instant Sharing**
+
 - **Target:** Days 22–25
 - **Scope:**
   - [x] `CloudStorageProvider` actor protocol abstraction.
@@ -133,6 +143,7 @@
   - [x] Offline resilience: queue uploads if network is disconnected.
 
 #### **Milestone 8: Production Hardening, Testing, Signing & Release**
+
 - **Target:** Days 26–30
 - **Scope:**
   - [ ] Full end-to-end test pass across all feature workflows.
@@ -148,16 +159,16 @@
 
 ## 3. Milestone Tracking Matrix
 
-| Milestone | Target Days | Status | Unit Tests | Integration Tests |
-|---|---|:---:|:---:|:---:|
-| **M1: Foundation & App Shell** | Days 1–3 | **Done** | Pass | Pass |
-| **M2: Capture Engine** | Days 4–7 | **Done** | Pass | Pass |
-| **M3: Annotation & Redaction** | Days 8–11 | **Done** | Pass | Pass |
-| **M4: Styling & Recognition** | Days 12–14 | **Done** | Pass | Pass |
-| **M5: Local History & Database** | Days 15–17 | **Done** | Pass | Pending |
-| **M6: Screen Recording & GIF** | Days 18–21 | **Done** | Pass | Pending |
-| **M7: Cloud Storage & Sharing** | Days 22–25 | **Done** (service not yet deployed) | Pass | Pending |
-| **M8: Hardening & Distribution** | Days 26–30 | Planned | Planned | Planned |
+| Milestone                        | Target Days |               Status                | Unit Tests | Integration Tests |
+| -------------------------------- | ----------- | :---------------------------------: | :--------: | :---------------: |
+| **M1: Foundation & App Shell**   | Days 1–3    |              **Done**               |    Pass    |       Pass        |
+| **M2: Capture Engine**           | Days 4–7    |              **Done**               |    Pass    |       Pass        |
+| **M3: Annotation & Redaction**   | Days 8–11   |              **Done**               |    Pass    |       Pass        |
+| **M4: Styling & Recognition**    | Days 12–14  |              **Done**               |    Pass    |       Pass        |
+| **M5: Local History & Database** | Days 15–17  |              **Done**               |    Pass    |      Pending      |
+| **M6: Screen Recording & GIF**   | Days 18–21  |              **Done**               |    Pass    |      Pending      |
+| **M7: Cloud Storage & Sharing**  | Days 22–25  | **Done** (service not yet deployed) |    Pass    |      Pending      |
+| **M8: Hardening & Distribution** | Days 26–30  |               Planned               |  Planned   |      Planned      |
 
 ---
 

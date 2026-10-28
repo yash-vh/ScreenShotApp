@@ -11,6 +11,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationDidFinishLaunching(_ notification: Notification) {
         AppLogger.shared.app.info("SyncShot launched successfully.")
 
+        // With the relaunch agent on, only the launchd-managed instance runs; other copies hand off and exit
+        if BackgroundRelauncher.handOffIfNeeded() { return }
+
         // Disable automatic termination so the menu bar status item and global hotkeys remain active indefinitely
         ProcessInfo.processInfo.disableAutomaticTermination("Screenshot utility background runner")
 
@@ -31,8 +34,25 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // Show Settings window on launch
-        AppCoordinator.shared.openSettings()
+        // Show Settings on launch, except when launchd silently restores SyncShot in the background
+        let restoreRequestedSettings = BackgroundRelauncher.consumePendingOpenSettings()
+        if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
+            AppCoordinator.shared.openSettings()
+        }
+
+        // A copy opened from Finder or the Dock asks the background instance to show itself
+        DistributedNotificationCenter.default().addObserver(
+            forName: BackgroundRelauncher.openSettingsNotification,
+            object: nil,
+            queue: .main
+        ) { _ in
+            Task { @MainActor in AppCoordinator.shared.openSettings() }
+        }
+
+        // Keep the stored preference in sync if the agent was removed in System Settings › Login Items
+        if AppConfiguration.shared.relaunchAfterUnexpectedQuit, !BackgroundRelauncher.isAgentEnabled {
+            AppConfiguration.shared.relaunchAfterUnexpectedQuit = false
+        }
 
         // Start Global Keyboard Shortcuts
         HotKeyManager.shared.startMonitoring()

@@ -157,11 +157,10 @@ struct LibraryView: View {
     @ViewBuilder
     private func contextMenu(for asset: ScreenshotAsset) -> some View {
         if asset.isAvailableLocally {
+            Button("Open") { open(asset) }
             if asset.mediaType == .image {
-                Button("Open in Editor") { open(asset) }
                 Button("Copy Image") { copy(asset) }
             } else {
-                Button("Open") { open(asset) }
                 Button("Copy File") {
                     NSPasteboard.general.clearContents()
                     NSPasteboard.general.writeObjects([asset.originalFileURL as NSURL])
@@ -182,7 +181,7 @@ struct LibraryView: View {
                 NSPasteboard.general.setString(url.absoluteString, forType: .string)
             }
             Button("Open Share Link") { NSWorkspace.shared.open(url) }
-            if latest.capabilities.supportsDelete {
+            if latest.capabilities.supportsDelete, latest.providerType.isImplemented {
                 Button("Delete Upload") { deleteUpload(asset: asset, record: latest) }
             }
         }
@@ -203,11 +202,7 @@ struct LibraryView: View {
 
     private func open(_ asset: ScreenshotAsset) {
         guard asset.isAvailableLocally else { return locate(asset) }
-        if asset.mediaType == .image {
-            AppCoordinator.shared.openEditor(for: asset)
-        } else {
-            NSWorkspace.shared.open(asset.originalFileURL)
-        }
+        NSWorkspace.shared.open(asset.originalFileURL)
     }
 
     private func copy(_ asset: ScreenshotAsset) {

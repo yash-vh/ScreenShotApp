@@ -45,17 +45,6 @@ public final class UploadService: ObservableObject {
 
     static func defaultProvider(for type: CloudProviderType, config: AppConfiguration, secrets: SecretStore) throws -> CloudStorageProvider {
         switch type {
-        case .managedCloud:
-            guard let url = URL(string: config.shareServiceURL.trimmingCharacters(in: .whitespaces)), url.scheme == "https" || url.scheme == "http", url.host != nil else {
-                throw AppError.invalidConfiguration(key: "Share service URL", reason: "Set the Shot Link service address in Settings › Storage & Cloud.")
-            }
-            return ShotLinkProvider(baseURL: url, installID: config.installID)
-        case .imgur:
-            let clientID = config.imgurClientID.trimmingCharacters(in: .whitespaces)
-            guard !clientID.isEmpty else {
-                throw AppError.invalidConfiguration(key: "Imgur Client-ID", reason: "Register an Imgur application and paste its Client-ID in Settings › Storage & Cloud.")
-            }
-            return ImgurProvider(clientID: clientID)
         case .imgbb:
             guard let key = try secrets.value(for: KeychainStore.Account.imgbbAPIKey)?.trimmingCharacters(in: .whitespacesAndNewlines), !key.isEmpty else {
                 throw AppError.invalidConfiguration(key: "ImgBB API key", reason: "Get a free key at api.imgbb.com and paste it in Settings › Storage & Cloud.")
@@ -75,19 +64,22 @@ public final class UploadService: ObservableObject {
             let publicBaseString = config.s3PublicBaseURL.trimmingCharacters(in: .whitespaces)
             let publicBase = publicBaseString.isEmpty ? nil : URL(string: publicBaseString.contains("://") ? publicBaseString : "https://" + publicBaseString)
             return S3Provider(endpoint: endpoint, bucket: bucket, region: region, accessKeyID: keyID.trimmingCharacters(in: .whitespaces), secretAccessKey: secret, publicBaseURL: publicBase)
-        case .supabase, .cloudinary:
-            throw AppError.invalidConfiguration(key: type.displayName, reason: "This provider isn't supported yet.")
+        case .legacy:
+            throw AppError.invalidConfiguration(key: type.displayName, reason: "SyncShot now uploads to ImgBB or Amazon S3 only.")
         }
     }
 
     // MARK: - Payload
 
+    /// Re-encode budget per provider; S3 has no practical cap, so it shares the default
+    public nonisolated static let defaultMaxUploadBytes = 10 * 1_048_576
+
     static func maxUploadBytes(for type: CloudProviderType) -> Int {
-        type == .imgbb ? ImgBBProvider.maxUploadBytes : ShotLinkProvider.maxUploadBytes
+        type == .imgbb ? ImgBBProvider.maxUploadBytes : defaultMaxUploadBytes
     }
 
     /// Re-encodes pixels only (no EXIF / TIFF / window metadata). Falls back to JPEG when PNG exceeds the size limit.
-    public nonisolated static func makePayload(from image: CGImage, expiry: UploadExpiry, maxBytes: Int = ShotLinkProvider.maxUploadBytes) -> UploadPayload? {
+    public nonisolated static func makePayload(from image: CGImage, expiry: UploadExpiry, maxBytes: Int = UploadService.defaultMaxUploadBytes) -> UploadPayload? {
         guard let png = encode(image, type: .png, properties: [:]) else { return nil }
         if png.count <= maxBytes {
             return UploadPayload(data: png, contentType: "image/png", fileExtension: "png", expiry: expiry)
@@ -122,7 +114,7 @@ public final class UploadService: ObservableObject {
         guard let providerType = config.uploadProvider else { throw AppError.cloudProviderNotConfigured }
         let provider = try makeProvider(providerType)
         guard let asset = history.asset(id: assetId) else { throw AppError.assetCorrupted(id: assetId) }
-        // Decode + encode off the main thread so the HUD and editor stay responsive
+        // Decode + encode off the main thread so the HUD stays responsive
         let fileURL = asset.originalFileURL
         let expiry = config.uploadExpiry
         let maxBytes = Self.maxUploadBytes(for: providerType)

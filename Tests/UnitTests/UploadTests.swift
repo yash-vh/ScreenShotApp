@@ -55,60 +55,6 @@ final class SigV4SignerTests: XCTestCase {
 final class ProviderTests: XCTestCase {
     private let payload = UploadPayload(data: Data(repeating: 1, count: 64), expiry: .sevenDays)
 
-    func testShotLinkReservesThenUploads() async throws {
-        let reservation = """
-        {"id":"k7Qm2xVb9TqRaBcD","url":"https://s.example/k7Qm2xVb9TqRaBcD","uploadURL":"https://s.example/v1/uploads/k7Qm2xVb9TqRaBcD/content?t=up","deleteToken":"del-secret","expiresAt":"2030-01-01T00:00:00Z"}
-        """
-        let transport = MockTransport([.init(status: 201, body: Data(reservation.utf8)), .init(status: 200, body: Data("{}".utf8))])
-        let provider = ShotLinkProvider(baseURL: URL(string: "https://s.example")!, installID: "install-1", transport: transport)
-
-        let result = try await provider.upload(payload) { _ in }
-
-        XCTAssertEqual(result.remoteKey, "k7Qm2xVb9TqRaBcD")
-        XCTAssertEqual(result.shareURL.absoluteString, "https://s.example/k7Qm2xVb9TqRaBcD")
-        XCTAssertEqual(result.deleteToken, "del-secret")
-        XCTAssertNotNil(result.expiresAt)
-        XCTAssertEqual(transport.requests.count, 2)
-        XCTAssertEqual(transport.requests[0].request.url?.path, "/v1/uploads")
-        XCTAssertEqual(transport.requests[0].request.value(forHTTPHeaderField: "X-Install-ID"), "install-1")
-        let sent = try JSONSerialization.jsonObject(with: transport.requests[0].body ?? Data()) as? [String: Any]
-        XCTAssertEqual(sent?["expiresIn"] as? Int, 604_800)
-        XCTAssertEqual(transport.requests[1].request.httpMethod, "PUT")
-        XCTAssertEqual(transport.requests[1].body, payload.data)
-    }
-
-    func testShotLinkRejectsOversizedImagesLocally() async {
-        let transport = MockTransport([])
-        let provider = ShotLinkProvider(baseURL: URL(string: "https://s.example")!, installID: "i", transport: transport)
-        let big = UploadPayload(data: Data(count: ShotLinkProvider.maxUploadBytes + 1), expiry: .oneDay)
-        do {
-            _ = try await provider.upload(big) { _ in }
-            XCTFail("expected failure")
-        } catch {
-            XCTAssertTrue(transport.requests.isEmpty)
-        }
-    }
-
-    func testShotLinkDeleteSendsBearerToken() async throws {
-        let transport = MockTransport([.init(status: 204, body: Data())])
-        let provider = ShotLinkProvider(baseURL: URL(string: "https://s.example")!, installID: "i", transport: transport)
-        try await provider.delete(remoteKey: "abc", deleteToken: "tok")
-        XCTAssertEqual(transport.requests.first?.request.httpMethod, "DELETE")
-        XCTAssertEqual(transport.requests.first?.request.url?.path, "/v1/uploads/abc")
-        XCTAssertEqual(transport.requests.first?.request.value(forHTTPHeaderField: "Authorization"), "Bearer tok")
-    }
-
-    func testImgurParsesLinkAndDeleteHash() async throws {
-        let body = #"{"data":{"id":"AbC123","link":"https://i.imgur.com/AbC123.png","deletehash":"dh42"},"success":true,"status":200}"#
-        let transport = MockTransport([.init(status: 200, body: Data(body.utf8))])
-        let provider = ImgurProvider(clientID: "cid", transport: transport)
-        let result = try await provider.upload(payload) { _ in }
-        XCTAssertEqual(result.shareURL.absoluteString, "https://i.imgur.com/AbC123.png")
-        XCTAssertEqual(result.deleteToken, "dh42")
-        XCTAssertNil(result.expiresAt)
-        XCTAssertEqual(transport.requests.first?.request.value(forHTTPHeaderField: "Authorization"), "Client-ID cid")
-    }
-
     func testImgBBParsesDirectLinkAndExpiry() async throws {
         let body = #"{"data":{"id":"2ndCYJK","url":"https://i.ibb.co/w04Prt6/shot.png","url_viewer":"https://ibb.co/2ndCYJK","delete_url":"https://ibb.co/2ndCYJK/670a7e48"},"success":true,"status":200}"#
         let transport = MockTransport([.init(status: 200, body: Data(body.utf8))])
@@ -166,8 +112,8 @@ final class ProviderTests: XCTestCase {
 
 /// Provider whose behaviour each test scripts
 final class FakeProvider: CloudStorageProvider, @unchecked Sendable {
-    let type = CloudProviderType.managedCloud
-    let capabilities = ProviderCapabilities.managedDefault
+    let type = CloudProviderType.imgbb
+    let capabilities = ProviderCapabilities.s3Default
     var uploadError: Error?
     var uploads = 0
     var deleted: [(String, String?)] = []
@@ -254,13 +200,54 @@ final class UploadServiceTests: XCTestCase {
 
     func testUploadDestinationMapsToStorageModeAndProvider() {
         config.uploadDestination = .s3
+        XCTAssertEqual(config.storageMode, .userOwned)
         XCTAssertEqual(config.uploadProvider, .s3Compatible)
         config.uploadDestination = .imgbb
+        XCTAssertEqual(config.storageMode, .managedCloud)
         XCTAssertEqual(config.uploadProvider, .imgbb)
         XCTAssertEqual(config.uploadDestination, .imgbb)
         config.uploadDestination = .off
         XCTAssertNil(config.uploadProvider)
         XCTAssertEqual(config.uploadDestination, .off)
+    }
+
+    func testOnlyS3AndImgBBAreUploadDestinations() {
+        XCTAssertEqual(UploadDestination.allCases, [.off, .imgbb, .s3])
+        XCTAssertEqual(Set(UploadDestination.allCases.compactMap { dest -> CloudProviderType? in
+            config.uploadDestination = dest
+            return config.uploadProvider
+        }), [.imgbb, .s3Compatible])
+        XCTAssertEqual(CloudProviderType.allCases.filter(\.isImplemented), [.s3Compatible, .imgbb])
+    }
+
+    func testDestinationPersistsAcrossLaunches() {
+        let suite = "UploadDestinationPersistence-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let first = AppConfiguration(defaults: defaults)
+        first.uploadDestination = .s3
+        first.s3Bucket = "shots"
+        first.s3Region = "eu-west-1"
+        first.s3Endpoint = "https://s3.eu-west-1.amazonaws.com"
+        first.s3PublicBaseURL = "https://cdn.example.com"
+
+        let relaunched = AppConfiguration(defaults: defaults)
+        XCTAssertEqual(relaunched.uploadDestination, .s3)
+        XCTAssertEqual(relaunched.s3Bucket, "shots")
+        XCTAssertEqual(relaunched.s3Region, "eu-west-1")
+        XCTAssertEqual(relaunched.s3Endpoint, "https://s3.eu-west-1.amazonaws.com")
+        XCTAssertEqual(relaunched.s3PublicBaseURL, "https://cdn.example.com")
+
+        relaunched.uploadDestination = .imgbb
+        XCTAssertEqual(AppConfiguration(defaults: defaults).uploadDestination, .imgbb)
+    }
+
+    func testRemovedProvidersDecodeAsLegacyAndCannotUpload() throws {
+        let json = #"[{"id":"6F9619FF-8B86-D011-B42D-00CF4FC964FF","providerType":"imgur","remoteKey":"x","status":"completed","capabilities":{"supportsDelete":true,"supportsExpiringLinks":false,"supportsPasswordProtection":false,"supportsLinkRevocation":true,"supportsResumableUploads":false}}]"#
+        let records = try JSONDecoder().decode([UploadRecord].self, from: Data(json.utf8))
+        XCTAssertEqual(records.first?.providerType, .legacy)
+        XCTAssertFalse(CloudProviderType.legacy.isImplemented)
+        XCTAssertThrowsError(try UploadService.defaultProvider(for: .legacy, config: config, secrets: secrets))
     }
 
     func testSuccessfulUploadRecordsLinkAndStoresDeleteTokenInSecretStore() async throws {
@@ -338,11 +325,6 @@ final class UploadServiceTests: XCTestCase {
     }
 
     func testProviderResolutionRequiresConfiguration() {
-        config.shareServiceURL = ""
-        XCTAssertThrowsError(try UploadService.defaultProvider(for: .managedCloud, config: config, secrets: secrets))
-        config.shareServiceURL = "https://share.example"
-        XCTAssertNoThrow(try UploadService.defaultProvider(for: .managedCloud, config: config, secrets: secrets))
-
         XCTAssertThrowsError(try UploadService.defaultProvider(for: .imgbb, config: config, secrets: secrets))
         try? secrets.set("key", for: KeychainStore.Account.imgbbAPIKey)
         XCTAssertNoThrow(try UploadService.defaultProvider(for: .imgbb, config: config, secrets: secrets))
@@ -353,5 +335,35 @@ final class UploadServiceTests: XCTestCase {
         try? secrets.set("AK", for: KeychainStore.Account.s3AccessKeyID)
         try? secrets.set("SK", for: KeychainStore.Account.s3SecretAccessKey)
         XCTAssertNoThrow(try UploadService.defaultProvider(for: .s3Compatible, config: config, secrets: secrets))
+    }
+
+    func testResolvedProvidersMatchTheirType() throws {
+        try secrets.set("key", for: KeychainStore.Account.imgbbAPIKey)
+        config.s3Bucket = "b"
+        try secrets.set("AK", for: KeychainStore.Account.s3AccessKeyID)
+        try secrets.set("SK", for: KeychainStore.Account.s3SecretAccessKey)
+
+        let imgbb = try UploadService.defaultProvider(for: .imgbb, config: config, secrets: secrets)
+        XCTAssertTrue(imgbb is ImgBBProvider)
+        XCTAssertEqual(imgbb.capabilities, .imgbbDefault)
+
+        let s3 = try UploadService.defaultProvider(for: .s3Compatible, config: config, secrets: secrets)
+        XCTAssertTrue(s3 is S3Provider)
+        XCTAssertEqual(s3.capabilities, .s3Default)
+    }
+
+    func testS3DefaultsToAWSEndpointForRegion() throws {
+        config.s3Bucket = "shots"
+        config.s3Region = "eu-central-1"
+        config.s3Endpoint = ""
+        try secrets.set("AK", for: KeychainStore.Account.s3AccessKeyID)
+        try secrets.set("SK", for: KeychainStore.Account.s3SecretAccessKey)
+        let provider = try XCTUnwrap(UploadService.defaultProvider(for: .s3Compatible, config: config, secrets: secrets) as? S3Provider)
+        XCTAssertEqual(provider.objectURL(for: "k.png").absoluteString, "https://s3.eu-central-1.amazonaws.com/shots/k.png")
+    }
+
+    func testImgBBUsesItsOwnSizeLimit() {
+        XCTAssertEqual(UploadService.maxUploadBytes(for: .imgbb), ImgBBProvider.maxUploadBytes)
+        XCTAssertEqual(UploadService.maxUploadBytes(for: .s3Compatible), UploadService.defaultMaxUploadBytes)
     }
 }

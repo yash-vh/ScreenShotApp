@@ -93,6 +93,7 @@ public struct SettingsView: View {
 struct GeneralSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
     @State private var loginProblem: String?
+    @State private var relaunchProblem: String?
 
     var body: some View {
         Form {
@@ -108,6 +109,33 @@ struct GeneralSettingsTab: View {
                 }
                 Toggle("Show icon in Dock", isOn: $config.showDockIcon)
                 Text("When off, SyncShot runs from the menu bar only.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                Toggle("Show menu in menu bar", isOn: $config.showMenuBarIcon)
+                Text(config.showMenuBarIcon
+                     ? "The SyncShot menu sits in the menu bar."
+                     : "The menu is hidden. Keyboard shortcuts keep working; open SyncShot again from Finder or Spotlight to reach Settings.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
+
+            Section(header: Text("Background").font(.headline)) {
+                Toggle("Reopen SyncShot if it's force quit or crashes", isOn: Binding(
+                    get: { config.relaunchAfterUnexpectedQuit },
+                    set: { enabled in
+                        config.relaunchAfterUnexpectedQuit = enabled
+                        relaunchProblem = BackgroundRelauncher.setEnabled(enabled)
+                        if relaunchProblem != nil, !BackgroundRelauncher.isAgentEnabled {
+                            config.relaunchAfterUnexpectedQuit = false
+                        }
+                    }
+                ))
+                if let relaunchProblem {
+                    Text(relaunchProblem)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                Text("macOS relaunches SyncShot in the background so the menu and shortcuts come back after a force quit. Choosing Quit SyncShot still quits it. Turning this on restarts SyncShot once, and it also starts SyncShot when you log in.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -202,12 +230,11 @@ struct CaptureSettingsTab: View {
 
             Section {
                 Toggle("Copy image to clipboard", isOn: $config.captureSettings.copyToClipboard)
-                Toggle("Open in annotation editor", isOn: $config.captureSettings.openInEditor)
                 Toggle("Recognize text for Library search (OCR, on-device)", isOn: $config.captureSettings.runOcrAutomatically)
             } header: {
                 Text("After Full Screen & Window Capture").font(.headline)
             } footer: {
-                Text("Region captures use the toolbar instead: Return copies, ⌘S saves, ⌘E opens the editor, ⌘U uploads and copies the link.")
+                Text("Region captures use the toolbar instead: Return copies, ⌘S saves, ⌘U uploads and copies the link.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -722,8 +749,6 @@ struct StorageSettingsTab: View {
             switch config.uploadDestination {
             case .imgbb: imgbbSection
             case .s3: s3Section
-            case .imgur: imgurSection
-            case .shotLink: shotLinkSection
             case .off: EmptyView()
             }
 
@@ -732,10 +757,8 @@ struct StorageSettingsTab: View {
                     Picker("Short link:", selection: $config.linkShortener) {
                         ForEach(LinkShortener.allCases) { Text($0.title).tag($0) }
                     }
-                    if config.uploadDestination != .imgur {
-                        Picker("Delete after:", selection: $config.uploadExpiry) {
-                            ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
-                        }
+                    Picker("Delete after:", selection: $config.uploadExpiry) {
+                        ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
                     }
                     if let note = linkNote {
                         Text(note).font(.caption).foregroundColor(.secondary)
@@ -838,24 +861,6 @@ struct StorageSettingsTab: View {
                 }
             }
             Text("The keys need s3:PutObject and s3:DeleteObject on the bucket. Without a public URL, links are presigned and stop working after 7 days at most.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var imgurSection: some View {
-        Section(header: Text("Imgur").font(.headline)) {
-            TextField("Client-ID:", text: $config.imgurClientID, prompt: Text("from api.imgur.com/oauth2/addclient"))
-            Text("Imgur images are public and never expire. Imgur's API terms restrict commercial use.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-        }
-    }
-
-    private var shotLinkSection: some View {
-        Section(header: Text("Self-hosted Shot Link").font(.headline)) {
-            TextField("Service URL:", text: $config.shareServiceURL, prompt: Text("https://your-share-domain"))
-            Text("Deploy the Cloudflare Worker in Services/share-worker. Links use 16-character random IDs and can be deleted at any time.")
                 .font(.caption)
                 .foregroundColor(.secondary)
         }
@@ -1081,11 +1086,14 @@ struct AboutSettingsTab: View {
     var body: some View {
         VStack(spacing: 16) {
             Spacer()
-            Image(systemName: "camera.viewfinder")
-                .font(.system(size: 64))
-                .foregroundColor(.accentColor)
+            Image(nsImage: AppBranding.logo(size: 96))
+                .resizable()
+                .interpolation(.high)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 96, height: 96)
+                .accessibilityLabel("SyncShot logo")
 
-            Text("SyncShot")
+            Text(AppBranding.appName)
                 .font(.title)
                 .bold()
 
@@ -1097,6 +1105,14 @@ struct AboutSettingsTab: View {
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
+
+            Button {
+                AppBranding.contactSupport()
+            } label: {
+                Label("Contact Support", systemImage: "questionmark.bubble")
+            }
+            .controlSize(.large)
+            .help(AppBranding.supportURL.absoluteString)
 
             Spacer()
         }

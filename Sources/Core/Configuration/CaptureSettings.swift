@@ -148,7 +148,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public var defaultFormat: ExportFormat
     public var jpegQuality: Double
     public var copyToClipboard: Bool
-    public var openInEditor: Bool
     public var saveToDisk: Bool
     public var playCaptureSound: Bool
     public var runOcrAutomatically: Bool
@@ -174,7 +173,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         defaultFormat: ExportFormat = .png,
         jpegQuality: Double = 0.85,
         copyToClipboard: Bool = true,
-        openInEditor: Bool = true,
         saveToDisk: Bool = true,
         playCaptureSound: Bool = true,
         runOcrAutomatically: Bool = true,
@@ -195,7 +193,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.defaultFormat = defaultFormat
         self.jpegQuality = jpegQuality
         self.copyToClipboard = copyToClipboard
-        self.openInEditor = openInEditor
         self.saveToDisk = saveToDisk
         self.playCaptureSound = playCaptureSound
         self.runOcrAutomatically = runOcrAutomatically
@@ -219,7 +216,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.defaultFormat = try container.decodeIfPresent(ExportFormat.self, forKey: .defaultFormat) ?? .png
         self.jpegQuality = try container.decodeIfPresent(Double.self, forKey: .jpegQuality) ?? 0.85
         self.copyToClipboard = try container.decodeIfPresent(Bool.self, forKey: .copyToClipboard) ?? true
-        self.openInEditor = try container.decodeIfPresent(Bool.self, forKey: .openInEditor) ?? true
         self.saveToDisk = try container.decodeIfPresent(Bool.self, forKey: .saveToDisk) ?? true
         self.playCaptureSound = try container.decodeIfPresent(Bool.self, forKey: .playCaptureSound) ?? true
         self.runOcrAutomatically = try container.decodeIfPresent(Bool.self, forKey: .runOcrAutomatically) ?? true

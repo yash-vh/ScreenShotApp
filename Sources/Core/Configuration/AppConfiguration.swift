@@ -13,17 +13,15 @@ public final class AppConfiguration: ObservableObject {
         static let captureSettings = "com.screenshotapp.captureSettings"
         static let launchAtLogin = "com.screenshotapp.launchAtLogin"
         static let showDockIcon = "com.screenshotapp.showDockIcon"
-        static let activeCloudProvider = "com.screenshotapp.activeCloudProvider"
+        static let showMenuBarIcon = "com.screenshotapp.showMenuBarIcon"
+        static let relaunchAfterUnexpectedQuit = "com.screenshotapp.relaunchAfterUnexpectedQuit"
         static let s3Endpoint = "com.screenshotapp.s3Endpoint"
         static let s3Bucket = "com.screenshotapp.s3Bucket"
         static let s3Region = "com.screenshotapp.s3Region"
         static let s3PublicBaseURL = "com.screenshotapp.s3PublicBaseURL"
-        static let shareServiceURL = "com.screenshotapp.shareServiceURL"
-        static let imgurClientID = "com.screenshotapp.imgurClientID"
         static let uploadExpiry = "com.screenshotapp.uploadExpiry"
         static let linkShortener = "com.screenshotapp.linkShortener"
         static let cacheQuotaMB = "com.screenshotapp.cacheQuotaMB"
-        static let installID = "com.screenshotapp.installID"
         static let recordingSettings = "com.screenshotapp.recordingSettings"
     }
 
@@ -76,9 +74,17 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    @Published public var activeCloudProvider: CloudProviderType {
+    /// Whether the menu bar menu (status item) is shown; when hidden, reopen SyncShot from Finder or Spotlight to reach Settings
+    @Published public var showMenuBarIcon: Bool {
         didSet {
-            defaults.set(activeCloudProvider.rawValue, forKey: Keys.activeCloudProvider)
+            defaults.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon)
+        }
+    }
+
+    /// Whether launchd should relaunch SyncShot after a force quit or crash (see `BackgroundRelauncher`)
+    @Published public var relaunchAfterUnexpectedQuit: Bool {
+        didSet {
+            defaults.set(relaunchAfterUnexpectedQuit, forKey: Keys.relaunchAfterUnexpectedQuit)
         }
     }
 
@@ -104,20 +110,6 @@ public final class AppConfiguration: ObservableObject {
     @Published public var s3PublicBaseURL: String {
         didSet {
             defaults.set(s3PublicBaseURL, forKey: Keys.s3PublicBaseURL)
-        }
-    }
-
-    /// Base URL of the self-hosted Shot Link share service (see `Services/share-worker`)
-    @Published public var shareServiceURL: String {
-        didSet {
-            defaults.set(shareServiceURL, forKey: Keys.shareServiceURL)
-        }
-    }
-
-    /// Imgur application Client-ID used for anonymous uploads
-    @Published public var imgurClientID: String {
-        didSet {
-            defaults.set(imgurClientID, forKey: Keys.imgurClientID)
         }
     }
 
@@ -149,38 +141,27 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    /// Anonymous per-install identifier sent to the share service for rate limiting
-    public let installID: String
-
     /// Single user-facing choice behind the Upload button
     public var uploadDestination: UploadDestination {
         get {
-            switch uploadProvider {
-            case nil: return .off
-            case .imgbb: return .imgbb
-            case .imgur: return .imgur
-            case .s3Compatible: return .s3
-            default: return .shotLink
+            switch storageMode {
+            case .localOnly: return .off
+            case .managedCloud: return .imgbb
+            case .userOwned: return .s3
             }
         }
         set {
             switch newValue {
             case .off: storageMode = .localOnly
+            case .imgbb: storageMode = .managedCloud
             case .s3: storageMode = .userOwned
-            case .imgbb: storageMode = .managedCloud; activeCloudProvider = .imgbb
-            case .imgur: storageMode = .managedCloud; activeCloudProvider = .imgur
-            case .shotLink: storageMode = .managedCloud; activeCloudProvider = .managedCloud
             }
         }
     }
 
     /// The upload provider implied by the storage mode, or nil when uploads are off
     public var uploadProvider: CloudProviderType? {
-        switch storageMode {
-        case .localOnly: return nil
-        case .managedCloud: return [.imgur, .imgbb].contains(activeCloudProvider) ? activeCloudProvider : .managedCloud
-        case .userOwned: return .s3Compatible
-        }
+        storageMode.provider
     }
 
     public init(defaults: UserDefaults = .standard) {
@@ -206,20 +187,13 @@ public final class AppConfiguration: ObservableObject {
         let loginStatus = SMAppService.mainApp.status
         self.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
-        
-        if let rawProvider = defaults.string(forKey: Keys.activeCloudProvider),
-           let provider = CloudProviderType(rawValue: rawProvider) {
-            self.activeCloudProvider = provider
-        } else {
-            self.activeCloudProvider = .imgbb
-        }
+        self.showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) != nil ? defaults.bool(forKey: Keys.showMenuBarIcon) : true
+        self.relaunchAfterUnexpectedQuit = defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit)
 
         self.s3Endpoint = defaults.string(forKey: Keys.s3Endpoint) ?? ""
         self.s3Bucket = defaults.string(forKey: Keys.s3Bucket) ?? ""
         self.s3Region = defaults.string(forKey: Keys.s3Region) ?? "us-east-1"
         self.s3PublicBaseURL = defaults.string(forKey: Keys.s3PublicBaseURL) ?? ""
-        self.shareServiceURL = defaults.string(forKey: Keys.shareServiceURL) ?? ""
-        self.imgurClientID = defaults.string(forKey: Keys.imgurClientID) ?? ""
         self.uploadExpiry = defaults.string(forKey: Keys.uploadExpiry).flatMap(UploadExpiry.init(rawValue:)) ?? .thirtyDays
         self.linkShortener = defaults.string(forKey: Keys.linkShortener).flatMap(LinkShortener.init(rawValue:)) ?? .off
         self.cacheQuotaMB = defaults.object(forKey: Keys.cacheQuotaMB) != nil ? defaults.integer(forKey: Keys.cacheQuotaMB) : 2048
@@ -231,13 +205,6 @@ public final class AppConfiguration: ObservableObject {
             self.recordingSettings = .default
         }
 
-        if let existing = defaults.string(forKey: Keys.installID) {
-            self.installID = existing
-        } else {
-            let fresh = UUID().uuidString.lowercased()
-            defaults.set(fresh, forKey: Keys.installID)
-            self.installID = fresh
-        }
     }
 
     /// The folder the current settings point at, without touching the disk

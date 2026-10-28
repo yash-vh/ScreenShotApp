@@ -8,7 +8,6 @@ public enum RegionCaptureAction {
     case defaultAction(AnnotationDocument)
     case copy(AnnotationDocument)
     case save(AnnotationDocument)
-    case edit(AnnotationDocument)
     case upload(AnnotationDocument)
 }
 
@@ -280,7 +279,6 @@ final class RegionSelectionView: NSView {
             onDelete: { [weak canvas] in canvas?.delete(nil) },
             onCopyToClipboard: { [weak self] in self?.finish(.copy) },
             secondaryActions: [
-                EditorToolbarAction(id: "edit", symbol: "square.and.pencil", help: "Open in Editor (⌘E)") { [weak self] in self?.finish(.edit) },
                 EditorToolbarAction(id: "upload", symbol: "icloud.and.arrow.up", help: "Upload & Copy Link (⌘U)") { [weak self] in self?.finish(.upload) },
                 EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save to File (⌘S)") { [weak self] in self?.finish(.save) }
             ],
@@ -366,7 +364,7 @@ final class RegionSelectionView: NSView {
 
     // MARK: - Actions
 
-    private enum FinishKind { case copy, save, edit, upload, defaultAction }
+    private enum FinishKind { case copy, save, upload, defaultAction }
 
     private func finish(_ kind: FinishKind) {
         guard hasActiveSelection, selectionRect.width > 5, selectionRect.height > 5 else {
@@ -383,7 +381,6 @@ final class RegionSelectionView: NSView {
         switch kind {
         case .copy: action = .copy(doc)
         case .save: action = .save(doc)
-        case .edit: action = .edit(doc)
         case .upload: action = .upload(doc)
         case .defaultAction: action = .defaultAction(doc)
         }
@@ -604,9 +601,6 @@ final class RegionSelectionView: NSView {
         }
         if isPlainCommand && key == "s" {
             finish(.save); return true
-        }
-        if isPlainCommand && key == "e" {
-            finish(.edit); return true
         }
         return false
     }

@@ -24,7 +24,7 @@ final class HistoryStoreTests: XCTestCase {
     func testAddPersistsAcrossReopen() throws {
         let store = HistoryStore(rootDirectory: root)
         var asset = try makeAsset(in: store, title: "Invoice", ocr: "Total $1,240.00")
-        asset.uploadRecords = [UploadRecord(providerType: .managedCloud, remoteKey: "abc", shareURL: URL(string: "https://s.example/abc"), status: .completed)]
+        asset.uploadRecords = [UploadRecord(providerType: .s3Compatible, remoteKey: "abc", shareURL: URL(string: "https://s.example/abc"), status: .completed)]
         store.add(asset)
 
         let reopened = HistoryStore(rootDirectory: root)
@@ -129,7 +129,7 @@ final class HistoryQueryTests: XCTestCase {
             pixelWidth: 1, pixelHeight: 1, fileSizeBytes: 1,
             ocrText: ocr,
             mediaType: media,
-            uploadRecords: uploaded ? [UploadRecord(providerType: .imgur, remoteKey: "x", status: .completed)] : [],
+            uploadRecords: uploaded ? [UploadRecord(providerType: .imgbb, remoteKey: "x", status: .completed)] : [],
             isAvailableLocally: available
         )
     }

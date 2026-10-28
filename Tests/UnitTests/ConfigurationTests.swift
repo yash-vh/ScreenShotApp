@@ -6,7 +6,6 @@ final class ConfigurationTests: XCTestCase {
         let settings = CaptureSettings.default
         XCTAssertEqual(settings.defaultFormat, .png)
         XCTAssertTrue(settings.copyToClipboard)
-        XCTAssertTrue(settings.openInEditor)
         XCTAssertTrue(settings.saveToDisk)
         XCTAssertTrue(settings.runOcrAutomatically)
         XCTAssertEqual(settings.shortcutRegion.displayString, "⇧⌘4")
@@ -37,12 +36,52 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(local.iconName, "internaldrive")
 
         let cloud = StorageMode.managedCloud
-        XCTAssertEqual(cloud.title, "Free Share Link")
+        XCTAssertEqual(cloud.title, "ImgBB")
+        XCTAssertEqual(cloud.provider, .imgbb)
         XCTAssertEqual(cloud.iconName, "cloud.fill")
 
         let custom = StorageMode.userOwned
-        XCTAssertEqual(custom.title, "My Storage")
+        XCTAssertEqual(custom.title, "Amazon S3")
+        XCTAssertEqual(custom.provider, .s3Compatible)
+        XCTAssertNil(local.provider)
         XCTAssertEqual(custom.iconName, "server.rack")
+    }
+
+    @MainActor
+    func testMenuBarMenuIsShownByDefault() {
+        let suite = "MenuVisibility-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertTrue(AppConfiguration(defaults: defaults).showMenuBarIcon)
+    }
+
+    @MainActor
+    func testMenuBarMenuVisibilityPersistsAcrossLaunches() {
+        let suite = "MenuVisibility-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+
+        AppConfiguration(defaults: defaults).showMenuBarIcon = false
+        XCTAssertFalse(AppConfiguration(defaults: defaults).showMenuBarIcon)
+
+        AppConfiguration(defaults: defaults).showMenuBarIcon = true
+        XCTAssertTrue(AppConfiguration(defaults: defaults).showMenuBarIcon)
+    }
+
+    @MainActor
+    func testRelaunchAfterUnexpectedQuitIsOffByDefaultAndPersists() {
+        let suite = "Relaunch-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+        AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = true
+        XCTAssertTrue(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+    }
+
+    func testCaptureSettingsDecodeIgnoresRemovedEditorFlag() throws {
+        let json = #"{"openInEditor":true,"copyToClipboard":false}"#
+        let settings = try JSONDecoder().decode(CaptureSettings.self, from: Data(json.utf8))
+        XCTAssertFalse(settings.copyToClipboard)
     }
 
     @MainActor

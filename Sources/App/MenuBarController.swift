@@ -30,6 +30,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
         rebuildMenu()
 
+        // Show/hide the menu bar menu from Settings › General
+        config.$showMenuBarIcon
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] visible in
+                self?.statusItem?.isVisible = visible
+            }
+            .store(in: &cancellables)
+
         // Live recording indicator: red dot + elapsed time in the menu bar
         recorder.$state.combineLatest(recorder.$elapsed)
             .receive(on: DispatchQueue.main)
@@ -69,100 +77,62 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let menu = NSMenu()
         menu.delegate = self
         menu.autoenablesItems = false
+        menu.minimumWidth = Self.menuWidth
+
+        // Header: logo, name and where uploads go
+        menu.addItem(headerItem())
+        menu.addItem(NSMenuItem.separator())
 
         // 1. Capture Actions
-        let regionItem = NSMenuItem(
-            title: "Capture Selected Area",
-            action: #selector(didSelectCaptureRegion),
-            keyEquivalent: ""
-        )
+        menu.addItem(NSMenuItem.sectionHeader(title: "Capture"))
+        let regionItem = actionItem("Capture Selected Area", symbol: "crop", action: #selector(didSelectCaptureRegion))
         applyShortcut(settings.shortcutRegion, to: regionItem)
-        regionItem.image = NSImage(systemSymbolName: "crop", accessibilityDescription: nil)
-        regionItem.target = self
         menu.addItem(regionItem)
 
-        let fullScreenItem = NSMenuItem(
-            title: "Capture Full Screen",
-            action: #selector(didSelectCaptureFullScreen),
-            keyEquivalent: ""
-        )
+        let fullScreenItem = actionItem("Capture Full Screen", symbol: "macwindow", action: #selector(didSelectCaptureFullScreen))
         applyShortcut(settings.shortcutFullScreen, to: fullScreenItem)
-        fullScreenItem.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
-        fullScreenItem.target = self
         menu.addItem(fullScreenItem)
 
-        let windowItem = NSMenuItem(
-            title: "Capture Window",
-            action: #selector(didSelectCaptureWindow),
-            keyEquivalent: ""
-        )
+        let windowItem = actionItem("Capture Window", symbol: "macwindow.on.rectangle", action: #selector(didSelectCaptureWindow))
         applyShortcut(settings.shortcutWindow, to: windowItem)
-        windowItem.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: nil)
-        windowItem.target = self
         menu.addItem(windowItem)
 
         menu.addItem(NSMenuItem.separator())
 
         // 2. Screen Recording & OCR
+        menu.addItem(NSMenuItem.sectionHeader(title: "Record & Recognize"))
         if recorder.isActive {
-            let stopItem = NSMenuItem(title: "Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", action: #selector(didSelectToggleRecording), keyEquivalent: "")
+            let stopItem = actionItem("Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", symbol: "stop.circle.fill", action: #selector(didSelectToggleRecording))
             applyShortcut(settings.shortcutRecording, to: stopItem)
-            stopItem.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
-            stopItem.target = self
+            stopItem.image = stopItem.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemRed]))
             menu.addItem(stopItem)
 
-            let pauseItem = NSMenuItem(title: recorder.state == .paused ? "Resume Recording" : "Pause Recording", action: #selector(didSelectPauseRecording), keyEquivalent: "")
-            pauseItem.image = NSImage(systemSymbolName: recorder.state == .paused ? "play.circle" : "pause.circle", accessibilityDescription: nil)
-            pauseItem.target = self
-            menu.addItem(pauseItem)
-
-            let discardItem = NSMenuItem(title: "Discard Recording", action: #selector(didSelectDiscardRecording), keyEquivalent: "")
-            discardItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
-            discardItem.target = self
-            menu.addItem(discardItem)
+            let isPaused = recorder.state == .paused
+            menu.addItem(actionItem(isPaused ? "Resume Recording" : "Pause Recording", symbol: isPaused ? "play.circle" : "pause.circle", action: #selector(didSelectPauseRecording)))
+            menu.addItem(actionItem("Discard Recording", symbol: "trash", action: #selector(didSelectDiscardRecording)))
         } else {
             let recordMenu = NSMenu()
-            let recordRegion = NSMenuItem(title: "Selected Area", action: #selector(didSelectRecordRegion), keyEquivalent: "")
+            let recordRegion = actionItem("Selected Area", symbol: "crop", action: #selector(didSelectRecordRegion))
             applyShortcut(settings.shortcutRecording, to: recordRegion)
-            recordRegion.image = NSImage(systemSymbolName: "crop", accessibilityDescription: nil)
-            let recordWindow = NSMenuItem(title: "Window", action: #selector(didSelectRecordWindow), keyEquivalent: "")
-            recordWindow.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: nil)
-            let recordScreen = NSMenuItem(title: "Full Screen", action: #selector(didSelectRecordFullScreen), keyEquivalent: "")
-            recordScreen.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
+            let recordWindow = actionItem("Window", symbol: "macwindow.on.rectangle", action: #selector(didSelectRecordWindow))
+            let recordScreen = actionItem("Full Screen", symbol: "macwindow", action: #selector(didSelectRecordFullScreen))
             for item in [recordRegion, recordWindow, recordScreen] {
-                item.target = self
                 item.isEnabled = recorder.state == .idle
                 recordMenu.addItem(item)
             }
-            let recordingItem = NSMenuItem(title: "Record Screen", action: nil, keyEquivalent: "")
-            recordingItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+            let recordingItem = actionItem("Record Screen", symbol: "record.circle", action: nil)
             recordingItem.submenu = recordMenu
             menu.addItem(recordingItem)
         }
 
-        let ocrItem = NSMenuItem(
-            title: "OCR Text from Screen",
-            action: #selector(didSelectOcr),
-            keyEquivalent: ""
-        )
+        let ocrItem = actionItem("OCR Text from Screen", symbol: "text.viewfinder", action: #selector(didSelectOcr))
         applyShortcut(settings.shortcutQuickOcr, to: ocrItem)
-        ocrItem.image = NSImage(systemSymbolName: "text.viewfinder", accessibilityDescription: nil)
-        ocrItem.target = self
         menu.addItem(ocrItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // 3. Storage Destination Display
-        let storageStatusItem = NSMenuItem(
-            title: "Destination: \(config.storageMode.title)",
-            action: nil,
-            keyEquivalent: ""
-        )
-        storageStatusItem.isEnabled = false
-        storageStatusItem.image = NSImage(systemSymbolName: config.storageMode.iconName, accessibilityDescription: nil)
-        menu.addItem(storageStatusItem)
-
-        // 4. Recent Captures Submenu
+        // 3. Recent Captures & Library
+        menu.addItem(NSMenuItem.sectionHeader(title: "Library"))
         let recentMenu = NSMenu()
         if coordinator.recentAssets.isEmpty {
             let emptyItem = NSMenuItem(title: "No recent captures", action: nil, keyEquivalent: "")
@@ -170,54 +140,69 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             recentMenu.addItem(emptyItem)
         } else {
             for asset in coordinator.recentAssets.prefix(5) {
-                let item = NSMenuItem(title: asset.title, action: #selector(didSelectOpenRecentAsset(_:)), keyEquivalent: "")
-                item.target = self
+                let item = actionItem(asset.title, symbol: asset.mediaType.systemIconName, action: #selector(didSelectOpenRecentAsset(_:)))
                 item.representedObject = asset
-                item.image = NSImage(systemSymbolName: asset.mediaType.systemIconName, accessibilityDescription: nil)
+                if #available(macOS 14.4, *) {
+                    item.subtitle = Self.relativeDate.localizedString(for: asset.createdAt, relativeTo: Date())
+                }
                 recentMenu.addItem(item)
             }
         }
-        if let latest = coordinator.recentAssets.first {
-            let editLatest = NSMenuItem(title: "Annotate Last Capture", action: #selector(didSelectOpenRecentAsset(_:)), keyEquivalent: "")
-            editLatest.target = self
-            editLatest.representedObject = latest
-            editLatest.image = NSImage(systemSymbolName: "pencil.and.outline", accessibilityDescription: nil)
-            menu.addItem(editLatest)
-        }
-
-        let recentSubmenuItem = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
+        let recentSubmenuItem = actionItem("Recent Captures", symbol: "clock.arrow.circlepath", action: nil)
         recentSubmenuItem.submenu = recentMenu
         menu.addItem(recentSubmenuItem)
 
-        let libraryItem = NSMenuItem(title: "Open Library…", action: #selector(didSelectLibrary), keyEquivalent: "")
-        libraryItem.image = NSImage(systemSymbolName: "photo.stack", accessibilityDescription: nil)
-        libraryItem.target = self
-        menu.addItem(libraryItem)
+        menu.addItem(actionItem("Open Library…", symbol: "photo.stack", action: #selector(didSelectLibrary)))
 
         menu.addItem(NSMenuItem.separator())
 
-        // 5. Settings & App Management
-        let settingsItem = NSMenuItem(
-            title: "Settings...",
-            action: #selector(didSelectSettings),
-            keyEquivalent: ","
-        )
+        // 4. Settings, Support & App Management
+        let settingsItem = actionItem("Settings…", symbol: "gearshape", action: #selector(didSelectSettings))
+        settingsItem.keyEquivalent = ","
         settingsItem.keyEquivalentModifierMask = [.command]
-        settingsItem.target = self
         menu.addItem(settingsItem)
 
+        menu.addItem(actionItem("Contact Support…", symbol: "questionmark.bubble", action: #selector(didSelectSupport)))
+
         menu.addItem(NSMenuItem.separator())
 
-        let quitItem = NSMenuItem(
-            title: "Quit SyncShot",
-            action: #selector(didSelectQuit),
-            keyEquivalent: "q"
-        )
+        let quitItem = actionItem("Quit SyncShot", symbol: "power", action: #selector(didSelectQuit))
+        quitItem.keyEquivalent = "q"
         quitItem.keyEquivalentModifierMask = [.command]
-        quitItem.target = self
         menu.addItem(quitItem)
 
         statusItem?.menu = menu
+    }
+
+    // MARK: - Menu Building Helpers
+
+    private static let menuWidth: CGFloat = 280
+    private static let relativeDate: RelativeDateTimeFormatter = {
+        let formatter = RelativeDateTimeFormatter()
+        formatter.unitsStyle = .short
+        return formatter
+    }()
+
+    /// Standard row: consistent symbol size and weight so every item lines up
+    private func actionItem(_ title: String, symbol: String, action: Selector?) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+        item.target = action == nil ? nil : self
+        return item
+    }
+
+    private func headerItem() -> NSMenuItem {
+        let header = MenuHeaderView(
+            destination: config.storageMode == .localOnly ? "Uploads off · saved on this Mac" : "Uploads to \(config.storageMode.title)",
+            destinationSymbol: config.storageMode.iconName
+        )
+        let host = NSHostingView(rootView: header)
+        host.frame = NSRect(x: 0, y: 0, width: Self.menuWidth, height: host.fittingSize.height)
+        let item = NSMenuItem()
+        item.view = host
+        item.isEnabled = false
+        return item
     }
 
     /// Mirrors the user's configured global shortcut on a menu item (display only; Carbon handles the hotkey)
@@ -278,7 +263,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     @objc private func didSelectOpenRecentAsset(_ sender: NSMenuItem) {
         guard let asset = sender.representedObject as? ScreenshotAsset else { return }
         if FileManager.default.fileExists(atPath: asset.originalFileURL.path) {
-            coordinator.openEditor(for: asset)
+            NSWorkspace.shared.open(asset.originalFileURL)
         } else {
             CaptureHUD.shared.show(title: "Capture file not found", detail: asset.originalFileURL.lastPathComponent, symbol: "exclamationmark.triangle.fill")
         }
@@ -292,6 +277,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         coordinator.openSettings()
     }
 
+    @objc private func didSelectSupport() {
+        AppBranding.contactSupport()
+    }
+
     @objc private func didSelectQuit() {
         NSApplication.shared.terminate(nil)
     }
@@ -301,5 +290,41 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     public func menuWillOpen(_ menu: NSMenu) {
         // Refresh items dynamically before opening
         rebuildMenu()
+    }
+}
+
+// MARK: - Header
+
+/// Branded menu header; system label colors keep it legible in light and dark menus
+private struct MenuHeaderView: View {
+    let destination: String
+    let destinationSymbol: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(nsImage: AppBranding.logo(size: 32))
+                .resizable()
+                .interpolation(.high)
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 32, height: 32)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(AppBranding.appName)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                HStack(spacing: 4) {
+                    Image(systemName: destinationSymbol)
+                    Text(destination)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                .font(.system(size: 11))
+                .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 8)
+        .accessibilityElement(children: .combine)
     }
 }

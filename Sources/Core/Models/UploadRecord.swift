@@ -1,31 +1,28 @@
 import Foundation
 
-/// Supported cloud storage provider identifiers
+/// Supported cloud storage provider identifiers: ImgBB and Amazon S3 / S3-compatible buckets only.
 public enum CloudProviderType: String, Codable, Sendable, CaseIterable {
-    case managedCloud = "managed_cloud"
     case s3Compatible = "s3_compatible"
-    case supabase = "supabase"
-    case cloudinary = "cloudinary"
-    case imgur = "imgur"
     case imgbb = "imgbb"
+    /// Upload history from a provider SyncShot no longer supports; links stay viewable but can't be managed
+    case legacy = "legacy"
+
+    public init(from decoder: Decoder) throws {
+        let raw = try decoder.singleValueContainer().decode(String.self)
+        self = CloudProviderType(rawValue: raw) ?? .legacy
+    }
 
     public var displayName: String {
         switch self {
-        case .managedCloud: return "Shot Link (free)"
-        case .imgur:        return "Imgur (anonymous)"
         case .imgbb:        return "ImgBB"
         case .s3Compatible: return "Amazon S3 / S3-Compatible"
-        case .supabase:     return "Supabase Storage"
-        case .cloudinary:   return "Cloudinary"
+        case .legacy:       return "Removed provider"
         }
     }
 
     /// Providers with a working upload adapter
     public var isImplemented: Bool {
-        switch self {
-        case .managedCloud, .imgur, .imgbb, .s3Compatible: return true
-        case .supabase, .cloudinary: return false
-        }
+        self != .legacy
     }
 }
 
@@ -51,14 +48,6 @@ public struct ProviderCapabilities: Codable, Sendable, Equatable {
         self.supportsResumableUploads = supportsResumableUploads
     }
 
-    public static let managedDefault = ProviderCapabilities(
-        supportsDelete: true,
-        supportsExpiringLinks: true,
-        supportsPasswordProtection: false,
-        supportsLinkRevocation: true,
-        supportsResumableUploads: true
-    )
-
     public static let s3Default = ProviderCapabilities(
         supportsDelete: true,
         supportsExpiringLinks: true,
@@ -72,14 +61,6 @@ public struct ProviderCapabilities: Codable, Sendable, Equatable {
         supportsExpiringLinks: true,
         supportsPasswordProtection: false,
         supportsLinkRevocation: false,
-        supportsResumableUploads: false
-    )
-
-    public static let imgurDefault = ProviderCapabilities(
-        supportsDelete: true,
-        supportsExpiringLinks: false,
-        supportsPasswordProtection: false,
-        supportsLinkRevocation: true,
         supportsResumableUploads: false
     )
 }
@@ -118,7 +99,7 @@ public struct UploadRecord: Identifiable, Codable, Sendable, Equatable {
         status: UploadStatus = .pending,
         uploadedAt: Date? = nil,
         expiresAt: Date? = nil,
-        capabilities: ProviderCapabilities = .managedDefault,
+        capabilities: ProviderCapabilities = ProviderCapabilities(),
         errorMessage: String? = nil
     ) {
         self.id = id

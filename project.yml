@@ -22,6 +22,13 @@ targets:
       - path: Sources
         excludes:
           - "**/*.md"
+          - "Resources/LaunchAgents"
+      # launchd agent behind BackgroundRelauncher; SMAppService.agent looks in Contents/Library/LaunchAgents
+      - path: Sources/Resources/LaunchAgents
+        buildPhase:
+          copyFiles:
+            destination: wrapper
+            subpath: Contents/Library/LaunchAgents
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac
       PRODUCT_NAME: SyncShot
