@@ -1,14 +1,39 @@
 import SwiftUI
 
-/// Modern, streamlined single-row glassmorphic toolbar for the Screenshot Editor.
+/// A trailing action button on the editor toolbar (Save, Upload, Open in Editor, …)
+public struct EditorToolbarAction: Identifiable {
+    public let id: String
+    public let symbol: String
+    public let help: String
+    public let action: () -> Void
+
+    public init(id: String, symbol: String, help: String, action: @escaping () -> Void) {
+        self.id = id
+        self.symbol = symbol
+        self.help = help
+        self.action = action
+    }
+}
+
+/// Modern, streamlined single-row glassmorphic toolbar shared by the Screenshot Editor window
+/// and the region-capture overlay, so both offer identical tools, styling and shortcuts.
 public struct EditorToolbarView: View {
+    /// Where the toolbar is hosted: docked across the editor window, or floating beside a capture selection
+    public enum Placement {
+        case docked
+        case floating
+    }
+
     @ObservedObject var undoRedoManager: UndoRedoManager
     @ObservedObject var state: EditorState
+    var placement: Placement
     var onUndo: () -> Void
     var onRedo: () -> Void
     var onDelete: () -> Void
-    var onExport: () -> Void
     var onCopyToClipboard: () -> Void
+    var secondaryActions: [EditorToolbarAction]
+    var closeTitle: String
+    var closeHelp: String
     var onClose: () -> Void
 
     @State private var isShowingStyle = false
@@ -31,20 +56,26 @@ public struct EditorToolbarView: View {
     public init(
         undoRedoManager: UndoRedoManager,
         state: EditorState,
+        placement: Placement = .docked,
         onUndo: @escaping () -> Void,
         onRedo: @escaping () -> Void,
         onDelete: @escaping () -> Void,
-        onExport: @escaping () -> Void,
         onCopyToClipboard: @escaping () -> Void,
+        secondaryActions: [EditorToolbarAction],
+        closeTitle: String = "Done",
+        closeHelp: String = "Close Editor (Esc)",
         onClose: @escaping () -> Void
     ) {
         self.undoRedoManager = undoRedoManager
         self.state = state
+        self.placement = placement
         self.onUndo = onUndo
         self.onRedo = onRedo
         self.onDelete = onDelete
-        self.onExport = onExport
         self.onCopyToClipboard = onCopyToClipboard
+        self.secondaryActions = secondaryActions
+        self.closeTitle = closeTitle
+        self.closeHelp = closeHelp
         self.onClose = onClose
     }
 
@@ -116,7 +147,11 @@ public struct EditorToolbarView: View {
                 .help("Recognize Text & QR Codes (⇧⌘T)")
             }
 
-            Spacer(minLength: 8)
+            if placement == .docked {
+                Spacer(minLength: 8)
+            } else {
+                Divider().frame(height: 20)
+            }
 
             // MARK: - 5. Direct Actions
             HStack(spacing: 8) {
@@ -137,19 +172,21 @@ public struct EditorToolbarView: View {
                 .buttonStyle(.plain)
                 .help("Copy to Clipboard (⌘C)")
 
-                Button(action: onExport) {
-                    Image(systemName: "square.and.arrow.down")
-                        .font(.system(size: 12, weight: .medium))
-                        .frame(width: 28, height: 24)
-                        .background(Color.secondary.opacity(0.12))
-                        .cornerRadius(6)
-                        .contentShape(Rectangle())
+                ForEach(secondaryActions) { item in
+                    Button(action: item.action) {
+                        Image(systemName: item.symbol)
+                            .font(.system(size: 12, weight: .medium))
+                            .frame(width: 28, height: 24)
+                            .background(Color.secondary.opacity(0.12))
+                            .cornerRadius(6)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(item.help)
                 }
-                .buttonStyle(.plain)
-                .help("Save As… (⌘S)")
 
                 Button(action: onClose) {
-                    Text("Done")
+                    Text(closeTitle)
                         .font(.system(size: 12, weight: .medium))
                         .foregroundColor(.secondary)
                         .padding(.horizontal, 6)
@@ -157,12 +194,26 @@ public struct EditorToolbarView: View {
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
-                .help("Close Editor (Esc)")
+                .help(closeHelp)
             }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 7)
-        .background(.ultraThinMaterial)
+        .fixedSize(horizontal: placement == .floating, vertical: false)
+        .background(toolbarBackground)
+    }
+
+    @ViewBuilder
+    private var toolbarBackground: some View {
+        switch placement {
+        case .docked:
+            Rectangle().fill(.ultraThinMaterial)
+        case .floating:
+            RoundedRectangle(cornerRadius: 12)
+                .fill(.regularMaterial)
+                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.18), lineWidth: 1))
+                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+        }
     }
 
     // MARK: - Contextual Properties

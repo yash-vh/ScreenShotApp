@@ -1,4 +1,6 @@
 import AppKit
+import SwiftUI
+import Combine
 import CoreGraphics
 
 /// Action chosen by the user from the on-screen region selection toolbar
@@ -23,7 +25,7 @@ public final class RegionSelectionOverlayController: NSObject {
 
     private var overlayWindows: [NSWindow] = []
     private var isCursorPushed = false
-    private var onSelectionComplete: ((CGRect, NSScreen, RegionCaptureAction) -> Void)?
+    private var onSelectionComplete: ((CGRect, NSScreen, RegionCaptureAction, CGImage?) -> Void)?
     private var onCancelled: (() -> Void)?
 
     private override init() {
@@ -33,7 +35,7 @@ public final class RegionSelectionOverlayController: NSObject {
     /// Displays transparent fullscreen overlays across all active displays
     public func present(
         mode: RegionSelectionMode = .capture,
-        onComplete: @escaping (CGRect, NSScreen, RegionCaptureAction) -> Void,
+        onComplete: @escaping (CGRect, NSScreen, RegionCaptureAction, CGImage?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         dismiss()
@@ -82,8 +84,8 @@ public final class RegionSelectionOverlayController: NSObject {
             screen: screen,
             screenSnapshot: screenSnapshot,
             mode: mode
-        ) { [weak self] selectedRect, action in
-            self?.handleSelectionComplete(selectedRect, on: screen, action: action)
+        ) { [weak self] selectedRect, action, image in
+            self?.handleSelectionComplete(selectedRect, on: screen, action: action, image: image)
         } onCancel: { [weak self] in
             self?.handleCancelled()
         }
@@ -92,11 +94,15 @@ public final class RegionSelectionOverlayController: NSObject {
         return window
     }
 
-    private func handleSelectionComplete(_ rect: CGRect, on screen: NSScreen, action: RegionCaptureAction) {
+    private func handleSelectionComplete(_ rect: CGRect, on screen: NSScreen, action: RegionCaptureAction, image: CGImage?) {
         dismiss()
-        // Give the window server a moment to remove the overlay before the screen is captured
+        guard image == nil else {
+            onSelectionComplete?(rect, screen, action, image)
+            return
+        }
+        // Without a frozen snapshot, give the window server a moment to remove the overlay before re-capturing
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.15) { [weak self] in
-            self?.onSelectionComplete?(rect, screen, action)
+            self?.onSelectionComplete?(rect, screen, action, nil)
         }
     }
 
@@ -106,37 +112,27 @@ public final class RegionSelectionOverlayController: NSObject {
     }
 }
 
-// MARK: - Region Selection View with In-Place Annotations, Flameshot-Style Toolbar & Handles
+// MARK: - Region Selection View
 
-final class RegionSelectionView: NSView, NSTextFieldDelegate {
+/// Full-screen selection surface for one display.
+///
+/// Phase 1 draws the selection rectangle (with crosshair + loupe). Once a region is selected, the area is
+/// annotated with the exact same components as the editor window: an embedded `AnnotationCanvasView`, the
+/// shared `EditorToolbarView`, `UndoRedoManager` history and `RecognitionController` — so tools, styling,
+/// shortcuts, move/resize and undo behave identically everywhere.
+final class RegionSelectionView: NSView {
     private let targetScreen: NSScreen
     private let screenSnapshot: CGImage?
     private let mode: RegionSelectionMode
-    private let onComplete: (CGRect, RegionCaptureAction) -> Void
+    private let onComplete: (CGRect, RegionCaptureAction, CGImage?) -> Void
     private let onCancel: () -> Void
 
-    // Selection & Dragging State
+    // Selection state (AppKit view coordinates, y-up)
     private var startPoint: CGPoint?
     private var currentPoint: CGPoint?
     private var selectionRect: CGRect = .zero
-    private var isDragging = false
     private var hasActiveSelection = false
 
-    // In-Place Drawing & Annotation State
-    private var currentTool: EditorTool = .select
-    private var activeColor: AnnotationColor = .red
-    private var activeStrokeWidth: Double = 3.0
-    private var document = AnnotationDocument(assetId: UUID())
-    private var undoStack: [AnnotationDocument] = []
-    private var redoStack: [AnnotationDocument] = []
-
-    // In-progress drawing
-    private var isDrawingAnnotation = false
-    private var annotationStartPoint: CGPoint = .zero
-    private var annotationCurrentPoint: CGPoint = .zero
-    private var freehandPoints: [NormalizedPoint] = []
-
-    // Resize Handles
     private enum DragHandle {
         case topLeft, topCenter, topRight
         case middleLeft, middleRight
@@ -149,37 +145,24 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
 
     private var trackingArea: NSTrackingArea?
 
-    private static let textFontSize: Double = 20
+    // Shared annotation session (created when a region is selected)
+    let undoRedoManager: UndoRedoManager
+    let editorState = EditorState(tool: .arrow)
+    private(set) var canvas: AnnotationCanvasView?
+    private var toolbarHost: NSHostingView<EditorToolbarView>?
+    private let chromeView = SelectionChromeView()
+    private var recognition: RecognitionController?
+    private var croppedSnapshot: CGImage?
+    private var cancellables = Set<AnyCancellable>()
 
-    // Floating On-Screen Action & Tool Menu Bar
-    private let toolbarContainer = NSView()
-    private var toolButtons: [String: NSButton] = [:]
-
-    // Inline Text Field for Direct On-Screen Typing
-    private lazy var inlineTextField: NSTextField = {
-        let tf = NSTextField()
-        tf.font = AnnotationRenderer.font(ofSize: Self.textFontSize)
-        tf.textColor = .white
-        tf.backgroundColor = NSColor.black.withAlphaComponent(0.65)
-        tf.isBordered = true
-        tf.wantsLayer = true
-        tf.layer?.cornerRadius = 5
-        tf.layer?.borderColor = NSColor.systemBlue.cgColor
-        tf.layer?.borderWidth = 1.5
-        tf.placeholderString = "Type annotation..."
-        tf.isHidden = true
-        tf.target = self
-        tf.action = #selector(didCommitInlineText)
-        tf.delegate = self
-        return tf
-    }()
+    private static let borderColor = NSColor(calibratedRed: 0.25, green: 0.65, blue: 1.0, alpha: 1.0)
 
     init(
         frame: NSRect,
         screen: NSScreen,
         screenSnapshot: CGImage?,
         mode: RegionSelectionMode = .capture,
-        onComplete: @escaping (CGRect, RegionCaptureAction) -> Void,
+        onComplete: @escaping (CGRect, RegionCaptureAction, CGImage?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.targetScreen = screen
@@ -187,10 +170,14 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
         self.mode = mode
         self.onComplete = onComplete
         self.onCancel = onCancel
+        // Annotation sizes are in points; the frozen snapshot defines how many pixels each point covers
+        let pixelsPerPoint = screenSnapshot.map { Double($0.width) / Double(max(frame.width, 1)) } ?? Double(screen.backingScaleFactor)
+        self.undoRedoManager = UndoRedoManager(document: AnnotationDocument(assetId: UUID(), pixelsPerPoint: pixelsPerPoint))
         super.init(frame: frame)
 
-        setupFloatingToolbar()
-        addSubview(inlineTextField)
+        chromeView.frame = bounds
+        chromeView.autoresizingMask = [.width, .height]
+        chromeView.drawHandler = { [weak self] context in self?.drawSelectionChrome(in: context) }
     }
 
     required init?(coder: NSCoder) {
@@ -204,190 +191,144 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
         if let existing = trackingArea {
             removeTrackingArea(existing)
         }
-        let area = NSTrackingArea(
-            rect: bounds,
-            options: [.activeAlways, .mouseMoved, .cursorUpdate, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
+        let area = NSTrackingArea(rect: bounds, options: [.activeAlways, .mouseMoved, .cursorUpdate, .inVisibleRect], owner: self, userInfo: nil)
         addTrackingArea(area)
-        self.trackingArea = area
+        trackingArea = area
     }
 
-    // MARK: - Floating Toolbar Setup (M3 Drawing Tools & M4 Actions)
+    // MARK: - Annotation Session
 
-    private func setupFloatingToolbar() {
-        toolbarContainer.wantsLayer = true
-        toolbarContainer.layer?.backgroundColor = NSColor(calibratedWhite: 0.12, alpha: 0.95).cgColor
-        toolbarContainer.layer?.cornerRadius = 18
-        toolbarContainer.layer?.borderWidth = 1.0
-        toolbarContainer.layer?.borderColor = NSColor.white.withAlphaComponent(0.25).cgColor
-        toolbarContainer.layer?.shadowColor = NSColor.black.cgColor
-        toolbarContainer.layer?.shadowOpacity = 0.55
-        toolbarContainer.layer?.shadowOffset = CGSize(width: 0, height: -3)
-        toolbarContainer.layer?.shadowRadius = 8
-        toolbarContainer.isHidden = true
+    private var document: AnnotationDocument { undoRedoManager.document }
 
-        var currentX: CGFloat = 8
-        let btnSize: CGFloat = 26
-        let btnSpacing: CGFloat = 4
+    private func startSessionIfNeeded() {
+        guard canvas == nil else { return }
 
-        func addToolButton(icon: String, tooltip: String, tool: EditorTool) {
-            let btn = NSButton(frame: CGRect(x: currentX, y: 5, width: btnSize, height: btnSize))
-            btn.bezelStyle = .regularSquare
-            btn.isBordered = false
-            btn.image = NSImage(systemSymbolName: icon, accessibilityDescription: tooltip)
-            btn.imagePosition = .imageOnly
-            btn.imageScaling = .scaleProportionallyDown
-            btn.contentTintColor = .white
-            btn.toolTip = tooltip
-            btn.target = self
-            btn.action = #selector(didSelectToolButton(_:))
-            btn.identifier = NSUserInterfaceItemIdentifier(tool.rawValue)
-            btn.wantsLayer = true
-            toolbarContainer.addSubview(btn)
-            toolButtons[tool.rawValue] = btn
-            currentX += btnSize + btnSpacing
+        let canvas = AnnotationCanvasView(frame: .zero, undoRedoManager: undoRedoManager, state: editorState, baseImage: croppedSnapshot, presentation: .embedded)
+        canvas.onCopyRequested = { [weak self] in self?.finish(.copy) }
+        canvas.onSaveRequested = { [weak self] in self?.finish(.save) }
+        canvas.onConfirmRequested = { [weak self] in self?.finish(.copy) }
+        canvas.onCloseRequested = { [weak self] in self?.cancelCapture() }
+        canvas.onBackgroundDrag = { [weak self] phase, event in self?.handleBackgroundDrag(phase, event) ?? false }
+        addSubview(canvas, positioned: .below, relativeTo: nil)
+        self.canvas = canvas
+
+        addSubview(chromeView)
+
+        let toolbar = EditorToolbarView(
+            undoRedoManager: undoRedoManager,
+            state: editorState,
+            placement: .floating,
+            onUndo: { [weak canvas] in canvas?.undo(nil) },
+            onRedo: { [weak canvas] in canvas?.redo(nil) },
+            onDelete: { [weak canvas] in canvas?.delete(nil) },
+            onCopyToClipboard: { [weak self] in self?.finish(.copy) },
+            secondaryActions: [
+                EditorToolbarAction(id: "edit", symbol: "square.and.pencil", help: "Open in Editor (⌘E)") { [weak self] in self?.finish(.edit) },
+                EditorToolbarAction(id: "upload", symbol: "icloud.and.arrow.up", help: "Upload & Copy Link (⌘U)") { [weak self] in self?.finish(.upload) },
+                EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save to File (⌘S)") { [weak self] in self?.finish(.save) }
+            ],
+            closeTitle: "Cancel",
+            closeHelp: "Cancel Capture (Esc)",
+            onClose: { [weak self] in self?.cancelCapture() }
+        )
+        let host = NSHostingView(rootView: toolbar)
+        addSubview(host)
+        toolbarHost = host
+
+        recognition = RecognitionController(state: editorState, canvas: canvas) { [weak self] in self?.croppedSnapshot }
+
+        // Styling padding changes the canvas footprint around the selection
+        undoRedoManager.$document
+            .map(\.padding)
+            .removeDuplicates()
+            .dropFirst()
+            .sink { [weak self] _ in
+                DispatchQueue.main.async { self?.layoutSession() }
+            }
+            .store(in: &cancellables)
+
+        layoutSession()
+        window?.makeFirstResponder(canvas)
+    }
+
+    private func endSession() {
+        recognition?.invalidate()
+        recognition = nil
+        canvas?.removeFromSuperview()
+        canvas = nil
+        toolbarHost?.removeFromSuperview()
+        toolbarHost = nil
+        chromeView.removeFromSuperview()
+        cancellables.removeAll()
+        undoRedoManager.updateDocument(registerUndo: false) { doc in
+            doc.items.removeAll()
+            doc.backgroundPresetID = nil
+            doc.backgroundColor = nil
+            doc.padding = 0
+            doc.cornerRadius = 0
+            doc.shadowRadius = 0
         }
-
-        func addActionButton(icon: String, tooltip: String, action: Selector, tint: NSColor = .white) {
-            let btn = NSButton(frame: CGRect(x: currentX, y: 5, width: btnSize, height: btnSize))
-            btn.bezelStyle = .regularSquare
-            btn.isBordered = false
-            btn.image = NSImage(systemSymbolName: icon, accessibilityDescription: tooltip)
-            btn.imagePosition = .imageOnly
-            btn.imageScaling = .scaleProportionallyDown
-            btn.contentTintColor = tint
-            btn.toolTip = tooltip
-            btn.target = self
-            btn.action = action
-            toolbarContainer.addSubview(btn)
-            currentX += btnSize + btnSpacing
-        }
-
-        func addSeparator() {
-            let sep = NSBox(frame: CGRect(x: currentX + 1, y: 7, width: 1, height: 22))
-            sep.boxType = .separator
-            toolbarContainer.addSubview(sep)
-            currentX += 8
-        }
-
-        // 1. Move / Selection Mode
-        addToolButton(icon: "arrow.up.and.down.and.arrow.left.and.right", tooltip: "Move & Resize Selection (V)", tool: .select)
-
-        addSeparator()
-
-        // 2. In-Place M3 Annotation Tools
-        addToolButton(icon: "pencil.line", tooltip: "Pen (P)", tool: .freehand)
-        addToolButton(icon: "arrow.up.right", tooltip: "Arrow (A)", tool: .arrow)
-        addToolButton(icon: "rectangle", tooltip: "Rectangle (R)", tool: .rectangle)
-        addToolButton(icon: "circle", tooltip: "Ellipse (O)", tool: .ellipse)
-        addToolButton(icon: "highlighter", tooltip: "Highlighter (H)", tool: .highlight)
-        addToolButton(icon: "textformat", tooltip: "Text (T)", tool: .text)
-        addToolButton(icon: "drop.fill", tooltip: "Blur / Redact (B)", tool: .blur)
-        addToolButton(icon: "checkerboard.rectangle", tooltip: "Pixelate (X)", tool: .pixelate)
-
-        addSeparator()
-
-        // 3. Undo / Redo
-        addActionButton(icon: "arrow.uturn.backward", tooltip: "Undo (⌘Z)", action: #selector(didClickUndo))
-        addActionButton(icon: "arrow.uturn.forward", tooltip: "Redo (⇧⌘Z)", action: #selector(didClickRedo))
-
-        addSeparator()
-
-        // 4. M4 Export Actions & Cancel
-        addActionButton(icon: "pencil.and.outline", tooltip: "Open in Editor (⌘E)", action: #selector(didClickEdit), tint: NSColor.systemOrange)
-        addActionButton(icon: "doc.on.doc.fill", tooltip: "Copy to Clipboard (⌘C / ↵)", action: #selector(didClickCopy), tint: NSColor.systemGreen)
-        addActionButton(icon: "icloud.and.arrow.up.fill", tooltip: "Upload & Copy Link (⌘U)", action: #selector(didClickUpload), tint: NSColor.systemTeal)
-        addActionButton(icon: "square.and.arrow.down.fill", tooltip: "Save to File (⌘S)", action: #selector(didClickSave), tint: NSColor.systemBlue)
-        addActionButton(icon: "xmark.circle.fill", tooltip: "Cancel (Esc)", action: #selector(didClickCancel), tint: NSColor.systemRed)
-
-        let totalWidth = currentX + 4
-        toolbarContainer.frame = CGRect(x: 0, y: 0, width: totalWidth, height: 36)
-        addSubview(toolbarContainer)
-
-        updateActiveToolButton()
+        window?.makeFirstResponder(self)
     }
 
-    private func updateActiveToolButton() {
-        for (raw, btn) in toolButtons {
-            let isSelected = (currentTool.rawValue == raw)
-            btn.layer?.backgroundColor = isSelected ? NSColor.systemBlue.cgColor : NSColor.clear.cgColor
-            btn.layer?.cornerRadius = 6
-        }
+    /// Positions the canvas over the selection and the toolbar beside it
+    private func layoutSession(showToolbar: Bool = true) {
+        guard let canvas = canvas else { return }
+        let pad = CGFloat(document.padding)
+        canvas.frame = selectionRect.insetBy(dx: -pad, dy: -pad)
+        canvas.needsDisplay = true
+        chromeView.needsDisplay = true
+
+        guard let host = toolbarHost else { return }
+        host.isHidden = !showToolbar
+        let size = host.fittingSize
+        let outer = canvas.frame
+        var y = outer.minY - size.height - 10
+        if y < 8 { y = outer.maxY + 10 }
+        if y + size.height > bounds.height - 8 { y = max(8, outer.minY + 10) }
+        let x = max(8, min(bounds.width - size.width - 8, outer.midX - size.width / 2))
+        host.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
-    // MARK: - Toolbar Actions
-
-    @objc private func didSelectToolButton(_ sender: NSButton) {
-        commitInlineTextIfNeeded()
-        if let raw = sender.identifier?.rawValue, let tool = EditorTool(rawValue: raw) {
-            currentTool = tool
-            updateActiveToolButton()
-            needsDisplay = true
-        }
-    }
-
-    @objc private func didClickUndo() {
-        commitInlineTextIfNeeded()
-        performUndo()
-    }
-
-    @objc private func didClickRedo() {
-        commitInlineTextIfNeeded()
-        performRedo()
-    }
-
-    @objc private func didClickCopy() {
-        commitInlineTextIfNeeded()
-        finishSelection(with: .copy(document))
-    }
-
-    @objc private func didClickEdit() {
-        commitInlineTextIfNeeded()
-        finishSelection(with: .edit(document))
-    }
-
-    @objc private func didClickUpload() {
-        commitInlineTextIfNeeded()
-        finishSelection(with: .upload(document))
-    }
-
-    @objc private func didClickSave() {
-        commitInlineTextIfNeeded()
-        finishSelection(with: .save(document))
-    }
-
-    @objc private func didClickCancel() {
-        commitInlineTextIfNeeded()
-        onCancel()
-    }
-
-    // MARK: - Undo / Redo
-
-    private func pushUndo() {
-        undoStack.append(document)
-        redoStack.removeAll()
-    }
-
-    private func performUndo() {
-        guard let prev = undoStack.popLast() else { return }
-        redoStack.append(document)
-        document = prev
-        needsDisplay = true
-    }
-
-    private func performRedo() {
-        guard let next = redoStack.popLast() else { return }
-        undoStack.append(document)
-        document = next
-        needsDisplay = true
-    }
-
-    private func finishSelection(with action: RegionCaptureAction) {
-        guard selectionRect.width > 5 && selectionRect.height > 5 else {
-            onCancel()
+    /// Crops the frozen display snapshot to the current selection (pixels, top-left origin)
+    private func updateCroppedSnapshot() {
+        guard let snapshot = screenSnapshot, selectionRect.width >= 1, selectionRect.height >= 1 else {
+            croppedSnapshot = nil
             return
+        }
+        let scale = CGFloat(snapshot.width) / bounds.width
+        let pixelRect = CGRect(
+            x: selectionRect.minX * scale,
+            y: (bounds.height - selectionRect.maxY) * scale,
+            width: selectionRect.width * scale,
+            height: selectionRect.height * scale
+        ).integral
+        croppedSnapshot = snapshot.cropping(to: pixelRect)
+        canvas?.baseCGImage = croppedSnapshot
+    }
+
+    // MARK: - Actions
+
+    private enum FinishKind { case copy, save, edit, upload, defaultAction }
+
+    private func finish(_ kind: FinishKind) {
+        guard hasActiveSelection, selectionRect.width > 5, selectionRect.height > 5 else {
+            if !hasActiveSelection { return }
+            cancelCapture()
+            return
+        }
+        // Ending first-responder status commits any in-progress text annotation
+        window?.makeFirstResponder(self)
+
+        let doc = document
+
+        let action: RegionCaptureAction
+        switch kind {
+        case .copy: action = .copy(doc)
+        case .save: action = .save(doc)
+        case .edit: action = .edit(doc)
+        case .upload: action = .upload(doc)
+        case .defaultAction: action = .defaultAction(doc)
         }
 
         let screenRect = CGRect(
@@ -396,134 +337,47 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
             width: selectionRect.width,
             height: selectionRect.height
         )
-        document.pixelsPerPoint = Double(targetScreen.backingScaleFactor)
-        let finalDocument = document
-        let resolved: RegionCaptureAction
-        switch action {
-        case .copy: resolved = .copy(finalDocument)
-        case .save: resolved = .save(finalDocument)
-        case .edit: resolved = .edit(finalDocument)
-        case .upload: resolved = .upload(finalDocument)
-        case .defaultAction: resolved = .defaultAction(finalDocument)
+        onComplete(screenRect, action, croppedSnapshot)
+    }
+
+    private func cancelCapture() {
+        onCancel()
+    }
+
+    // MARK: - Hit Testing
+
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        // Selection resize handles take priority over the canvas underneath them
+        if hasActiveSelection, mode == .capture, let handle = handleAt(point: convert(point, from: superview)), handle != .body {
+            return self
         }
-        onComplete(screenRect, resolved)
+        return super.hitTest(point)
     }
 
-    // MARK: - Inline Text Handling
-
-    private func commitInlineTextIfNeeded() {
-        guard !inlineTextField.isHidden else { return }
-        didCommitInlineText()
-    }
-
-    @objc private func didCommitInlineText() {
-        let str = inlineTextField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        if !str.isEmpty && selectionRect.width > 0 && selectionRect.height > 0 {
-            // Text bounds are anchored at the field's top-left corner (normalized space is y-down)
-            let normPoint = normalize(point: CGPoint(x: inlineTextField.frame.minX, y: inlineTextField.frame.maxY))
-            let size = AnnotationRenderer.textSize(str, fontSize: CGFloat(Self.textFontSize))
-            let item = AnnotationItem(
-                type: .text,
-                bounds: NormalizedRect(origin: normPoint, width: size.width / selectionRect.width, height: size.height / selectionRect.height),
-                strokeColor: activeColor,
-                textContent: str,
-                fontSize: Self.textFontSize
-            )
-            pushUndo()
-            document.items.append(item)
-        }
-        inlineTextField.stringValue = ""
-        inlineTextField.isHidden = true
-        window?.makeFirstResponder(self)
-        needsDisplay = true
-    }
-
-    // MARK: - Mouse Events (Drawing, Moving, Resizing)
+    // MARK: - Mouse Events
 
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
 
-        // Ignore clicks inside floating toolbar
-        if hasActiveSelection && toolbarContainer.frame.contains(loc) {
-            super.mouseDown(with: event)
-            return
-        }
-
-        // Commit any active inline text
-        if !inlineTextField.isHidden && !inlineTextField.frame.contains(loc) {
-            commitInlineTextIfNeeded()
-        }
-
-        // Double-click inside selection confirms capture
-        if hasActiveSelection && selectionRect.contains(loc) && event.clickCount >= 2 && currentTool == .select {
-            finishSelection(with: .copy(document))
-            return
-        }
-
-        // If selection is already active:
         if hasActiveSelection {
-            if currentTool == .select {
-                // Check if clicking resize handles or body
-                if let handle = handleAt(point: loc) {
-                    activeHandle = handle
-                    dragStartMouse = loc
-                    dragStartRect = selectionRect
-                    isDragging = true
-                    toolbarContainer.isHidden = true
-                    needsDisplay = true
-                    return
-                }
-
-                // Clicking outside selection resets and starts a new selection
-                hasActiveSelection = false
-                activeHandle = nil
-                toolbarContainer.isHidden = true
-                document.items.removeAll()
-                undoStack.removeAll()
-                redoStack.removeAll()
-                startPoint = loc
-                currentPoint = loc
-                selectionRect = .zero
-                isDragging = true
-                needsDisplay = true
+            if let handle = handleAt(point: loc), handle != .body {
+                window?.makeFirstResponder(self)
+                beginSelectionDrag(handle, at: loc)
                 return
-            } else {
-                // In-Place Drawing Tools (Arrow, Rect, Ellipse, Pen, Highlight, Text, Blur)
-                if selectionRect.contains(loc) {
-                    if currentTool == .text {
-                        inlineTextField.frame = CGRect(x: loc.x, y: loc.y - 14, width: 160, height: 30)
-                        inlineTextField.stringValue = ""
-                        inlineTextField.isHidden = false
-                        window?.makeFirstResponder(inlineTextField)
-                        return
-                    }
-
-                    isDrawingAnnotation = true
-                    annotationStartPoint = loc
-                    annotationCurrentPoint = loc
-                    if currentTool == .freehand {
-                        freehandPoints = [normalize(point: loc)]
-                    }
-                    needsDisplay = true
-                    return
-                } else {
-                    // Click outside during drawing switches back to select mode
-                    currentTool = .select
-                    updateActiveToolButton()
-                    needsDisplay = true
-                    return
-                }
             }
+            // Clicking outside an annotated selection must not throw the annotations away
+            guard document.items.isEmpty else {
+                NSSound.beep()
+                return
+            }
+            endSession()
         }
 
-        // Initial selection creation
         hasActiveSelection = false
-        activeHandle = nil
-        toolbarContainer.isHidden = true
         startPoint = loc
         currentPoint = loc
         selectionRect = .zero
-        isDragging = true
+        activeHandle = nil
         needsDisplay = true
     }
 
@@ -531,604 +385,318 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
         let loc = convert(event.locationInWindow, from: nil)
         currentPoint = loc
 
-        if isDrawingAnnotation {
-            annotationCurrentPoint = loc
-            if currentTool == .freehand {
-                freehandPoints.append(normalize(point: loc))
-            }
-            needsDisplay = true
-            return
-        }
-
-        if let handle = activeHandle, let startMouse = dragStartMouse, let initRect = dragStartRect {
-            let deltaX = loc.x - startMouse.x
-            let deltaY = loc.y - startMouse.y
-
-            var newRect = initRect
-            switch handle {
-            case .body:
-                newRect.origin.x = max(0, min(bounds.width - initRect.width, initRect.origin.x + deltaX))
-                newRect.origin.y = max(0, min(bounds.height - initRect.height, initRect.origin.y + deltaY))
-
-            case .bottomLeft:
-                let newMinX = min(loc.x, initRect.maxX - 15)
-                let newMinY = min(loc.y, initRect.maxY - 15)
-                newRect = CGRect(x: newMinX, y: newMinY, width: initRect.maxX - newMinX, height: initRect.maxY - newMinY)
-
-            case .bottomCenter:
-                let newMinY = min(loc.y, initRect.maxY - 15)
-                newRect = CGRect(x: initRect.origin.x, y: newMinY, width: initRect.width, height: initRect.maxY - newMinY)
-
-            case .bottomRight:
-                let newMaxX = max(loc.x, initRect.minX + 15)
-                let newMinY = min(loc.y, initRect.maxY - 15)
-                newRect = CGRect(x: initRect.minX, y: newMinY, width: newMaxX - initRect.minX, height: initRect.maxY - newMinY)
-
-            case .middleLeft:
-                let newMinX = min(loc.x, initRect.maxX - 15)
-                newRect = CGRect(x: newMinX, y: initRect.origin.y, width: initRect.maxX - newMinX, height: initRect.height)
-
-            case .middleRight:
-                let newMaxX = max(loc.x, initRect.minX + 15)
-                newRect = CGRect(x: initRect.minX, y: initRect.origin.y, width: newMaxX - initRect.minX, height: initRect.height)
-
-            case .topLeft:
-                let newMinX = min(loc.x, initRect.maxX - 15)
-                let newMaxY = max(loc.y, initRect.minY + 15)
-                newRect = CGRect(x: newMinX, y: initRect.minY, width: initRect.maxX - newMinX, height: newMaxY - initRect.minY)
-
-            case .topCenter:
-                let newMaxY = max(loc.y, initRect.minY + 15)
-                newRect = CGRect(x: initRect.origin.x, y: initRect.minY, width: initRect.width, height: newMaxY - initRect.minY)
-
-            case .topRight:
-                let newMaxX = max(loc.x, initRect.minX + 15)
-                let newMaxY = max(loc.y, initRect.minY + 15)
-                newRect = CGRect(x: initRect.minX, y: initRect.minY, width: newMaxX - initRect.minX, height: newMaxY - initRect.minY)
-            }
-
-            selectionRect = newRect
+        if activeHandle != nil {
+            updateSelectionDrag(to: loc)
         } else if let start = startPoint {
-            selectionRect = normalizedRect(from: start, to: loc)
+            selectionRect = Self.rect(from: start, to: loc).intersection(bounds)
         }
-
         needsDisplay = true
     }
 
     override func mouseMoved(with event: NSEvent) {
+        guard !hasActiveSelection else { return }
         currentPoint = convert(event.locationInWindow, from: nil)
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
-        if isDrawingAnnotation {
-            isDrawingAnnotation = false
-            commitInPlaceAnnotation()
-            needsDisplay = true
+        if activeHandle != nil {
+            endSelectionDrag()
             return
         }
 
-        isDragging = false
-        activeHandle = nil
-        dragStartMouse = nil
-        dragStartRect = nil
-
+        startPoint = nil
         if selectionRect.width > 15 && selectionRect.height > 15 {
+            hasActiveSelection = true
+            updateCroppedSnapshot()
             if mode == .quickSelect {
-                finishSelection(with: .defaultAction(document))
+                finish(.defaultAction)
                 return
             }
-            hasActiveSelection = true
-            updateToolbarPosition()
-            toolbarContainer.isHidden = false
-        } else if !hasActiveSelection {
-            toolbarContainer.isHidden = true
-            onCancel()
+            startSessionIfNeeded()
+        } else {
+            selectionRect = .zero
+            cancelCapture()
         }
-
         needsDisplay = true
     }
 
-    private func commitInPlaceAnnotation() {
-        guard selectionRect.width > 0, selectionRect.height > 0 else { return }
-        defer { freehandPoints.removeAll() }
-        let dragDistance = hypot(annotationCurrentPoint.x - annotationStartPoint.x, annotationCurrentPoint.y - annotationStartPoint.y)
-        guard currentTool == .freehand || dragDistance >= 4 else { return }
-
-        let normStart = normalize(point: annotationStartPoint)
-        let normCurrent = normalize(point: annotationCurrentPoint)
-        let normRect = NormalizedRect(
-            x: min(normStart.x, normCurrent.x),
-            y: min(normStart.y, normCurrent.y),
-            width: abs(normCurrent.x - normStart.x),
-            height: abs(normCurrent.y - normStart.y)
-        )
-
-        let item: AnnotationItem
-        switch currentTool {
-        case .arrow:
-            item = AnnotationItem(type: .arrow, bounds: normRect, strokeColor: activeColor, strokeWidth: activeStrokeWidth, points: [normStart, normCurrent])
-        case .rectangle:
-            item = AnnotationItem(type: .rectangle, bounds: normRect, strokeColor: activeColor, strokeWidth: activeStrokeWidth)
-        case .ellipse:
-            item = AnnotationItem(type: .ellipse, bounds: normRect, strokeColor: activeColor, strokeWidth: activeStrokeWidth)
-        case .highlight:
-            item = AnnotationItem(type: .highlight, bounds: normRect, strokeColor: AnnotationColor(red: 1.0, green: 0.95, blue: 0.10), strokeWidth: 16.0)
-        case .blur:
-            item = AnnotationItem(type: .blur, bounds: normRect, blurRadius: 20.0)
-        case .pixelate:
-            item = AnnotationItem(type: .pixelation, bounds: normRect, blurRadius: 16.0)
-        case .freehand:
-            guard freehandPoints.count > 1 else { return }
-            item = AnnotationItem(type: .freehand, bounds: AnnotationCanvasView.boundingRect(of: freehandPoints), strokeColor: activeColor, strokeWidth: activeStrokeWidth, points: freehandPoints)
-        default:
-            return
+    /// Select-tool drags on empty canvas space move the whole selection; a double-click copies
+    private func handleBackgroundDrag(_ phase: AnnotationCanvasView.BackgroundDragPhase, _ event: NSEvent) -> Bool {
+        let loc = convert(event.locationInWindow, from: nil)
+        switch phase {
+        case .began:
+            if event.clickCount >= 2 {
+                finish(.copy)
+                return false
+            }
+            beginSelectionDrag(.body, at: loc)
+        case .changed:
+            updateSelectionDrag(to: loc)
+            needsDisplay = true
+        case .ended:
+            endSelectionDrag()
         }
-
-        pushUndo()
-        document.items.append(item)
-        freehandPoints.removeAll()
+        return true
     }
 
+    private func beginSelectionDrag(_ handle: DragHandle, at loc: CGPoint) {
+        activeHandle = handle
+        dragStartMouse = loc
+        dragStartRect = selectionRect
+        recognition?.invalidate()
+    }
+
+    private func updateSelectionDrag(to loc: CGPoint) {
+        guard let handle = activeHandle, let startMouse = dragStartMouse, let initRect = dragStartRect else { return }
+        let minSize: CGFloat = 15
+        var newRect = initRect
+
+        switch handle {
+        case .body:
+            newRect.origin.x = max(0, min(bounds.width - initRect.width, initRect.origin.x + loc.x - startMouse.x))
+            newRect.origin.y = max(0, min(bounds.height - initRect.height, initRect.origin.y + loc.y - startMouse.y))
+        default:
+            var minX = initRect.minX, maxX = initRect.maxX, minY = initRect.minY, maxY = initRect.maxY
+            switch handle {
+            case .bottomLeft, .middleLeft, .topLeft: minX = min(loc.x, maxX - minSize)
+            case .bottomRight, .middleRight, .topRight: maxX = max(loc.x, minX + minSize)
+            default: break
+            }
+            switch handle {
+            case .bottomLeft, .bottomCenter, .bottomRight: minY = min(loc.y, maxY - minSize)
+            case .topLeft, .topCenter, .topRight: maxY = max(loc.y, minY + minSize)
+            default: break
+            }
+            newRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY).intersection(bounds)
+        }
+
+        selectionRect = newRect
+        updateCroppedSnapshot()
+        layoutSession(showToolbar: false)
+    }
+
+    private func endSelectionDrag() {
+        activeHandle = nil
+        dragStartMouse = nil
+        dragStartRect = nil
+        layoutSession()
+        if let canvas = canvas {
+            window?.makeFirstResponder(canvas)
+        }
+        needsDisplay = true
+    }
+
+    // MARK: - Keyboard
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.window == nil || event.window === window, inlineTextField.isHidden,
-              event.modifierFlags.intersection(.deviceIndependentFlagsMask).contains(.command) else {
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        guard event.window == nil || event.window === window, flags.contains(.command), canvas?.isEditingText != true else {
             return super.performKeyEquivalent(with: event)
         }
-        return handleKey(event) || super.performKeyEquivalent(with: event)
+        return handleCaptureShortcut(event) || super.performKeyEquivalent(with: event)
     }
 
     override func keyDown(with event: NSEvent) {
-        if !handleKey(event) {
+        if handleCaptureShortcut(event) { return }
+
+        switch event.keyCode {
+        case 53: // Esc
+            cancelCapture()
+        case 36, 76, 49: // Return / Enter / Space
+            finish(.copy)
+        default:
             super.keyDown(with: event)
         }
     }
 
     override func cancelOperation(_ sender: Any?) {
-        // Esc while typing discards the text instead of the whole capture
-        if !inlineTextField.isHidden {
-            inlineTextField.stringValue = ""
-            inlineTextField.isHidden = true
-            window?.makeFirstResponder(self)
-            needsDisplay = true
-            return
-        }
-        onCancel()
+        cancelCapture()
     }
 
-    /// Handles overlay shortcuts. Returns false when the key is not an overlay shortcut.
-    private func handleKey(_ event: NSEvent) -> Bool {
-        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let isCmd = flags.contains(.command)
-        let isShift = flags.contains(.shift)
+    /// Capture-level shortcuts (copy / save / upload / edit / cancel), including user-configured ones.
+    /// Annotation shortcuts (tools, ⌘Z, ⌘D, ⌫, arrows…) are handled by the shared canvas.
+    private func handleCaptureShortcut(_ event: NSEvent) -> Bool {
         let settings = AppConfiguration.shared.captureSettings
 
-        // User-defined overlay shortcuts
         for custom in settings.customShortcuts where custom.binding.matches(event: event) {
             switch custom.action {
-            case "Copy Selection":
-                commitInlineTextIfNeeded()
-                if hasActiveSelection { finishSelection(with: .copy(document)) }
-                return true
-            case "Upload & Share Link":
-                commitInlineTextIfNeeded()
-                if hasActiveSelection { finishSelection(with: .upload(document)) }
-                return true
-            case "Cancel Capture":
-                cancelOperation(nil)
-                return true
-            default:
-                continue
+            case "Copy Selection": finish(.copy); return true
+            case "Upload & Share Link": finish(.upload); return true
+            case "Cancel Capture": cancelCapture(); return true
+            default: continue
             }
         }
 
-        // Tool shortcuts once a region is selected
-        if hasActiveSelection, !isCmd, flags.isDisjoint(with: [.control, .option]),
-           let key = event.charactersIgnoringModifiers?.lowercased(),
-           let tool = AnnotationCanvasView.toolShortcuts[key], toolButtons[tool.rawValue] != nil {
-            currentTool = tool
-            updateActiveToolButton()
-            needsDisplay = true
+        if settings.shortcutCancel.matches(event: event) {
+            cancelCapture()
             return true
         }
 
-        // 1. Undo / Redo
-        if isCmd && event.charactersIgnoringModifiers?.lowercased() == "z" {
-            if isShift {
-                performRedo()
-            } else {
-                performUndo()
-            }
-            return true
-        }
+        let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+        let isPlainCommand = flags.contains(.command) && flags.isDisjoint(with: [.shift, .option, .control])
 
-        // 2. Cancel Selection: Esc or configured shortcutCancel
-        if event.keyCode == 53 || settings.shortcutCancel.matches(event: event) {
-            cancelOperation(nil)
-            return true
+        if settings.shortcutCopy.matches(event: event) || (isPlainCommand && key == "c") {
+            finish(.copy); return true
         }
-
-        // 3. Copy Selection: Cmd + C, Enter, Space, or configured shortcutCopy
-        if (isCmd && event.charactersIgnoringModifiers?.lowercased() == "c") ||
-           settings.shortcutCopy.matches(event: event) ||
-           event.keyCode == 36 || event.keyCode == 49 {
-            commitInlineTextIfNeeded()
-            if hasActiveSelection {
-                finishSelection(with: .copy(document))
-            }
-            return true
+        if settings.shortcutUpload.matches(event: event) || (isPlainCommand && key == "u") {
+            finish(.upload); return true
         }
-
-        // 4. Upload Selection: Cmd + U or configured shortcutUpload
-        if (isCmd && event.charactersIgnoringModifiers?.lowercased() == "u") ||
-           settings.shortcutUpload.matches(event: event) {
-            commitInlineTextIfNeeded()
-            if hasActiveSelection {
-                finishSelection(with: .upload(document))
-            }
-            return true
+        if isPlainCommand && key == "s" {
+            finish(.save); return true
         }
-
-        // 5. Save: Cmd + S
-        if isCmd && event.charactersIgnoringModifiers?.lowercased() == "s" {
-            commitInlineTextIfNeeded()
-            if hasActiveSelection {
-                finishSelection(with: .save(document))
-            }
-            return true
+        if isPlainCommand && key == "e" {
+            finish(.edit); return true
         }
-
-        // 6. Open in Editor: ⌘E
-        if isCmd && event.charactersIgnoringModifiers?.lowercased() == "e" {
-            commitInlineTextIfNeeded()
-            if hasActiveSelection {
-                finishSelection(with: .edit(document))
-            }
-            return true
-        }
-
         return false
     }
 
-    // MARK: - Handle Hit Testing & Positioning
+    // MARK: - Handles
 
     private func handleAt(point: CGPoint) -> DragHandle? {
         guard hasActiveSelection else { return nil }
-        let handleHitRadius: CGFloat = 10.0
+        let r = selectionRect
+        let hitRadius: CGFloat = 8
 
         let points: [(DragHandle, CGPoint)] = [
-            (.bottomLeft, CGPoint(x: selectionRect.minX, y: selectionRect.minY)),
-            (.bottomCenter, CGPoint(x: selectionRect.midX, y: selectionRect.minY)),
-            (.bottomRight, CGPoint(x: selectionRect.maxX, y: selectionRect.minY)),
-            (.middleLeft, CGPoint(x: selectionRect.minX, y: selectionRect.midY)),
-            (.middleRight, CGPoint(x: selectionRect.maxX, y: selectionRect.midY)),
-            (.topLeft, CGPoint(x: selectionRect.minX, y: selectionRect.maxY)),
-            (.topCenter, CGPoint(x: selectionRect.midX, y: selectionRect.maxY)),
-            (.topRight, CGPoint(x: selectionRect.maxX, y: selectionRect.maxY))
+            (.bottomLeft, CGPoint(x: r.minX, y: r.minY)),
+            (.bottomCenter, CGPoint(x: r.midX, y: r.minY)),
+            (.bottomRight, CGPoint(x: r.maxX, y: r.minY)),
+            (.middleLeft, CGPoint(x: r.minX, y: r.midY)),
+            (.middleRight, CGPoint(x: r.maxX, y: r.midY)),
+            (.topLeft, CGPoint(x: r.minX, y: r.maxY)),
+            (.topCenter, CGPoint(x: r.midX, y: r.maxY)),
+            (.topRight, CGPoint(x: r.maxX, y: r.maxY))
         ]
-
-        for (handle, pt) in points {
-            let hitRect = CGRect(x: pt.x - handleHitRadius, y: pt.y - handleHitRadius, width: handleHitRadius * 2, height: handleHitRadius * 2)
-            if hitRect.contains(point) {
-                return handle
-            }
+        for (handle, pt) in points where abs(point.x - pt.x) <= hitRadius && abs(point.y - pt.y) <= hitRadius {
+            return handle
         }
-
-        if selectionRect.contains(point) {
-            return .body
-        }
-
-        return nil
+        return r.contains(point) ? .body : nil
     }
 
-    private func updateToolbarPosition() {
-        let toolbarW = toolbarContainer.frame.width
-        let toolbarH = toolbarContainer.frame.height
-
-        var posX = selectionRect.midX - toolbarW / 2
-        posX = max(16, min(bounds.width - toolbarW - 16, posX))
-
-        var posY = selectionRect.minY - toolbarH - 12
-        if posY < 16 {
-            posY = selectionRect.maxY + 12
-        }
-        if posY + toolbarH > bounds.height - 16 {
-            posY = max(16, selectionRect.minY + 12)
-        }
-
-        toolbarContainer.frame.origin = CGPoint(x: posX, y: posY)
-    }
-
-    // MARK: - Custom Drawing
+    // MARK: - Drawing
 
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-
         guard let context = NSGraphicsContext.current?.cgContext else { return }
 
-        // 1. Darkened overlay
+        // 1. Dim everything except the selection
         context.setFillColor(NSColor.black.withAlphaComponent(0.38).cgColor)
         context.fill(bounds)
-
-        // 2. Selection Area Cutout
         if selectionRect.width > 0 && selectionRect.height > 0 {
             context.saveGState()
             context.setBlendMode(.clear)
             context.fill(selectionRect)
             context.restoreGState()
-
-            // 3. Render In-Place Live Blur and Vector Annotations
-            renderInPlaceAnnotations(in: context)
-
-            // 4. Render In-Progress Drawing
-            if isDrawingAnnotation {
-                drawInProgressAnnotation(in: context)
-            }
-
-            // 5. Crisp selection border
-            let borderColor = NSColor(calibratedRed: 0.25, green: 0.65, blue: 1.0, alpha: 1.0)
-            context.setStrokeColor(borderColor.cgColor)
-            context.setLineWidth(1.5)
-            context.stroke(selectionRect)
-
-            // 6. Dimension Badge
-            drawDimensionBadge(for: selectionRect)
-
-            // 7. 8 Circular Handles when in select/resize mode
-            if hasActiveSelection && currentTool == .select {
-                drawSelectionHandles(for: selectionRect, in: context, color: borderColor)
-            }
         }
 
-        // 8. Proper "+" Crosshair and Small Round Magnifier (when initially selecting)
+        // 2. While selecting (before the canvas exists), draw the selection chrome directly
+        if canvas == nil {
+            drawSelectionChrome(in: context)
+        }
+
+        // 3. Crosshair and loupe while choosing the region
         if !hasActiveSelection, let current = currentPoint {
             drawProperCrosshair(at: current, in: context)
-            drawSmallRoundLoupe(at: current, in: context)
+            if AppConfiguration.shared.captureSettings.showMagnifier {
+                drawSmallRoundLoupe(at: current, in: context)
+            }
         }
     }
 
-    // MARK: - In-Place Annotation Rendering
-
-    private func renderInPlaceAnnotations(in context: CGContext) {
+    /// Border, resize handles and pixel-size badge for the selection
+    private func drawSelectionChrome(in context: CGContext) {
         guard selectionRect.width > 0, selectionRect.height > 0 else { return }
 
-        let scale = targetScreen.backingScaleFactor
-
-        // 1. Live Blur / Pixelate Items (snapshot pixels are top-down, view points are bottom-up)
-        for item in document.items where item.type == .blur || item.type == .pixelation {
-            let rect = denormalize(rect: item.bounds)
-            let pixelRect = CGRect(
-                x: rect.origin.x * scale,
-                y: (bounds.height - (rect.origin.y + rect.height)) * scale,
-                width: rect.width * scale,
-                height: rect.height * scale
-            ).integral
-
-            if let snapshot = screenSnapshot, let cropped = snapshot.cropping(to: pixelRect) {
-                let fullRect = CGRect(x: 0, y: 0, width: cropped.width, height: cropped.height)
-                let redacted = item.type == .blur
-                    ? RedactionRenderer.shared.applyBlur(to: cropped, in: fullRect, radius: item.blurRadius ?? 20.0)
-                    : RedactionRenderer.shared.applyPixelation(to: cropped, in: fullRect, scale: item.blurRadius ?? 16.0)
-                context.draw(redacted, in: rect)
-            }
-
-            context.saveGState()
-            context.setStrokeColor(NSColor.systemBlue.withAlphaComponent(0.6).cgColor)
-            context.setLineWidth(1.0)
-            context.setLineDash(phase: 0, lengths: [4, 4])
-            context.stroke(rect)
-            context.restoreGState()
-        }
-
-        // 2. Vector layers through the shared renderer in a locally flipped (y-down) space
         context.saveGState()
-        context.translateBy(x: 0, y: bounds.height)
-        context.scaleBy(x: 1, y: -1)
-        let flippedSelection = CGRect(x: selectionRect.minX, y: bounds.height - selectionRect.maxY, width: selectionRect.width, height: selectionRect.height)
-        let renderer = AnnotationRenderer(imageRect: flippedSelection, scale: 1)
-        for item in document.items where item.type != .blur && item.type != .pixelation {
-            renderer.draw(item, in: context)
-        }
+        context.setStrokeColor(Self.borderColor.cgColor)
+        context.setLineWidth(1.5)
+        context.stroke(selectionRect)
         context.restoreGState()
-    }
 
-    private func drawInProgressAnnotation(in context: CGContext) {
-        let rect = CGRect(
-            x: min(annotationStartPoint.x, annotationCurrentPoint.x),
-            y: min(annotationStartPoint.y, annotationCurrentPoint.y),
-            width: abs(annotationCurrentPoint.x - annotationStartPoint.x),
-            height: abs(annotationCurrentPoint.y - annotationStartPoint.y)
-        )
+        drawDimensionBadge(for: selectionRect)
 
-        let strokeCG = CGColor(red: CGFloat(activeColor.red), green: CGFloat(activeColor.green), blue: CGFloat(activeColor.blue), alpha: CGFloat(activeColor.alpha))
-
-        context.saveGState()
-        context.setStrokeColor(strokeCG)
-        context.setLineWidth(CGFloat(activeStrokeWidth))
-
-        switch currentTool {
-        case .arrow:
-            drawArrow(from: annotationStartPoint, to: annotationCurrentPoint, in: context, color: strokeCG, lineWidth: CGFloat(activeStrokeWidth))
-
-        case .rectangle:
-            context.stroke(rect)
-
-        case .ellipse:
-            context.strokeEllipse(in: rect)
-
-        case .highlight:
-            context.setFillColor(NSColor.systemYellow.withAlphaComponent(0.35).cgColor)
-            context.fill(rect)
-
-        case .blur, .pixelate:
-            context.setFillColor(NSColor.systemBlue.withAlphaComponent(0.25).cgColor)
-            context.fill(rect)
-            context.setStrokeColor(NSColor.systemBlue.cgColor)
-            let dashPattern: [CGFloat] = [4, 4]
-            context.setLineDash(phase: 0, lengths: dashPattern)
-            context.stroke(rect)
-
-        case .freehand:
-            if freehandPoints.count > 1 {
-                context.move(to: denormalize(point: freehandPoints[0]))
-                for pt in freehandPoints.dropFirst() {
-                    context.addLine(to: denormalize(point: pt))
-                }
-                context.strokePath()
-            }
-
-        default:
-            break
+        if hasActiveSelection && mode == .capture {
+            drawSelectionHandles(for: selectionRect, color: Self.borderColor)
         }
-
-        context.restoreGState()
     }
-
-    private func drawArrow(from start: CGPoint, to end: CGPoint, in context: CGContext, color: CGColor, lineWidth: CGFloat) {
-        context.move(to: start)
-        context.addLine(to: end)
-        context.strokePath()
-
-        let angle = atan2(end.y - start.y, end.x - start.x)
-        let arrowLength: CGFloat = max(14, lineWidth * 3.5)
-        let arrowAngle: CGFloat = .pi / 6
-
-        let p1 = CGPoint(
-            x: end.x - arrowLength * cos(angle - arrowAngle),
-            y: end.y - arrowLength * sin(angle - arrowAngle)
-        )
-        let p2 = CGPoint(
-            x: end.x - arrowLength * cos(angle + arrowAngle),
-            y: end.y - arrowLength * sin(angle + arrowAngle)
-        )
-
-        context.setFillColor(color)
-        context.move(to: end)
-        context.addLine(to: p1)
-        context.addLine(to: p2)
-        context.closePath()
-        context.fillPath()
-    }
-
-    // MARK: - Proper "+" Crosshair & Small Round Magnifier
 
     private func drawProperCrosshair(at point: CGPoint, in context: CGContext) {
         context.saveGState()
-
         let armLength: CGFloat = 10.0
-        let lineWidth: CGFloat = 1.5
 
-        // Shadow outline
         context.setStrokeColor(NSColor.black.withAlphaComponent(0.7).cgColor)
-        context.setLineWidth(lineWidth + 1.2)
-
+        context.setLineWidth(2.7)
         context.move(to: CGPoint(x: point.x - armLength, y: point.y))
         context.addLine(to: CGPoint(x: point.x + armLength, y: point.y))
         context.move(to: CGPoint(x: point.x, y: point.y - armLength))
         context.addLine(to: CGPoint(x: point.x, y: point.y + armLength))
         context.strokePath()
 
-        // Crisp white foreground crosshair
         context.setStrokeColor(NSColor.white.cgColor)
-        context.setLineWidth(lineWidth)
-
+        context.setLineWidth(1.5)
         context.move(to: CGPoint(x: point.x - armLength, y: point.y))
         context.addLine(to: CGPoint(x: point.x + armLength, y: point.y))
         context.move(to: CGPoint(x: point.x, y: point.y - armLength))
         context.addLine(to: CGPoint(x: point.x, y: point.y + armLength))
         context.strokePath()
 
-        // Center tiny red precision dot
         context.setFillColor(NSColor.systemRed.cgColor)
         context.fillEllipse(in: CGRect(x: point.x - 1.5, y: point.y - 1.5, width: 3.0, height: 3.0))
-
         context.restoreGState()
     }
 
     private func drawSmallRoundLoupe(at point: CGPoint, in context: CGContext) {
         guard let snapshot = screenSnapshot else { return }
 
-        let scale = targetScreen.backingScaleFactor
+        let scale = CGFloat(snapshot.width) / bounds.width
         let loupeDiameter: CGFloat = 64.0
 
         var posX = point.x + 20.0
         var posY = point.y + 20.0
-
-        if posX + loupeDiameter > bounds.width - 12 {
-            posX = point.x - loupeDiameter - 20.0
-        }
-        if posY + loupeDiameter > bounds.height - 12 {
-            posY = point.y - loupeDiameter - 20.0
-        }
-
+        if posX + loupeDiameter > bounds.width - 12 { posX = point.x - loupeDiameter - 20.0 }
+        if posY + loupeDiameter > bounds.height - 12 { posY = point.y - loupeDiameter - 20.0 }
         posX = max(10, min(bounds.width - loupeDiameter - 10, posX))
         posY = max(10, min(bounds.height - loupeDiameter - 10, posY))
 
         let loupeRect = CGRect(x: posX, y: posY, width: loupeDiameter, height: loupeDiameter)
-        let pixelX = point.x * scale
-        let pixelY = (bounds.height - point.y) * scale
-
         let zoom: CGFloat = 4.0
-        let sampleSize = loupeDiameter / zoom
-        let sampleRect = CGRect(
-            x: pixelX - sampleSize / 2.0,
-            y: pixelY - sampleSize / 2.0,
-            width: sampleSize,
-            height: sampleSize
-        )
+        let sampleSize = loupeDiameter / zoom * scale
+        let sampleRect = CGRect(x: point.x * scale - sampleSize / 2, y: (bounds.height - point.y) * scale - sampleSize / 2, width: sampleSize, height: sampleSize)
 
-        context.saveGState()
-
-        // Shadow
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.55).cgColor)
-
-        // Background circle
         let circlePath = NSBezierPath(ovalIn: loupeRect)
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.55).cgColor)
         NSColor.black.setFill()
         circlePath.fill()
-
         context.restoreGState()
 
-        // Clipped magnified snapshot
         context.saveGState()
         circlePath.addClip()
-
         if let cropped = snapshot.cropping(to: sampleRect) {
             context.interpolationQuality = .none
             context.draw(cropped, in: loupeRect)
         }
-
-        // Center red precision dot
         context.setFillColor(NSColor.systemRed.cgColor)
         context.fillEllipse(in: CGRect(x: loupeRect.midX - 1.5, y: loupeRect.midY - 1.5, width: 3.0, height: 3.0))
-
         context.restoreGState()
 
-        // Thin white border around circle
         NSColor.white.withAlphaComponent(0.95).setStroke()
         circlePath.lineWidth = 1.5
         circlePath.stroke()
     }
 
-    // MARK: - Handles & Badges
-
-    private func drawSelectionHandles(for rect: CGRect, in context: CGContext, color: NSColor) {
+    private func drawSelectionHandles(for rect: CGRect, color: NSColor) {
         let handleRadius: CGFloat = 4.5
         let points: [CGPoint] = [
-            CGPoint(x: rect.minX, y: rect.minY),
-            CGPoint(x: rect.midX, y: rect.minY),
-            CGPoint(x: rect.maxX, y: rect.minY),
-            CGPoint(x: rect.minX, y: rect.midY),
-            CGPoint(x: rect.maxX, y: rect.midY),
-            CGPoint(x: rect.minX, y: rect.maxY),
-            CGPoint(x: rect.midX, y: rect.maxY),
-            CGPoint(x: rect.maxX, y: rect.maxY)
+            CGPoint(x: rect.minX, y: rect.minY), CGPoint(x: rect.midX, y: rect.minY), CGPoint(x: rect.maxX, y: rect.minY),
+            CGPoint(x: rect.minX, y: rect.midY), CGPoint(x: rect.maxX, y: rect.midY),
+            CGPoint(x: rect.minX, y: rect.maxY), CGPoint(x: rect.midX, y: rect.maxY), CGPoint(x: rect.maxX, y: rect.maxY)
         ]
-
         for pt in points {
-            let handleRect = CGRect(x: pt.x - handleRadius, y: pt.y - handleRadius, width: handleRadius * 2, height: handleRadius * 2)
+            let path = NSBezierPath(ovalIn: CGRect(x: pt.x - handleRadius, y: pt.y - handleRadius, width: handleRadius * 2, height: handleRadius * 2))
             NSColor.white.setFill()
-            let path = NSBezierPath(ovalIn: handleRect)
             path.fill()
             color.setStroke()
             path.lineWidth = 1.5
@@ -1137,64 +705,40 @@ final class RegionSelectionView: NSView, NSTextFieldDelegate {
     }
 
     private func drawDimensionBadge(for rect: CGRect) {
-        let scale = targetScreen.backingScaleFactor
-        let pixelWidth = Int(rect.width * scale)
-        let pixelHeight = Int(rect.height * scale)
-        let dimensionText = "\(pixelWidth) × \(pixelHeight) px"
-
+        let scale = screenSnapshot.map { CGFloat($0.width) / bounds.width } ?? targetScreen.backingScaleFactor
+        let dimensionText = "\(Int(rect.width * scale)) × \(Int(rect.height * scale)) px"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.white
         ]
         let textSize = (dimensionText as NSString).size(withAttributes: attributes)
-
+        let pad = CGFloat(canvas == nil ? 0 : document.padding)
+        let top = rect.maxY + pad
         let badgeRect = CGRect(
             x: rect.midX - (textSize.width + 16) / 2,
-            y: rect.maxY + 8 > bounds.height - 30 ? rect.minY - 26 : rect.maxY + 8,
+            y: top + 8 > bounds.height - 30 ? rect.minY - pad - 26 : top + 8,
             width: textSize.width + 16,
             height: 20
         )
-
         let badgePath = NSBezierPath(roundedRect: badgeRect, xRadius: 4, yRadius: 4)
         NSColor.black.withAlphaComponent(0.75).setFill()
         badgePath.fill()
-
-        let textPoint = CGPoint(x: badgeRect.origin.x + 8, y: badgeRect.origin.y + 3)
-        (dimensionText as NSString).draw(at: textPoint, withAttributes: attributes)
+        (dimensionText as NSString).draw(at: CGPoint(x: badgeRect.minX + 8, y: badgeRect.minY + 3), withAttributes: attributes)
     }
 
-    // MARK: - Coordinate Transformations
-
-    // Normalized annotation space is top-left origin (y-down); this view is bottom-left origin.
-
-    private func normalize(point: CGPoint) -> NormalizedPoint {
-        guard selectionRect.width > 0, selectionRect.height > 0 else { return NormalizedPoint(x: 0, y: 0) }
-        let nx = (point.x - selectionRect.minX) / selectionRect.width
-        let ny = (selectionRect.maxY - point.y) / selectionRect.height
-        return NormalizedPoint(x: max(0.0, min(1.0, nx)), y: max(0.0, min(1.0, ny)))
+    private static func rect(from p1: CGPoint, to p2: CGPoint) -> CGRect {
+        CGRect(x: min(p1.x, p2.x), y: min(p1.y, p2.y), width: abs(p2.x - p1.x), height: abs(p2.y - p1.y))
     }
+}
 
-    private func denormalize(point: NormalizedPoint) -> CGPoint {
-        return CGPoint(
-            x: selectionRect.minX + point.x * selectionRect.width,
-            y: selectionRect.maxY - point.y * selectionRect.height
-        )
-    }
+/// Transparent, click-through layer drawn above the annotation canvas (selection border, handles, size badge)
+private final class SelectionChromeView: NSView {
+    var drawHandler: ((CGContext) -> Void)?
 
-    private func denormalize(rect: NormalizedRect) -> CGRect {
-        return CGRect(
-            x: selectionRect.minX + rect.origin.x * selectionRect.width,
-            y: selectionRect.maxY - (rect.origin.y + rect.height) * selectionRect.height,
-            width: rect.width * selectionRect.width,
-            height: rect.height * selectionRect.height
-        )
-    }
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    private func normalizedRect(from p1: CGPoint, to p2: CGPoint) -> CGRect {
-        let x = min(p1.x, p2.x)
-        let y = min(p1.y, p2.y)
-        let w = abs(p2.x - p1.x)
-        let h = abs(p2.y - p1.y)
-        return CGRect(x: x, y: y, width: w, height: h)
+    override func draw(_ dirtyRect: NSRect) {
+        guard let context = NSGraphicsContext.current?.cgContext else { return }
+        drawHandler?(context)
     }
 }

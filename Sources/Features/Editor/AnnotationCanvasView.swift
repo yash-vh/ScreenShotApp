@@ -1217,7 +1217,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
             } else if let color = doc.backgroundColor {
                 context.setFillColor(CGColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha))
                 context.fill(outer)
-            } else if doc.padding > 0 {
+            } else if doc.padding > 0 && presentation == .editor {
                 Self.drawCheckerboard(in: outer, context: context)
             }
         }

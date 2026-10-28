@@ -27,11 +27,17 @@ public final class CaptureCoordinator: ObservableObject {
 
         isCapturing = true
         RegionSelectionOverlayController.shared.present(
-            onComplete: { [weak self] rect, screen, action in
+            onComplete: { [weak self] rect, screen, action, frozenImage in
                 Task { @MainActor [weak self] in
                     guard let self = self else { return }
                     do {
-                        let cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
+                        // Prefer the frozen frame the user annotated on, so annotations line up exactly
+                        let cgImage: CGImage
+                        if let frozenImage = frozenImage {
+                            cgImage = frozenImage
+                        } else {
+                            cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
+                        }
                         PermissionManager.shared.markAuthorized()
                         self.processCapturedRegion(cgImage, title: "Region Capture", scaleFactor: Double(screen.backingScaleFactor), action: action)
                     } catch {
@@ -126,11 +132,16 @@ public final class CaptureCoordinator: ObservableObject {
         isCapturing = true
         RegionSelectionOverlayController.shared.present(
             mode: .quickSelect,
-            onComplete: { [weak self] rect, screen, _ in
+            onComplete: { [weak self] rect, screen, _, frozenImage in
                 Task { @MainActor [weak self] in
                     defer { self?.isCapturing = false }
                     do {
-                        let cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
+                        let cgImage: CGImage
+                        if let frozenImage = frozenImage {
+                            cgImage = frozenImage
+                        } else {
+                            cgImage = try await ScreenCaptureService.shared.captureRegion(rect: rect, on: screen)
+                        }
                         PermissionManager.shared.markAuthorized()
                         let result = try await VisionService.shared.recognize(in: cgImage)
                         self?.deliverRecognition(result)
@@ -251,11 +262,19 @@ public final class CaptureCoordinator: ObservableObject {
         let settings = AppConfiguration.shared.captureSettings
 
         // 1. Composite in-place annotations if any were drawn directly on the overlay
+        //    ("Open in Editor" keeps the raw capture so overlay annotations stay editable in the editor)
         let finalImage: CGImage
         let forceSave: Bool
+        let overlayDocument: AnnotationDocument
         switch action {
         case .copy(let doc), .save(let doc), .edit(let doc), .upload(let doc), .defaultAction(let doc):
-            finalImage = doc.items.isEmpty ? cgImage : ExportCompositor.shared.composite(baseImage: cgImage, document: doc)
+            overlayDocument = doc
+        }
+        if case .edit = action {
+            finalImage = cgImage
+        } else {
+            let hasEdits = !overlayDocument.items.isEmpty || overlayDocument.hasStyling
+            finalImage = hasEdits ? ExportCompositor.shared.composite(baseImage: cgImage, document: overlayDocument) : cgImage
         }
         if case .save = action { forceSave = true } else { forceSave = false }
 
@@ -286,10 +305,7 @@ public final class CaptureCoordinator: ObservableObject {
             AppLogger.shared.capture.info("Region captured and saved to disk: \(fileURL.lastPathComponent, privacy: .public)")
 
         case .edit:
-            if settings.copyToClipboard {
-                copyImageToPasteboard(cgImage: finalImage)
-            }
-            EditorWindowController.present(for: asset)
+            EditorWindowController.present(for: asset, document: overlayDocument)
 
         case .defaultAction:
             if settings.copyToClipboard {

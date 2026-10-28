@@ -15,26 +15,25 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
     private let state: EditorState
     private var baseCGImage: CGImage?
     private var canvasView: AnnotationCanvasView?
-    private var recognitionOverlay: OCRResultOverlay?
-    private var recognitionResult: RecognitionResult?
+    private var recognition: RecognitionController?
     private var lastSavedDocument: AnnotationDocument
     private var isClosingConfirmed = false
-    private var cancellables = Set<AnyCancellable>()
 
-    public static func present(for asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
+    public static func present(for asset: ScreenshotAsset, initialTool: EditorTool = .arrow, document: AnnotationDocument? = nil) {
         if let existing = currentControllers[asset.id] {
             existing.window?.makeKeyAndOrderFront(nil)
             NSApp.activate(ignoringOtherApps: true)
             return
         }
 
-        let controller = EditorWindowController(asset: asset, initialTool: initialTool)
+        let controller = EditorWindowController(asset: asset, initialTool: initialTool, document: document)
         currentControllers[asset.id] = controller
         controller.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    public init(asset: ScreenshotAsset, initialTool: EditorTool = .arrow) {
+    /// - Parameter document: annotations to continue editing (e.g. drawn in the capture overlay); a blank document when nil
+    public init(asset: ScreenshotAsset, initialTool: EditorTool = .arrow, document: AnnotationDocument? = nil) {
         self.asset = asset
 
         // 1. Load base image from disk
@@ -44,7 +43,8 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         }
 
         let pixelsPerPoint = asset.scaleFactor ?? Double(NSScreen.main?.backingScaleFactor ?? 2.0)
-        let doc = AnnotationDocument(assetId: asset.id, pixelsPerPoint: pixelsPerPoint)
+        var doc = document ?? AnnotationDocument(assetId: asset.id, pixelsPerPoint: pixelsPerPoint)
+        doc.assetId = asset.id
         self.undoRedoManager = UndoRedoManager(document: doc)
         self.lastSavedDocument = doc
         self.state = EditorState(tool: initialTool)
@@ -76,7 +76,6 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         window.delegate = self
 
         setupContentView()
-        observeState()
     }
 
     required init?(coder: NSCoder) {
@@ -102,8 +101,10 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             onUndo: { [weak canvas] in canvas?.undo(nil) },
             onRedo: { [weak canvas] in canvas?.redo(nil) },
             onDelete: { [weak canvas] in canvas?.delete(nil) },
-            onExport: { [weak self] in self?.handleExport() },
             onCopyToClipboard: { [weak self] in self?.handleCopy() },
+            secondaryActions: [
+                EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save As… (⌘S)") { [weak self] in self?.handleExport() }
+            ],
             onClose: { [weak self] in self?.handleClose() }
         )
         let toolbarHost = NSHostingView(rootView: toolbarView)
@@ -127,73 +128,11 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             canvas.bottomAnchor.constraint(equalTo: containerView.bottomAnchor)
         ])
 
+        let image = baseCGImage
+        recognition = RecognitionController(state: state, canvas: canvas) { image }
+
         window.initialFirstResponder = canvas
         window.makeFirstResponder(canvas)
-    }
-
-    private func observeState() {
-        state.$isShowingRecognition
-            .removeDuplicates()
-            .dropFirst()
-            .sink { [weak self] showing in
-                self?.setRecognitionVisible(showing)
-            }
-            .store(in: &cancellables)
-
-        undoRedoManager.$document
-            .sink { [weak self] _ in
-                self?.recognitionOverlay?.needsDisplay = true
-                self?.recognitionOverlay?.needsLayout = true
-            }
-            .store(in: &cancellables)
-    }
-
-    // MARK: - Text Recognition (M4)
-
-    private func setRecognitionVisible(_ visible: Bool) {
-        guard visible else {
-            recognitionOverlay?.removeFromSuperview()
-            recognitionOverlay = nil
-            return
-        }
-        if let cached = recognitionResult {
-            showRecognitionOverlay(cached)
-            return
-        }
-        guard let base = baseCGImage else { return }
-
-        state.isRecognizing = true
-        Task { @MainActor [weak self] in
-            do {
-                let result = try await VisionService.shared.recognize(in: base)
-                guard let self = self else { return }
-                self.state.isRecognizing = false
-                self.recognitionResult = result
-                if self.state.isShowingRecognition {
-                    self.showRecognitionOverlay(result)
-                }
-            } catch {
-                AppLogger.shared.recognition.error("Text recognition failed: \(error.localizedDescription, privacy: .public)")
-                self?.state.isRecognizing = false
-                self?.state.isShowingRecognition = false
-                self?.canvasView?.showToast("Text recognition failed")
-            }
-        }
-    }
-
-    private func showRecognitionOverlay(_ result: RecognitionResult) {
-        guard let canvas = canvasView, recognitionOverlay == nil else { return }
-        let overlay = OCRResultOverlay(result: result) { [weak canvas] in canvas?.imageRect ?? .zero }
-        overlay.frame = canvas.bounds
-        overlay.autoresizingMask = [.width, .height]
-        overlay.onMessage = { [weak canvas] message in canvas?.showToast(message) }
-        overlay.onClose = { [weak self] in self?.state.isShowingRecognition = false }
-        canvas.addSubview(overlay)
-        recognitionOverlay = overlay
-
-        if result.isEmpty {
-            canvas.showToast("No text or QR codes found")
-        }
     }
 
     // MARK: - Export and Actions
