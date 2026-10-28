@@ -1063,67 +1063,156 @@ struct PrivacySettingsTab: View {
 // MARK: - Diagnostics Tab
 
 struct DiagnosticsTab: View {
+    enum LevelFilter: String, CaseIterable, Identifiable {
+        case all = "All"
+        case problems = "Warnings & Errors"
+        var id: String { rawValue }
+    }
+
     @State private var logs: [AppLogger.LogEntry] = []
+    @State private var isLoading = true
+    @State private var filter: LevelFilter = .all
+    @State private var search = ""
 
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("Diagnostic Log Viewer")
-                    .font(.headline)
-                Spacer()
-                Button("Refresh") {
-                    logs = AppLogger.shared.getRecentLogs()
-                }
-                Button("Clear") {
-                    AppLogger.shared.clearLogs()
-                    logs = []
-                }
-            }
-
-            Text("Sensitive credentials, tokens, and home paths are automatically redacted.")
-                .font(.caption)
-                .foregroundColor(.secondary)
-
-            ScrollView {
-                LazyVStack(alignment: .leading, spacing: 6) {
-                    ForEach(logs) { entry in
-                        HStack(alignment: .top) {
-                            Text(entry.level.rawValue)
-                                .font(.system(.caption, design: .monospaced))
-                                .bold()
-                                .foregroundColor(color(for: entry.level))
-                                .frame(width: 55, alignment: .leading)
-
-                            Text(entry.category)
-                                .font(.system(.caption, design: .monospaced))
-                                .foregroundColor(.secondary)
-                                .frame(width: 80, alignment: .leading)
-
-                            Text(entry.message)
-                                .font(.system(.caption, design: .monospaced))
-                                .lineLimit(2)
-                            Spacer()
-                        }
-                        Divider()
-                    }
-                }
-                .padding(8)
-            }
-            .background(RoundedRectangle(cornerRadius: 6).fill(Color(NSColor.textBackgroundColor)))
-        }
-        .onAppear {
-            logs = AppLogger.shared.getRecentLogs()
+    private var visibleLogs: [AppLogger.LogEntry] {
+        logs.reversed().filter { entry in
+            (filter == .all || [.notice, .error, .fault].contains(entry.level))
+                && (search.isEmpty || entry.message.localizedCaseInsensitiveContains(search) || entry.category.localizedCaseInsensitiveContains(search))
         }
     }
 
-    private func color(for level: AppLogger.LogEntry.Level) -> Color {
-        switch level {
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            controls
+            logList
+            Label("Credentials, tokens and your home folder path are redacted. Showing this session's last hour.", systemImage: "lock.shield")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .padding(20)
+        .task { await reload() }
+    }
+
+    private var controls: some View {
+        HStack(spacing: 10) {
+            Picker("Show", selection: $filter) {
+                ForEach(LevelFilter.allCases) { Text($0.rawValue).tag($0) }
+            }
+            .pickerStyle(.segmented)
+            .labelsHidden()
+            .fixedSize()
+
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Filter messages", text: $search)
+                    .textFieldStyle(.plain)
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 28)
+            .background(Color.primary.opacity(0.06), in: Capsule())
+
+            Spacer(minLength: 0)
+
+            Group {
+                Button { Task { await reload() } } label: { Image(systemName: "arrow.clockwise") }
+                    .help("Refresh")
+                Button { copyAll() } label: { Image(systemName: "doc.on.doc") }
+                    .help("Copy visible entries")
+                    .disabled(visibleLogs.isEmpty)
+                Button {
+                    AppLogger.shared.clearLogs()
+                    logs = []
+                } label: { Image(systemName: "trash") }
+                    .help("Clear")
+                    .disabled(logs.isEmpty)
+            }
+            .buttonStyle(.bordered)
+            .tint(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var logList: some View {
+        let shape = RoundedRectangle(cornerRadius: 12, style: .continuous)
+        Group {
+            if isLoading {
+                ProgressView().frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if visibleLogs.isEmpty {
+                ContentUnavailableView(
+                    search.isEmpty ? "No Recent Activity" : "No Matches",
+                    systemImage: search.isEmpty ? "waveform.path.ecg" : "magnifyingglass",
+                    description: Text(search.isEmpty ? "Capture, record or upload something and its activity appears here." : "Try a different filter.")
+                )
+            } else {
+                ScrollView {
+                    LazyVStack(alignment: .leading, spacing: 0) {
+                        ForEach(visibleLogs) { entry in
+                            LogRow(entry: entry)
+                            Divider().opacity(0.5)
+                        }
+                    }
+                }
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Color.primary.opacity(0.035), in: shape)
+        .overlay(shape.strokeBorder(Color.primary.opacity(0.08), lineWidth: 1))
+        .clipShape(shape)
+    }
+
+    private func reload() async {
+        isLoading = logs.isEmpty
+        logs = await AppLogger.shared.loadRecentLogs()
+        isLoading = false
+    }
+
+    private func copyAll() {
+        let text = visibleLogs.reversed().map { entry in
+            "\(entry.timestamp.formatted(.iso8601)) [\(entry.level.rawValue)] \(entry.category): \(entry.message)"
+        }.joined(separator: "\n")
+        NSPasteboard.general.clearContents()
+        NSPasteboard.general.setString(text, forType: .string)
+    }
+}
+
+private struct LogRow: View {
+    let entry: AppLogger.LogEntry
+
+    private var color: Color {
+        switch entry.level {
         case .debug: return .gray
         case .info: return .blue
-        case .notice: return .cyan
+        case .notice: return .teal
         case .error: return .orange
         case .fault: return .red
         }
+    }
+
+    var body: some View {
+        HStack(alignment: .firstTextBaseline, spacing: 10) {
+            Text(entry.timestamp.formatted(date: .omitted, time: .standard))
+                .font(.system(size: 11).monospacedDigit())
+                .foregroundStyle(.secondary)
+                .frame(width: 72, alignment: .leading)
+            Text(entry.level.rawValue.capitalized)
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(color)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 1.5)
+                .background(color.opacity(0.14), in: Capsule())
+                .frame(width: 58, alignment: .leading)
+            Text(entry.category)
+                .font(.system(size: 11, weight: .medium))
+                .foregroundStyle(.secondary)
+                .frame(width: 82, alignment: .leading)
+                .lineLimit(1)
+            Text(entry.message)
+                .font(.system(size: 12, design: .monospaced))
+                .textSelection(.enabled)
+                .frame(maxWidth: .infinity, alignment: .leading)
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 7)
     }
 }
 

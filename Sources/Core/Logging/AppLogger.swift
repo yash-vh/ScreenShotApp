@@ -1,5 +1,6 @@
 import Foundation
 import os
+import OSLog
 
 /// Unified logging facility for ScreenshotApp.
 /// Wraps `os.Logger` with domain categories, sensitive data redaction, and in-memory log auditing.
@@ -113,5 +114,40 @@ public final class AppLogger: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         inMemoryLogs.removeAll()
+        clearedAt = Date()
+    }
+
+    /// Entries before this are hidden from `loadRecentLogs` (the system log itself can't be erased)
+    private var clearedAt: Date?
+
+    /// This process's SyncShot entries from the unified system log, oldest first, redacted.
+    /// Covers every `Logger` category (app, capture, sharing, …), not just the in-memory buffer.
+    public func loadRecentLogs(within interval: TimeInterval = 3600, limit: Int = 500) async -> [LogEntry] {
+        let since = max(Date().addingTimeInterval(-interval), lock.withLock { clearedAt } ?? .distantPast)
+        let subsystem = self.subsystem
+        return await Task.detached(priority: .userInitiated) { () -> [LogEntry] in
+            guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
+                  let entries = try? store.getEntries(
+                      at: store.position(date: since),
+                      matching: NSPredicate(format: "subsystem == %@", subsystem)
+                  ) else { return [] }
+            var result: [LogEntry] = []
+            for case let entry as OSLogEntryLog in entries where entry.date >= since {
+                result.append(LogEntry(timestamp: entry.date, category: entry.category, level: LogEntry.Level(entry.level), message: Self.redact(entry.composedMessage)))
+            }
+            return Array(result.suffix(limit))
+        }.value
+    }
+}
+
+private extension AppLogger.LogEntry.Level {
+    init(_ level: OSLogEntryLog.Level) {
+        switch level {
+        case .debug: self = .debug
+        case .notice: self = .notice
+        case .error: self = .error
+        case .fault: self = .fault
+        default: self = .info
+        }
     }
 }
