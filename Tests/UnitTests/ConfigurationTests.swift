@@ -100,11 +100,16 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(decoded.shortcutWindow.displayString, "⌃⌥W")
     }
 
-    func testUnusableStoredShortcutFallsBackToDefault() throws {
+    func testLegacyShiftedSymbolShortcuts() throws {
         var legacy = CaptureSettings.default
-        legacy.shortcutRegion = ShortcutBinding(key: ")", modifiers: ["⇧", "⌘"])
+        // Old builds stored ⇧⌘4 as "$" (a macOS screenshot key → migrated) and ⇧⌘0 as ")" (a valid custom key → kept)
+        legacy.shortcutRegion = ShortcutBinding(key: "$", modifiers: ["⇧", "⌘"])
+        legacy.shortcutWindow = ShortcutBinding(key: ")", modifiers: ["⇧", "⌘"])
+        legacy.shortcutRecording = ShortcutBinding(key: "NoSuchKey", modifiers: ["⌘"])
         let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
         XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⇧⌘0")
+        XCTAssertEqual(decoded.shortcutRecording, .defaultRecording, "Unregistrable keys fall back to the default")
     }
 
     @MainActor

@@ -109,7 +109,8 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
     /// Whether this is one of macOS's own screenshot shortcuts (⇧⌘3/4/5/6, plus the ⌃ "copy to clipboard"
     /// variants). SyncShot never uses these so the built-in screenshot tool keeps working.
     public var isMacOSScreenshotShortcut: Bool {
-        guard ["3", "4", "5", "6"].contains(key) else { return false }
+        // Canonical name, so legacy shifted symbols ("$" for ⇧4) are recognised too
+        guard ["3", "4", "5", "6"].contains(KeyCodeMap.canonicalName(for: key)) else { return false }
         let set = Set(modifiers)
         return set == ["⇧", "⌘"] || set == ["⌃", "⇧", "⌘"]
     }
