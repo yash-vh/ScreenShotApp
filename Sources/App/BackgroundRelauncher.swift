@@ -68,8 +68,17 @@ public enum BackgroundRelauncher {
             DistributedNotificationCenter.default().postNotificationName(openSettingsNotification, object: nil, userInfo: nil, deliverImmediately: true)
         } else {
             // The managed instance was quit cleanly, so launchd won't restart it on its own
-            guard kickstartAgent() else { return false }
             requestOpenSettingsInManagedInstance()
+            guard kickstartAgent(), waitForManagedInstance(timeout: 5) else {
+                // launchd accepted the request but couldn't start SyncShot (e.g. the registration points at
+                // an older build whose signature no longer matches). Keep this copy running instead of leaving
+                // nothing open, and remove the broken agent so launchd stops retrying.
+                AppLogger.shared.app.error("Relaunch agent failed to start SyncShot; turning background relaunch off.")
+                _ = consumePendingOpenSettings()
+                try? service.unregister()
+                AppConfiguration.shared.relaunchAfterUnexpectedQuit = false
+                return false
+            }
         }
         AppLogger.shared.app.info("Handing off to the relaunch agent instance.")
         NSApp.terminate(nil)
@@ -101,6 +110,20 @@ public enum BackgroundRelauncher {
             return false
         }
         return process.terminationStatus == 0
+    }
+
+    /// Waits for the launchd-managed copy to appear, pumping the run loop so launch can continue afterwards
+    private static func waitForManagedInstance(timeout: TimeInterval) -> Bool {
+        let bundleID = Bundle.main.bundleIdentifier ?? ""
+        let me = ProcessInfo.processInfo.processIdentifier
+        let deadline = Date().addingTimeInterval(timeout)
+        while Date() < deadline {
+            if NSRunningApplication.runningApplications(withBundleIdentifier: bundleID).contains(where: { $0.processIdentifier != me }) {
+                return true
+            }
+            RunLoop.current.run(until: Date().addingTimeInterval(0.2))
+        }
+        return false
     }
 
     private static func launchPlainInstance() {
