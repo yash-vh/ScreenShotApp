@@ -22,11 +22,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         guard let button = statusItem?.button else { return }
 
-        // Configure system image for status bar
-        if let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "SyncShot") {
-            image.isTemplate = true
-            button.image = image
-        }
+        // App glyph in the menu bar (template, so macOS tints it)
+        button.image = AppBranding.menuBarIcon()
 
         rebuildMenu()
 
@@ -56,7 +53,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         case .finishing: symbol = "hourglass"
         default: symbol = "camera.viewfinder"
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: recorder.isActive ? "Recording" : "SyncShot")
+        let image = recorder.isActive
+            ? NSImage(systemSymbolName: symbol, accessibilityDescription: "Recording")
+            : AppBranding.menuBarIcon()
         if recorder.isActive {
             let color: NSColor = state == .paused ? .systemYellow : .systemRed
             button.image = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
@@ -84,7 +83,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // 1. Capture Actions
-        menu.addItem(NSMenuItem.sectionHeader(title: "Capture"))
         let regionItem = actionItem("Capture Selected Area", symbol: "crop", action: #selector(didSelectCaptureRegion))
         applyShortcut(settings.shortcutRegion, to: regionItem)
         menu.addItem(regionItem)
@@ -100,7 +98,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // 2. Screen Recording & OCR
-        menu.addItem(NSMenuItem.sectionHeader(title: "Record & Recognize"))
         if recorder.isActive {
             let stopItem = actionItem("Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", symbol: "stop.circle.fill", action: #selector(didSelectToggleRecording))
             applyShortcut(settings.shortcutRecording, to: stopItem)
@@ -132,7 +129,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // 3. Recent Captures & Library
-        menu.addItem(NSMenuItem.sectionHeader(title: "Library"))
         let recentMenu = NSMenu()
         if coordinator.recentAssets.isEmpty {
             let emptyItem = NSMenuItem(title: "No recent captures", action: nil, keyEquivalent: "")
@@ -162,7 +158,16 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         settingsItem.keyEquivalentModifierMask = [.command]
         menu.addItem(settingsItem)
 
-        menu.addItem(actionItem("Contact Support…", symbol: "questionmark.bubble", action: #selector(didSelectSupport)))
+        let proTitle = SubscriptionManager.shared.isPro ? "SyncShot Pro" : "Upgrade to Pro…"
+        menu.addItem(actionItem(proTitle, symbol: "crown", action: #selector(didSelectPro)))
+
+        let helpMenu = NSMenu()
+        helpMenu.addItem(actionItem("Contact Support…", symbol: "questionmark.bubble", action: #selector(didSelectSupport)))
+        helpMenu.addItem(actionItem("Privacy Policy", symbol: "hand.raised", action: #selector(didSelectPrivacyPolicy)))
+        helpMenu.addItem(actionItem("Terms of Use", symbol: "doc.text", action: #selector(didSelectTerms)))
+        let helpItem = actionItem("Help & Support", symbol: "questionmark.circle", action: nil)
+        helpItem.submenu = helpMenu
+        menu.addItem(helpItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -176,7 +181,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu Building Helpers
 
-    private static let menuWidth: CGFloat = 280
+    private static let menuWidth: CGFloat = 236
     private static let relativeDate: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
@@ -187,14 +192,14 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private func actionItem(_ title: String, symbol: String, action: Selector?) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
         item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 14, weight: .regular))
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
         item.target = action == nil ? nil : self
         return item
     }
 
     private func headerItem() -> NSMenuItem {
         let header = MenuHeaderView(
-            destination: config.storageMode == .localOnly ? "Uploads off · saved on this Mac" : "Uploads to \(config.storageMode.title)",
+            destination: config.storageMode == .localOnly ? "Local" : config.storageMode.title,
             destinationSymbol: config.storageMode.iconName
         )
         let host = NSHostingView(rootView: header)
@@ -281,6 +286,18 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         AppBranding.contactSupport()
     }
 
+    @objc private func didSelectPro() {
+        coordinator.openSettings(tab: .subscription)
+    }
+
+    @objc private func didSelectPrivacyPolicy() {
+        AppBranding.openPrivacyPolicy()
+    }
+
+    @objc private func didSelectTerms() {
+        AppBranding.openTermsOfUse()
+    }
+
     @objc private func didSelectQuit() {
         NSApplication.shared.terminate(nil)
     }
@@ -295,36 +312,31 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
 // MARK: - Header
 
-/// Branded menu header; system label colors keep it legible in light and dark menus
+/// Compact one-line menu header: logo, name and the upload destination
 private struct MenuHeaderView: View {
     let destination: String
     let destinationSymbol: String
 
     var body: some View {
-        HStack(spacing: 10) {
-            Image(nsImage: AppBranding.logo(size: 32))
+        HStack(spacing: 8) {
+            Image(nsImage: AppBranding.logo(size: 22))
                 .resizable()
                 .interpolation(.high)
-                .foregroundStyle(Color.accentColor)
-                .frame(width: 32, height: 32)
-                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
-            VStack(alignment: .leading, spacing: 2) {
-                Text(AppBranding.appName)
-                    .font(.system(size: 13, weight: .semibold))
-                    .foregroundStyle(.primary)
-                HStack(spacing: 4) {
-                    Image(systemName: destinationSymbol)
-                    Text(destination)
-                        .lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                .font(.system(size: 11))
+                .frame(width: 22, height: 22)
+            Text(AppBranding.appName)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 8)
+            Label(destination, systemImage: destinationSymbol)
+                .labelStyle(.titleAndIcon)
+                .font(.system(size: 11, weight: .medium))
                 .foregroundStyle(.secondary)
-            }
-            Spacer(minLength: 0)
+                .lineLimit(1)
+                .padding(.horizontal, 7)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.07), in: Capsule())
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 5)
         .accessibilityElement(children: .combine)
     }
 }

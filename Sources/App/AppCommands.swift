@@ -11,6 +11,7 @@ struct AppCommands: Commands {
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { AppCoordinator.shared.openSettings() }
                 .keyboardShortcut(",", modifiers: .command)
+            Button("SyncShot Pro…") { AppCoordinator.shared.openSettings(tab: .subscription) }
         }
 
         // File
@@ -35,6 +36,9 @@ struct AppCommands: Commands {
         // Help
         CommandGroup(replacing: .help) {
             Button("Contact Support…") { AppBranding.contactSupport() }
+            Button("Privacy Policy") { AppBranding.openPrivacyPolicy() }
+            Button("Terms of Use") { AppBranding.openTermsOfUse() }
+            Divider()
             Button("Screen Recording Permission…") { AppCoordinator.shared.openSettings(tab: .privacy) }
         }
     }

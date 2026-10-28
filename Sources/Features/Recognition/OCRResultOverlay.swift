@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// Transparent overlay drawn above the editor canvas showing recognized text and QR/barcode bounding boxes.
 /// Clicking a box copies its contents; the floating action bar offers "Copy All Text" and "Copy QR Link".
@@ -188,7 +189,7 @@ public final class OCRResultOverlay: NSView {
 
 // MARK: - Floating Capture HUD
 
-/// Small auto-dismissing heads-up panel used to confirm background actions such as "Text copied".
+/// Small auto-dismissing glass toast used to confirm background actions such as "Text copied".
 @MainActor
 public final class CaptureHUD {
     public static let shared = CaptureHUD()
@@ -200,72 +201,64 @@ public final class CaptureHUD {
 
     public func show(title: String, detail: String? = nil, symbol: String = "checkmark.circle.fill", duration: TimeInterval = 2.4) {
         dismissWorkItem?.cancel()
-        panel?.orderOut(nil)
 
-        let icon = NSImageView(image: NSImage(systemSymbolName: symbol, accessibilityDescription: nil) ?? NSImage())
-        icon.symbolConfiguration = NSImage.SymbolConfiguration(pointSize: 22, weight: .semibold)
-        icon.contentTintColor = .white
-
-        let titleLabel = NSTextField(labelWithString: title)
-        titleLabel.font = NSFont.systemFont(ofSize: 14, weight: .semibold)
-        titleLabel.textColor = .white
-
-        let texts = NSStackView(views: [titleLabel])
-        texts.orientation = .vertical
-        texts.alignment = .leading
-        texts.spacing = 2
-        if let detail = detail, !detail.isEmpty {
-            let detailLabel = NSTextField(wrappingLabelWithString: detail)
-            detailLabel.font = NSFont.systemFont(ofSize: 12)
-            detailLabel.textColor = NSColor.white.withAlphaComponent(0.75)
-            detailLabel.maximumNumberOfLines = 3
-            detailLabel.preferredMaxLayoutWidth = 320
-            texts.addArrangedSubview(detailLabel)
+        let host = NSHostingView(rootView: CaptureToastView(title: title, detail: detail, symbol: symbol))
+        let size = host.fittingSize
+        if let panel {
+            panel.contentView = host
+        } else {
+            panel = HUDPresenter.makePanel(content: host, interactive: false)
         }
-
-        let stack = NSStackView(views: [icon, texts])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.spacing = 12
-        stack.edgeInsets = NSEdgeInsets(top: 14, left: 16, bottom: 14, right: 18)
-
-        let effect = NSVisualEffectView()
-        effect.material = .hudWindow
-        effect.state = .active
-        effect.blendingMode = .behindWindow
-        effect.wantsLayer = true
-        effect.layer?.cornerRadius = 14
-        effect.layer?.masksToBounds = true
-        effect.addSubview(stack)
-        stack.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            stack.leadingAnchor.constraint(equalTo: effect.leadingAnchor),
-            stack.trailingAnchor.constraint(equalTo: effect.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: effect.topAnchor),
-            stack.bottomAnchor.constraint(equalTo: effect.bottomAnchor)
-        ])
-
-        let size = stack.fittingSize
-        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? .zero
-        let frame = CGRect(x: visible.midX - size.width / 2, y: visible.maxY - size.height - 24, width: size.width, height: size.height)
-
-        let hud = NSPanel(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-        hud.level = .statusBar
-        hud.isOpaque = false
-        hud.backgroundColor = .clear
-        hud.hasShadow = true
-        hud.ignoresMouseEvents = true
-        hud.collectionBehavior = [.canJoinAllSpaces, .transient]
-        hud.contentView = effect
-        hud.orderFrontRegardless()
-        panel = hud
+        guard let panel else { return }
+        HUDPresenter.show(panel, size: size)
 
         let work = DispatchWorkItem { [weak self] in
-            self?.panel?.orderOut(nil)
-            self?.panel = nil
+            guard let self, let panel = self.panel else { return }
+            HUDPresenter.hide(panel)
         }
         dismissWorkItem = work
         DispatchQueue.main.asyncAfter(deadline: .now() + duration, execute: work)
+    }
+}
+
+private struct CaptureToastView: View {
+    let title: String
+    let detail: String?
+    let symbol: String
+
+    /// Warnings orange, destructive actions red, everything else the accent color
+    private var tint: Color {
+        if symbol.contains("exclamationmark") { return .orange }
+        if symbol.contains("trash") || symbol.contains("xmark") { return .red }
+        if symbol.contains("checkmark") || symbol.contains("clipboard") || symbol.contains("arrow.down") { return .green }
+        return .accentColor
+    }
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 15, weight: .semibold))
+                .foregroundStyle(.white)
+                .frame(width: 30, height: 30)
+                .background(tint.gradient, in: Circle())
+            VStack(alignment: .leading, spacing: 1) {
+                Text(title)
+                    .font(.system(size: 13, weight: .semibold))
+                if let detail, !detail.isEmpty {
+                    Text(detail)
+                        .font(.system(size: 12))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(2)
+                        .truncationMode(.middle)
+                }
+            }
+            .frame(maxWidth: 320, alignment: .leading)
+        }
+        .padding(.leading, 10)
+        .padding(.trailing, 18)
+        .padding(.vertical, 9)
+        .fixedSize()
+        .hudGlass(cornerRadius: 26)
+        .padding(12) // room for the panel shadow
     }
 }

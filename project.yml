@@ -13,11 +13,21 @@ settings:
     ENABLE_HARDENED_RUNTIME: YES
     COMBINE_HIDPI_IMAGES: YES
 
+fileGroups:
+  - Configuration
+  - Branding
+  - Scripts
+
 targets:
   ScreenshotApp:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
+    scheme:
+      testTargets:
+        - ScreenshotAppTests
+      # Local StoreKit testing for the SyncShot Pro subscription (Run action only)
+      storeKitConfiguration: Configuration/SyncShot.storekit
     sources:
       - path: Sources
         excludes:

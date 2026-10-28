@@ -1,6 +1,7 @@
 import SwiftUI
 
-/// Modern macOS Settings window view with tabbed navigation
+/// Settings window in the macOS System Settings layout: a sidebar of colored panes and a detail area
+/// whose controls take the selected pane's accent color.
 public struct SettingsView: View {
     @EnvironmentObject var config: AppConfiguration
     @EnvironmentObject var coordinator: AppCoordinator
@@ -13,20 +14,51 @@ public struct SettingsView: View {
         case storage = "Storage & Cloud"
         case privacy = "Privacy"
         case diagnostics = "Diagnostics"
+        case subscription = "SyncShot Pro"
         case about = "About"
 
         public var id: String { rawValue }
 
         public var systemIcon: String {
             switch self {
-            case .general: return "gearshape"
-            case .capture: return "camera"
-            case .recording: return "record.circle"
+            case .general: return "gearshape.fill"
+            case .capture: return "camera.fill"
+            case .recording: return "record.circle.fill"
             case .shortcuts: return "command"
-            case .storage: return "cloud"
-            case .privacy: return "hand.raised"
-            case .diagnostics: return "terminal"
-            case .about: return "info.circle"
+            case .storage: return "cloud.fill"
+            case .privacy: return "hand.raised.fill"
+            case .diagnostics: return "terminal.fill"
+            case .subscription: return "crown.fill"
+            case .about: return "info.circle.fill"
+            }
+        }
+
+        /// Pane accent: sidebar tile, header and the pane's toggles, pickers and sliders
+        public var color: Color {
+            switch self {
+            case .general: return .gray
+            case .capture: return .blue
+            case .recording: return .red
+            case .shortcuts: return .purple
+            case .storage: return .cyan
+            case .privacy: return .indigo
+            case .diagnostics: return .orange
+            case .subscription: return .yellow
+            case .about: return .pink
+            }
+        }
+
+        public var subtitle: String {
+            switch self {
+            case .general: return "Startup, visibility and background behavior"
+            case .capture: return "Where captures go and what happens after"
+            case .recording: return "Video, GIF, audio and pointer options"
+            case .shortcuts: return "Global hotkeys and in-capture actions"
+            case .storage: return "Uploads to ImgBB or Amazon S3, and local cache"
+            case .privacy: return "Permissions and redaction"
+            case .diagnostics: return "Recent activity for troubleshooting"
+            case .subscription: return "Plans, billing and restore"
+            case .about: return "Version, support and legal"
             }
         }
     }
@@ -34,57 +66,78 @@ public struct SettingsView: View {
     public init() {}
 
     public var body: some View {
-        TabView(selection: $coordinator.settingsTab) {
-            GeneralSettingsTab()
-                .tabItem {
-                    Label(Tab.general.rawValue, systemImage: Tab.general.systemIcon)
+        NavigationSplitView {
+            List(Tab.allCases, selection: selection) { tab in
+                Label {
+                    Text(tab.rawValue)
+                } icon: {
+                    SettingsIconTile(symbol: tab.systemIcon, color: tab.color, size: 22)
                 }
-                .tag(Tab.general)
-
-            CaptureSettingsTab()
-                .tabItem {
-                    Label(Tab.capture.rawValue, systemImage: Tab.capture.systemIcon)
-                }
-                .tag(Tab.capture)
-
-            RecordingSettingsTab()
-                .tabItem {
-                    Label(Tab.recording.rawValue, systemImage: Tab.recording.systemIcon)
-                }
-                .tag(Tab.recording)
-
-            ShortcutsSettingsTab()
-                .tabItem {
-                    Label(Tab.shortcuts.rawValue, systemImage: Tab.shortcuts.systemIcon)
-                }
-                .tag(Tab.shortcuts)
-
-            StorageSettingsTab()
-                .tabItem {
-                    Label(Tab.storage.rawValue, systemImage: Tab.storage.systemIcon)
-                }
-                .tag(Tab.storage)
-
-            PrivacySettingsTab()
-                .tabItem {
-                    Label(Tab.privacy.rawValue, systemImage: Tab.privacy.systemIcon)
-                }
-                .tag(Tab.privacy)
-
-            DiagnosticsTab()
-                .tabItem {
-                    Label(Tab.diagnostics.rawValue, systemImage: Tab.diagnostics.systemIcon)
-                }
-                .tag(Tab.diagnostics)
-
-            AboutSettingsTab()
-                .tabItem {
-                    Label(Tab.about.rawValue, systemImage: Tab.about.systemIcon)
-                }
-                .tag(Tab.about)
+                .padding(.vertical, 2)
+                .tag(tab)
+            }
+            .listStyle(.sidebar)
+            .navigationSplitViewColumnWidth(min: 190, ideal: 210, max: 260)
+        } detail: {
+            pane(for: coordinator.settingsTab)
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .tint(coordinator.settingsTab.color)
         }
-        .frame(minWidth: 720, minHeight: 520)
-        .padding(20)
+        .frame(minWidth: 820, minHeight: 560)
+    }
+
+    private var selection: Binding<Tab?> {
+        Binding(get: { coordinator.settingsTab }, set: { if let tab = $0 { coordinator.settingsTab = tab } })
+    }
+
+    @ViewBuilder
+    private func pane(for tab: Tab) -> some View {
+        switch tab {
+        case .general: GeneralSettingsTab()
+        case .capture: CaptureSettingsTab()
+        case .recording: RecordingSettingsTab()
+        case .shortcuts: ShortcutsSettingsTab()
+        case .storage: StorageSettingsTab()
+        case .privacy: PrivacySettingsTab()
+        case .diagnostics: DiagnosticsTab()
+        case .subscription: SubscriptionSettingsTab()
+        case .about: AboutSettingsTab()
+        }
+    }
+}
+
+// MARK: - Shared Settings Components
+
+/// Rounded, gradient-filled symbol tile in the style of System Settings
+struct SettingsIconTile: View {
+    let symbol: String
+    let color: Color
+    var size: CGFloat = 22
+
+    var body: some View {
+        Image(systemName: symbol)
+            .font(.system(size: size * 0.52, weight: .semibold))
+            .foregroundStyle(.white)
+            .frame(width: size, height: size)
+            .background(color.gradient, in: RoundedRectangle(cornerRadius: size * 0.27, style: .continuous))
+    }
+}
+
+/// Settings row title with an optional explanatory line beneath it
+struct SettingsRowLabel: View {
+    let title: String
+    var subtitle: String? = nil
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(title)
+            if let subtitle {
+                Text(subtitle)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }
 
@@ -97,30 +150,32 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            Section(header: Text("App Startup & Visibility").font(.headline)) {
-                Toggle("Launch SyncShot at login", isOn: Binding(
+            Section(header: Text("App Startup & Visibility")) {
+                Toggle(isOn: Binding(
                     get: { config.launchAtLogin },
                     set: { loginProblem = config.setLaunchAtLogin($0) }
-                ))
+                )) {
+                    SettingsRowLabel(title: "Launch SyncShot at login")
+                }
                 if let loginProblem {
                     Text(loginProblem)
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
-                Toggle("Show icon in Dock", isOn: $config.showDockIcon)
-                Text("When off, SyncShot runs from the menu bar only.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                Toggle("Show menu in menu bar", isOn: $config.showMenuBarIcon)
-                Text(config.showMenuBarIcon
-                     ? "The SyncShot menu sits in the menu bar."
-                     : "The menu is hidden. Keyboard shortcuts keep working; open SyncShot again from Finder or Spotlight to reach Settings.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+                Toggle(isOn: $config.showDockIcon) {
+                    SettingsRowLabel(title: "Show icon in Dock", subtitle: "When off, SyncShot runs from the menu bar only.")
+                }
+                Toggle(isOn: $config.showMenuBarIcon) {
+                    SettingsRowLabel(
+                        title: "Show menu in menu bar",
+                        subtitle: config.showMenuBarIcon
+                            ? "The SyncShot menu sits in the menu bar."
+                            : "Hidden. Shortcuts keep working; open SyncShot from Finder or Spotlight to reach Settings.")
+                }
             }
 
-            Section(header: Text("Background").font(.headline)) {
-                Toggle("Reopen SyncShot if it's force quit or crashes", isOn: Binding(
+            Section(header: Text("Background")) {
+                Toggle(isOn: Binding(
                     get: { config.relaunchAfterUnexpectedQuit },
                     set: { enabled in
                         config.relaunchAfterUnexpectedQuit = enabled
@@ -129,19 +184,22 @@ struct GeneralSettingsTab: View {
                             config.relaunchAfterUnexpectedQuit = false
                         }
                     }
-                ))
+                )) {
+                    SettingsRowLabel(
+                        title: "Reopen SyncShot if it's force quit or crashes",
+                        subtitle: "macOS relaunches SyncShot in the background. Quit SyncShot still quits it. Turning this on restarts SyncShot once and starts it at login.")
+                }
                 if let relaunchProblem {
                     Text(relaunchProblem)
                         .font(.caption)
                         .foregroundColor(.orange)
                 }
-                Text("macOS relaunches SyncShot in the background so the menu and shortcuts come back after a force quit. Choosing Quit SyncShot still quits it. Turning this on restarts SyncShot once, and it also starts SyncShot when you log in.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
             }
 
-            Section(header: Text("Feedback & Alerts").font(.headline)) {
-                Toggle("Play shutter sound on capture", isOn: $config.captureSettings.playCaptureSound)
+            Section(header: Text("Feedback & Alerts")) {
+                Toggle(isOn: $config.captureSettings.playCaptureSound) {
+                    SettingsRowLabel(title: "Play shutter sound on capture")
+                }
             }
         }
         .formStyle(.grouped)
@@ -160,13 +218,13 @@ struct CaptureSettingsTab: View {
                 Toggle("Save captures to a folder", isOn: $config.captureSettings.saveToDisk)
 
                 if config.captureSettings.saveToDisk {
-                    Picker("Save to:", selection: saveLocationBinding) {
+                    Picker("Save to", selection: saveLocationBinding) {
                         ForEach(SaveLocation.allCases) { location in
                             Label(location.displayName, systemImage: location.systemImage).tag(location)
                         }
                     }
 
-                    LabeledContent("Folder:") {
+                    LabeledContent("Folder") {
                         HStack(spacing: 8) {
                             Image(systemName: folderProblem == nil ? "folder.fill" : "exclamationmark.triangle.fill")
                                 .foregroundColor(folderProblem == nil ? .accentColor : .orange)
@@ -192,7 +250,7 @@ struct CaptureSettingsTab: View {
                         .foregroundColor(.secondary)
                 }
             } header: {
-                Text("Save Location").font(.headline)
+                Text("Save Location")
             } footer: {
                 if config.captureSettings.saveToDisk {
                     Text("Screen recordings are saved to the same folder. The folder is created automatically.")
@@ -201,8 +259,8 @@ struct CaptureSettingsTab: View {
                 }
             }
 
-            Section(header: Text("File Format & Naming").font(.headline)) {
-                Picker("Format:", selection: $config.captureSettings.defaultFormat) {
+            Section(header: Text("File Format & Naming")) {
+                Picker("Format", selection: $config.captureSettings.defaultFormat) {
                     ForEach(ExportFormat.allCases, id: \.self) { format in
                         Text(format.displayName).tag(format)
                     }
@@ -210,7 +268,7 @@ struct CaptureSettingsTab: View {
                 .pickerStyle(.segmented)
 
                 if config.captureSettings.defaultFormat == .jpeg {
-                    LabeledContent("JPEG quality:") {
+                    LabeledContent("JPEG quality") {
                         HStack {
                             Slider(value: $config.captureSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
                             Text("\(Int(config.captureSettings.jpegQuality * 100))%")
@@ -220,8 +278,8 @@ struct CaptureSettingsTab: View {
                     }
                 }
 
-                TextField("File name prefix:", text: $config.captureSettings.fileNamePrefix, prompt: Text("Screenshot"))
-                LabeledContent("Example:") {
+                TextField("File name prefix", text: $config.captureSettings.fileNamePrefix, prompt: Text("Screenshot"))
+                LabeledContent("Example") {
                     Text(exampleFileName)
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
@@ -232,7 +290,7 @@ struct CaptureSettingsTab: View {
                 Toggle("Copy image to clipboard", isOn: $config.captureSettings.copyToClipboard)
                 Toggle("Recognize text for Library search (OCR, on-device)", isOn: $config.captureSettings.runOcrAutomatically)
             } header: {
-                Text("After Full Screen & Window Capture").font(.headline)
+                Text("After Full Screen & Window Capture")
             } footer: {
                 Text("Region captures use the toolbar instead: Return copies, ⌘S saves, ⌘U uploads and copies the link.")
                     .font(.caption)
@@ -306,35 +364,35 @@ struct RecordingSettingsTab: View {
 
     var body: some View {
         Form {
-            Section(header: Text("Output").font(.headline)) {
-                Picker("Save as:", selection: $config.recordingSettings.outputFormat) {
+            Section(header: Text("Output")) {
+                Picker("Save as", selection: $config.recordingSettings.outputFormat) {
                     ForEach(RecordingOutputFormat.allCases) { Text($0.displayName).tag($0) }
                 }
                 .pickerStyle(.segmented)
 
                 if config.recordingSettings.outputFormat == .mp4 {
-                    Picker("Codec:", selection: $config.recordingSettings.codec) {
+                    Picker("Codec", selection: $config.recordingSettings.codec) {
                         ForEach(RecordingCodec.allCases) { Text($0.displayName).tag($0) }
                     }
-                    Picker("Frame rate:", selection: $config.recordingSettings.frameRate) {
+                    Picker("Frame rate", selection: $config.recordingSettings.frameRate) {
                         Text("30 fps").tag(30)
                         Text("60 fps").tag(60)
                     }
                 } else {
-                    Picker("GIF frame rate:", selection: $config.recordingSettings.gifFrameRate) {
+                    Picker("GIF frame rate", selection: $config.recordingSettings.gifFrameRate) {
                         Text("10 fps").tag(10)
                         Text("15 fps").tag(15)
                         Text("20 fps").tag(20)
                         Text("25 fps").tag(25)
                     }
-                    Picker("GIF size:", selection: $config.recordingSettings.gifMaxPixelSize) {
+                    Picker("GIF size", selection: $config.recordingSettings.gifMaxPixelSize) {
                         Text("Small (480 px)").tag(480)
                         Text("Medium (800 px)").tag(800)
                         Text("Large (1280 px)").tag(1280)
                         Text("Original").tag(0)
                     }
                 }
-                LabeledContent("Saved to:") {
+                LabeledContent("Saved to") {
                     Text(config.captureSettings.saveToDisk
                          ? (config.configuredSaveDirectory.path as NSString).abbreviatingWithTildeInPath
                          : "Library only")
@@ -345,21 +403,21 @@ struct RecordingSettingsTab: View {
             }
 
             if config.recordingSettings.outputFormat == .mp4 {
-                Section(header: Text("Audio").font(.headline)) {
+                Section(header: Text("Audio")) {
                     Toggle("Record microphone (voiceover)", isOn: $config.recordingSettings.recordMicrophone)
                     Toggle("Record system audio", isOn: $config.recordingSettings.recordSystemAudio)
                 }
             }
 
-            Section(header: Text("Pointer").font(.headline)) {
+            Section(header: Text("Pointer")) {
                 Toggle("Show cursor", isOn: $config.recordingSettings.showCursor)
                 if #available(macOS 15.0, *) {
                     Toggle("Highlight mouse clicks", isOn: $config.recordingSettings.showClicks)
                 }
             }
 
-            Section(header: Text("Safety").font(.headline)) {
-                Picker("Stop when free disk space falls below:", selection: $config.recordingSettings.minimumFreeSpaceMB) {
+            Section(header: Text("Safety")) {
+                Picker("Stop when free disk space falls below", selection: $config.recordingSettings.minimumFreeSpaceMB) {
                     Text("512 MB").tag(512)
                     Text("1 GB").tag(1024)
                     Text("5 GB").tag(5120)
@@ -379,7 +437,7 @@ struct ShortcutsSettingsTab: View {
 
     var body: some View {
         Form {
-            Section(header: Text("In-Place Capture & Actions").font(.headline)) {
+            Section(header: Text("In-Place Capture & Actions")) {
                 ShortcutRecorderRow(
                     label: "Copy Selection",
                     icon: "doc.on.doc.fill",
@@ -402,7 +460,7 @@ struct ShortcutsSettingsTab: View {
                 )
             }
 
-            Section(header: Text("Global Screen Capture").font(.headline)) {
+            Section(header: Text("Global Screen Capture")) {
                 ShortcutRecorderRow(
                     label: "Capture Selected Region",
                     icon: "crop",
@@ -450,7 +508,7 @@ struct ShortcutsSettingsTab: View {
                 .font(.caption)
             }
 
-            Section(header: Text("User Custom Shortcuts").font(.headline)) {
+            Section(header: Text("User Custom Shortcuts")) {
                 if config.captureSettings.customShortcuts.isEmpty {
                     Text("No custom shortcuts added yet. You can add your own custom shortcuts below.")
                         .font(.caption)
@@ -658,9 +716,9 @@ struct AddShortcutSheet: View {
                 .padding(.top, 8)
 
             Form {
-                TextField("Shortcut Name:", text: $name, prompt: Text("e.g. Quick Copy / Cloud Upload"))
+                TextField("Shortcut Name", text: $name, prompt: Text("e.g. Quick Copy / Cloud Upload"))
 
-                Picker("Action:", selection: $selectedAction) {
+                Picker("Action", selection: $selectedAction) {
                     ForEach(availableActions, id: \.self) { act in
                         Text(act).tag(act)
                     }
@@ -733,11 +791,11 @@ struct StorageSettingsTab: View {
     var body: some View {
         Form {
             Section {
-                Picker("Upload to:", selection: destination) {
+                Picker("Upload to", selection: destination) {
                     ForEach(UploadDestination.allCases) { Text($0.title).tag($0) }
                 }
             } header: {
-                Text("Uploads").font(.headline)
+                Text("Uploads")
             } footer: {
                 Text(config.uploadDestination == .off
                      ? "Screenshots stay on this Mac. The Upload button asks you to pick a destination."
@@ -753,11 +811,11 @@ struct StorageSettingsTab: View {
             }
 
             if config.uploadDestination != .off {
-                Section(header: Text("Links").font(.headline)) {
-                    Picker("Short link:", selection: $config.linkShortener) {
+                Section(header: Text("Links")) {
+                    Picker("Short link", selection: $config.linkShortener) {
                         ForEach(LinkShortener.allCases) { Text($0.title).tag($0) }
                     }
-                    Picker("Delete after:", selection: $config.uploadExpiry) {
+                    Picker("Delete after", selection: $config.uploadExpiry) {
                         ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
                     }
                     if let note = linkNote {
@@ -767,9 +825,9 @@ struct StorageSettingsTab: View {
                 }
             }
 
-            Section(header: Text("Local Storage Maintenance").font(.headline)) {
+            Section(header: Text("Local Storage Maintenance")) {
                 StorageMeter(usage: usage, quotaBytes: Int64(config.cacheQuotaMB) * 1_048_576)
-                Picker("Cache limit:", selection: $config.cacheQuotaMB) {
+                Picker("Cache limit", selection: $config.cacheQuotaMB) {
                     Text("512 MB").tag(512)
                     Text("1 GB").tag(1024)
                     Text("2 GB").tag(2048)
@@ -809,9 +867,9 @@ struct StorageSettingsTab: View {
     // MARK: Provider sections
 
     private var imgbbSection: some View {
-        Section(header: Text("ImgBB").font(.headline)) {
+        Section(header: Text("ImgBB")) {
             HStack {
-                SecureField("API key:", text: $imgbbAPIKey, prompt: Text(imgbbKeySaved ? "Saved in Keychain" : "Paste your API key"))
+                SecureField("API key", text: $imgbbAPIKey, prompt: Text(imgbbKeySaved ? "Saved in Keychain" : "Paste your API key"))
                     .onSubmit(saveImgBBKey)
                 Button("Save", action: saveImgBBKey)
                     .disabled(imgbbAPIKey.trimmingCharacters(in: .whitespaces).isEmpty)
@@ -834,13 +892,13 @@ struct StorageSettingsTab: View {
     }
 
     private var s3Section: some View {
-        Section(header: Text("Amazon S3 / S3-Compatible").font(.headline)) {
-            TextField("Bucket:", text: $config.s3Bucket, prompt: Text("my-screenshots"))
-            TextField("Region:", text: $config.s3Region, prompt: Text("us-east-1"))
-            TextField("Endpoint:", text: $config.s3Endpoint, prompt: Text("Leave empty for AWS · R2/B2/MinIO URL"))
-            TextField("Public URL:", text: $config.s3PublicBaseURL, prompt: Text("Optional · https://cdn.example.com"))
-            TextField("Access key ID:", text: $s3AccessKeyID)
-            SecureField("Secret access key:", text: $s3SecretAccessKey, prompt: Text(s3KeysSaved ? "Saved in Keychain" : ""))
+        Section(header: Text("Amazon S3 / S3-Compatible")) {
+            TextField("Bucket", text: $config.s3Bucket, prompt: Text("my-screenshots"))
+            TextField("Region", text: $config.s3Region, prompt: Text("us-east-1"))
+            TextField("Endpoint", text: $config.s3Endpoint, prompt: Text("Leave empty for AWS · R2/B2/MinIO URL"))
+            TextField("Public URL", text: $config.s3PublicBaseURL, prompt: Text("Optional · https://cdn.example.com"))
+            TextField("Access key ID", text: $s3AccessKeyID)
+            SecureField("Secret access key", text: $s3SecretAccessKey, prompt: Text(s3KeysSaved ? "Saved in Keychain" : ""))
                 .onSubmit(saveS3Keys)
             HStack {
                 Label(s3KeysSaved ? "Keys saved in Keychain" : "Keys not saved", systemImage: s3KeysSaved ? "checkmark.circle.fill" : "key")
@@ -954,59 +1012,48 @@ struct PrivacySettingsTab: View {
 
     var body: some View {
         Form {
-            Section(header: Text("System Permissions").font(.headline)) {
-                VStack(alignment: .leading, spacing: 10) {
-                    HStack {
-                        Image(systemName: permissionManager.isAuthorized ? "checkmark.circle.fill" : "exclamationmark.triangle.fill")
-                            .foregroundColor(permissionManager.isAuthorized ? .green : .orange)
-                        VStack(alignment: .leading, spacing: 2) {
-                            Text("Screen Recording Permission")
-                                .font(.subheadline)
-                                .fontWeight(.medium)
-                            Text(permissionManager.isAuthorized ? "Authorized" : "Permission Required or Restart Needed")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
-                        }
-                        Spacer()
-                        if !permissionManager.isAuthorized {
-                            Button("Open Settings") {
-                                coordinator.openPrivacySettings()
-                            }
-                            Button("Relaunch App") {
-                                permissionManager.relaunchApp()
-                            }
+            Section {
+                LabeledContent {
+                    if permissionManager.isAuthorized {
+                        Label("Allowed", systemImage: "checkmark.circle.fill")
+                            .foregroundStyle(.green)
+                    } else {
+                        Button("Open System Settings…") { coordinator.openPrivacySettings() }
                             .buttonStyle(.borderedProminent)
-                            Button("Reset Permission") {
-                                permissionManager.resetScreenCapturePermission()
-                            }
-                        } else {
-                            Text("Enabled")
-                                .font(.caption)
-                                .foregroundColor(.green)
-                        }
                     }
+                } label: {
+                    SettingsRowLabel(
+                        title: "Screen Recording",
+                        subtitle: permissionManager.isAuthorized
+                            ? "SyncShot can capture your screen."
+                            : "Required to take screenshots and recordings."
+                    )
+                }
 
-                    if !permissionManager.isAuthorized {
-                        VStack(alignment: .leading, spacing: 4) {
-                            Text("Already enabled in System Settings?")
-                                .font(.caption)
-                                .fontWeight(.semibold)
-                                .foregroundColor(.primary)
-                            Text("macOS requires SyncShot to restart after granting Screen Recording access. If you already turned on the toggle in System Settings, click \"Relaunch App\" above to apply permissions immediately.")
-                                .font(.caption)
-                                .foregroundColor(.secondary)
+                if !permissionManager.isAuthorized {
+                    LabeledContent {
+                        HStack(spacing: 8) {
+                            Button("Reset") { permissionManager.resetScreenCapturePermission() }
+                            Button("Relaunch SyncShot") { permissionManager.relaunchApp() }
                         }
-                        .padding(8)
-                        .background(Color.orange.opacity(0.1))
-                        .cornerRadius(6)
+                    } label: {
+                        SettingsRowLabel(
+                            title: "Already allowed it?",
+                            subtitle: "macOS applies the change after SyncShot restarts. Reset if the toggle looks on but captures still fail."
+                        )
                     }
                 }
+            } header: {
+                Text("Permissions")
             }
 
-            Section(header: Text("Redaction & Security").font(.headline)) {
-                Text("Blur (B) and Pixelate (X) are flattened into the image pixels on export and upload; the original pixels are never kept in shared files. Uploaded images are re-encoded without metadata.")
-                    .font(.caption)
-                    .foregroundColor(.secondary)
+            Section {
+                SettingsRowLabel(
+                    title: "Redaction is permanent",
+                    subtitle: "Blur (B) and Pixelate (X) are flattened into the pixels on export and upload, so shared files never contain the original. Uploads are re-encoded without metadata."
+                )
+            } header: {
+                Text("Redaction & Security")
             }
         }
         .formStyle(.grouped)
@@ -1115,6 +1162,14 @@ struct AboutSettingsTab: View {
             .help(AppBranding.supportURL.absoluteString)
 
             Spacer()
+
+            HStack(spacing: 16) {
+                Link("Privacy Policy", destination: AppBranding.privacyPolicyURL)
+                Text("·").foregroundStyle(.tertiary)
+                Link("Terms of Use", destination: AppBranding.termsOfUseURL)
+            }
+            .font(.callout)
+            .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }

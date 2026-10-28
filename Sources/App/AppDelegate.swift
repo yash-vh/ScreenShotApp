@@ -57,6 +57,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         // Start Global Keyboard Shortcuts
         HotKeyManager.shared.startMonitoring()
 
+        // Start listening for subscription renewals and purchases from other devices
+        _ = SubscriptionManager.shared
+
         // Detect on-device OCR model availability ahead of the first recognition request
         VisionService.shared.prewarm()
     }

@@ -73,29 +73,18 @@ public final class UploadHUD {
 
     public func dismiss() {
         dismissWorkItem?.cancel()
-        panel?.orderOut(nil)
-        panel = nil
+        guard let panel else { return }
+        self.panel = nil
+        HUDPresenter.hide(panel)
     }
 
     private func present(autoDismissAfter delay: TimeInterval?) {
         dismissDelay = delay
         if panel == nil {
-            let host = NSHostingView(rootView: UploadHUDView(model: model))
-            let hud = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
-            hud.level = .statusBar
-            hud.isOpaque = false
-            hud.backgroundColor = .clear
-            hud.hasShadow = true
-            hud.collectionBehavior = [.canJoinAllSpaces, .transient]
-            hud.contentView = host
-            panel = hud
+            panel = HUDPresenter.makePanel(content: NSHostingView(rootView: UploadHUDView(model: model)), interactive: true)
         }
         guard let panel, let content = panel.contentView else { return }
-        let size = content.fittingSize
-        let screen = NSScreen.screens.first { NSMouseInRect(NSEvent.mouseLocation, $0.frame, false) } ?? NSScreen.main
-        let visible = screen?.visibleFrame ?? .zero
-        panel.setFrame(CGRect(x: visible.midX - size.width / 2, y: visible.maxY - size.height - 24, width: size.width, height: size.height), display: true)
-        panel.orderFrontRegardless()
+        HUDPresenter.show(panel, size: content.fittingSize)
         scheduleDismiss()
     }
 
@@ -134,43 +123,58 @@ private struct UploadHUDView: View {
 
     var body: some View {
         content
-            .padding(16)
-            .frame(width: 420, alignment: .leading)
-            .background(VisualEffectBackground())
-            .clipShape(RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(RoundedRectangle(cornerRadius: 18, style: .continuous).stroke(Color.white.opacity(0.18), lineWidth: 1))
+            .padding(14)
+            .frame(width: 400, alignment: .leading)
+            .hudGlass(cornerRadius: 22)
+            .padding(12) // room for the panel shadow
             .onHover { model.onHover?($0) }
-            .environment(\.colorScheme, .dark)
+            .animation(.snappy(duration: 0.2), value: model.copied)
     }
 
     @ViewBuilder
     private var content: some View {
         switch model.phase {
         case .uploading(let fraction):
-            VStack(alignment: .leading, spacing: 10) {
-                Label("Uploading to \(model.providerName)…", systemImage: "icloud.and.arrow.up")
-                    .font(.system(size: 14, weight: .semibold))
-                ProgressView(value: fraction)
-                    .progressViewStyle(.linear)
+            HStack(spacing: 12) {
+                statusIcon("icloud.and.arrow.up.fill", tint: .accentColor)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text("Uploading to \(model.providerName)")
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        Text(fraction, format: .percent.precision(.fractionLength(0)))
+                            .font(.system(size: 12, weight: .medium).monospacedDigit())
+                            .foregroundStyle(.secondary)
+                    }
+                    ProgressView(value: fraction)
+                        .progressViewStyle(.linear)
+                        .controlSize(.small)
+                }
             }
 
         case .done(let url, let expiresAt, let canDelete, let deletePageURL):
-            HStack(alignment: .top, spacing: 14) {
-                VStack(alignment: .leading, spacing: 8) {
-                    Label(model.copied ? "Link copied" : model.providerName, systemImage: "checkmark.icloud.fill")
-                        .font(.system(size: 14, weight: .semibold))
-                        .foregroundStyle(Color(red: 0.2, green: 0.83, blue: 0.6))
+            HStack(alignment: .top, spacing: 12) {
+                statusIcon(model.copied ? "checkmark" : "link", tint: .green)
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(model.copied ? "Link copied" : model.providerName)
+                            .font(.system(size: 13, weight: .semibold))
+                        Spacer()
+                        closeButton
+                    }
                     Text(url.absoluteString)
-                        .font(.system(size: 12, design: .monospaced))
-                        .lineLimit(2)
+                        .font(.system(size: 11.5, design: .monospaced))
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
                         .truncationMode(.middle)
                         .textSelection(.enabled)
                     Text(expiryText(expiresAt))
                         .font(.caption)
-                        .foregroundStyle(.secondary)
-                    HStack(spacing: 8) {
+                        .foregroundStyle(.tertiary)
+                    HStack(spacing: 6) {
                         Button("Open") { NSWorkspace.shared.open(url) }
-                        Button("Copy") {
+                            .buttonStyle(.borderedProminent)
+                        Button(model.copied ? "Copied" : "Copy") {
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(url.absoluteString, forType: .string)
                             model.copied = true
@@ -181,12 +185,10 @@ private struct UploadHUDView: View {
                             Button("Delete…") { NSWorkspace.shared.open(deletePageURL) }
                                 .help("Open the delete page in your browser")
                         }
-                        Spacer()
-                        Button { model.onClose?() } label: { Image(systemName: "xmark") }
-                            .buttonStyle(.borderless)
-                            .help("Dismiss")
                     }
                     .controlSize(.small)
+                    .buttonBorderShape(.capsule)
+                    .padding(.top, 2)
                 }
                 // Fixed slot so the panel doesn't resize when the QR code arrives
                 Group {
@@ -199,24 +201,43 @@ private struct UploadHUDView: View {
                         Color.clear
                     }
                 }
-                .frame(width: 84, height: 84)
-                .padding(4)
-                .background(Color.white)
-                .clipShape(RoundedRectangle(cornerRadius: 6))
+                .frame(width: 72, height: 72)
+                .padding(5)
+                .background(Color.white, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
             }
 
         case .message(let title, let detail, let symbol):
             HStack(spacing: 12) {
-                Image(systemName: symbol).font(.system(size: 22, weight: .semibold))
+                statusIcon(symbol, tint: symbol.contains("exclamationmark") ? .orange : .accentColor)
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(title).font(.system(size: 14, weight: .semibold))
+                    Text(title).font(.system(size: 13, weight: .semibold))
                     Text(detail).font(.system(size: 12)).foregroundStyle(.secondary).lineLimit(3)
                 }
                 Spacer()
-                Button { model.onClose?() } label: { Image(systemName: "xmark") }
-                    .buttonStyle(.borderless)
+                closeButton
             }
         }
+    }
+
+    private func statusIcon(_ symbol: String, tint: Color) -> some View {
+        Image(systemName: symbol)
+            .font(.system(size: 14, weight: .bold))
+            .foregroundStyle(.white)
+            .frame(width: 32, height: 32)
+            .background(tint.gradient, in: Circle())
+            .contentTransition(.symbolEffect(.replace))
+    }
+
+    private var closeButton: some View {
+        Button { model.onClose?() } label: {
+            Image(systemName: "xmark")
+                .font(.system(size: 10, weight: .bold))
+                .foregroundStyle(.secondary)
+                .frame(width: 20, height: 20)
+                .background(Color.primary.opacity(0.08), in: Circle())
+        }
+        .buttonStyle(.plain)
+        .help("Dismiss")
     }
 
     private func expiryText(_ date: Date?) -> String {
@@ -225,16 +246,4 @@ private struct UploadHUDView: View {
         formatter.unitsStyle = .full
         return "Expires \(formatter.localizedString(for: date, relativeTo: Date()))"
     }
-}
-
-private struct VisualEffectBackground: NSViewRepresentable {
-    func makeNSView(context: Context) -> NSVisualEffectView {
-        let view = NSVisualEffectView()
-        view.material = .hudWindow
-        view.state = .active
-        view.blendingMode = .behindWindow
-        return view
-    }
-
-    func updateNSView(_ nsView: NSVisualEffectView, context: Context) {}
 }

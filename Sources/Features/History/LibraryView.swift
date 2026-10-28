@@ -12,6 +12,8 @@ public final class LibraryWindowController: NSWindowController, NSWindowDelegate
             let window = NSWindow(contentViewController: host)
             window.title = "Library"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.titleVisibility = .hidden
             window.setContentSize(NSSize(width: 920, height: 620))
             window.contentMinSize = NSSize(width: 560, height: 380)
             window.setFrameAutosaveName("LibraryWindow")
@@ -36,7 +38,7 @@ struct LibraryView: View {
     @State private var usage = StorageUsage(cacheBytes: 0, thumbnailBytes: 0, savedBytes: 0, databaseBytes: 0)
     @State private var pendingDeletion: Set<UUID> = []
 
-    private let columns = [GridItem(.adaptive(minimum: 170, maximum: 220), spacing: 16)]
+    private let columns = [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: 18)]
 
     var body: some View {
         let results = store.search(query)
@@ -47,7 +49,7 @@ struct LibraryView: View {
                 emptyState
             } else {
                 ScrollView {
-                    LazyVGrid(columns: columns, alignment: .leading, spacing: 16, pinnedViews: [.sectionHeaders]) {
+                    LazyVGrid(columns: columns, alignment: .leading, spacing: 20, pinnedViews: [.sectionHeaders]) {
                         ForEach(HistoryQuery.sections(for: results), id: \.title) { section in
                             Section {
                                 ForEach(section.assets) { asset in
@@ -58,15 +60,21 @@ struct LibraryView: View {
                                         .onDrag { NSItemProvider(contentsOf: asset.originalFileURL) ?? NSItemProvider() }
                                 }
                             } header: {
-                                Text(section.title)
-                                    .font(.headline)
-                                    .frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(.vertical, 6)
-                                    .background(.bar)
+                                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                                    Text(section.title)
+                                        .font(.title3.weight(.semibold))
+                                    Text("\(section.assets.count)")
+                                        .font(.subheadline.monospacedDigit())
+                                        .foregroundStyle(.secondary)
+                                }
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .padding(.vertical, 8)
+                                .background(.background.opacity(0.92))
                             }
                         }
                     }
-                    .padding(16)
+                    .padding(.horizontal, 20)
+                    .padding(.bottom, 20)
                 }
             }
             Divider()
@@ -94,10 +102,25 @@ struct LibraryView: View {
 
     private var filterBar: some View {
         HStack(spacing: 10) {
-            Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
-            TextField("Search titles, tags and text inside screenshots…", text: $query.text)
-                .textFieldStyle(.plain)
-                .font(.system(size: 14))
+            Text("Library")
+                .font(.title2.weight(.bold))
+                .padding(.trailing, 6)
+            HStack(spacing: 6) {
+                Image(systemName: "magnifyingglass").foregroundStyle(.secondary)
+                TextField("Search titles, tags and text inside screenshots", text: $query.text)
+                    .textFieldStyle(.plain)
+                    .font(.system(size: 13))
+                if !query.text.isEmpty {
+                    Button { query.text = "" } label: {
+                        Image(systemName: "xmark.circle.fill").foregroundStyle(.tertiary)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Clear Search")
+                }
+            }
+            .padding(.horizontal, 10)
+            .frame(height: 30)
+            .background(Color.primary.opacity(0.06), in: Capsule())
             Picker("Type", selection: $query.media) {
                 ForEach(HistoryQuery.MediaFilter.allCases) { Text($0.rawValue).tag($0) }
             }
@@ -114,9 +137,10 @@ struct LibraryView: View {
                 }
             }
         }
-        .padding(.horizontal, 16)
+        .controlSize(.regular)
+        .padding(.leading, 84) // clear the traffic lights in the transparent title bar
+        .padding(.trailing, 16)
         .padding(.vertical, 10)
-        .padding(.top, 22)
     }
 
     private var storageBar: some View {
@@ -135,8 +159,9 @@ struct LibraryView: View {
             }
             .fixedSize()
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 10)
+        .background(.bar)
     }
 
     private var emptyState: some View {
@@ -238,47 +263,69 @@ private struct LibraryTile: View {
     let store: HistoryStore
     let isSelected: Bool
     @State private var thumbnail: NSImage?
+    @State private var isHovered = false
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 6) {
+        let shape = RoundedRectangle(cornerRadius: 14, style: .continuous)
+        VStack(alignment: .leading, spacing: 8) {
             ZStack {
-                RoundedRectangle(cornerRadius: 10).fill(Color.secondary.opacity(0.12))
+                shape.fill(Color.primary.opacity(0.05))
                 if let thumbnail {
                     Image(nsImage: thumbnail)
                         .resizable()
                         .aspectRatio(contentMode: .fit)
-                        .padding(6)
+                        .clipShape(RoundedRectangle(cornerRadius: 6, style: .continuous))
+                        .shadow(color: .black.opacity(0.15), radius: 3, y: 1)
+                        .padding(10)
                 } else {
                     Image(systemName: asset.isAvailableLocally ? asset.mediaType.systemIconName : "questionmark.folder")
-                        .font(.system(size: 28))
-                        .foregroundStyle(.secondary)
+                        .font(.system(size: 28, weight: .light))
+                        .foregroundStyle(.tertiary)
                 }
             }
-            .frame(height: 120)
-            .overlay(alignment: .topTrailing) { badges.padding(6) }
+            .frame(height: 132)
+            .overlay(alignment: .topTrailing) { badges.padding(8) }
+            .overlay(alignment: .topLeading) {
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 18))
+                        .symbolRenderingMode(.palette)
+                        .foregroundStyle(.white, Color.accentColor)
+                        .padding(8)
+                        .transition(.scale.combined(with: .opacity))
+                }
+            }
             .overlay(alignment: .bottomLeading) {
                 if let duration = asset.durationSeconds {
                     Label(RecordingCoordinator.format(duration), systemImage: asset.mediaType == .gif ? "play.square.stack" : "play.fill")
                         .font(.system(size: 10, weight: .semibold).monospacedDigit())
                         .foregroundStyle(.white)
-                        .padding(.horizontal, 6)
+                        .padding(.horizontal, 7)
                         .padding(.vertical, 3)
-                        .background(Capsule().fill(Color.black.opacity(0.6)))
-                        .padding(8)
+                        .background(.black.opacity(0.55), in: Capsule())
+                        .padding(10)
                 }
             }
-            .overlay(RoundedRectangle(cornerRadius: 10).stroke(isSelected ? Color.accentColor : Color.clear, lineWidth: 2.5))
+            .overlay(shape.strokeBorder(isSelected ? Color.accentColor : Color.primary.opacity(isHovered ? 0.12 : 0.06), lineWidth: isSelected ? 2.5 : 1))
+            .shadow(color: .black.opacity(isHovered ? 0.12 : 0), radius: 10, y: 4)
+            .scaleEffect(isHovered ? 1.015 : 1)
             .opacity(asset.isAvailableLocally ? 1 : 0.55)
 
-            Text(asset.title)
-                .font(.system(size: 12, weight: .medium))
-                .lineLimit(1)
-            Text("\(asset.dimensionsString) · \(asset.formattedFileSize) · \(asset.createdAt.formatted(date: .omitted, time: .shortened))")
-                .font(.system(size: 10))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(asset.title)
+                    .font(.system(size: 12, weight: .medium))
+                    .lineLimit(1)
+                Text("\(asset.dimensionsString) · \(asset.formattedFileSize) · \(asset.createdAt.formatted(date: .omitted, time: .shortened))")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+            }
+            .padding(.horizontal, 2)
         }
         .contentShape(Rectangle())
+        .onHover { isHovered = $0 }
+        .animation(.snappy(duration: 0.15), value: isHovered)
+        .animation(.snappy(duration: 0.15), value: isSelected)
         .help(asset.ocrText.map { String($0.prefix(300)) } ?? asset.originalFileURL.lastPathComponent)
         .task(id: asset.id) { thumbnail = await store.thumbnail(for: asset) }
     }
@@ -302,7 +349,7 @@ private struct LibraryTile: View {
             .font(.system(size: 10, weight: .bold))
             .foregroundStyle(.white)
             .padding(5)
-            .background(Circle().fill(color))
+            .background(color.gradient, in: Circle())
             .help(help)
     }
 }

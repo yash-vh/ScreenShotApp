@@ -106,14 +106,26 @@ public final class AppCoordinator: ObservableObject {
                 .environmentObject(self)
             
             let hostingController = NSHostingController(rootView: settingsView)
+            hostingController.sceneBridgingOptions = [.toolbars]
             let window = NSWindow(contentViewController: hostingController)
             window.title = "SyncShot Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 760, height: 600))
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
+            window.titlebarAppearsTransparent = true
+            window.toolbarStyle = .unified
+            window.setContentSize(NSSize(width: 880, height: 620))
             window.center()
             window.isReleasedWhenClosed = false
             
             settingsWindowController = NSWindowController(window: window)
+
+            // Title bar names the selected pane, like System Settings
+            $settingsTab
+                .receive(on: DispatchQueue.main)
+                .sink { [weak window] tab in
+                    window?.title = tab.rawValue
+                    window?.subtitle = tab.subtitle
+                }
+                .store(in: &cancellables)
         }
 
         settingsWindowController?.showWindow(nil)
