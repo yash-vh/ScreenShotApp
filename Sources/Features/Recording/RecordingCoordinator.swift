@@ -60,7 +60,7 @@ public final class RecordingCoordinator: ObservableObject {
            !DiskSpaceGuard.canStart(available: available, minimumFreeMB: settings.minimumFreeSpaceMB) {
             CaptureHUD.shared.show(
                 title: "Not enough disk space to record",
-                detail: "\(ByteCountFormatter.string(fromByteCount: available, countStyle: .file)) free. Free up space or lower the limit in Settings › Capture.",
+                detail: "\(ByteCountFormatter.string(fromByteCount: available, countStyle: .file)) free. Free up space or lower the limit in Settings › Recording.",
                 symbol: "externaldrive.badge.exclamationmark"
             )
             return

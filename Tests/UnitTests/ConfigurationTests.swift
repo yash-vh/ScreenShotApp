@@ -8,7 +8,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(settings.copyToClipboard)
         XCTAssertTrue(settings.saveToDisk)
         XCTAssertTrue(settings.runOcrAutomatically)
-        XCTAssertEqual(settings.shortcutRegion.displayString, "⇧⌘4")
+        XCTAssertEqual(settings.shortcutRegion.displayString, "⌥⌘4")
         XCTAssertEqual(settings.shortcutCopy.displayString, "⌘C")
         XCTAssertEqual(settings.shortcutUpload.displayString, "⌘U")
         XCTAssertEqual(settings.shortcutCancel.displayString, "Esc")
@@ -76,6 +76,28 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
         AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = true
         XCTAssertTrue(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+    }
+
+    func testDefaultsAvoidMacOSScreenshotShortcuts() {
+        let settings = CaptureSettings.default
+        for binding in [settings.shortcutRegion, settings.shortcutFullScreen, settings.shortcutWindow, settings.shortcutRecording, settings.shortcutQuickOcr] {
+            XCTAssertFalse(binding.isMacOSScreenshotShortcut, binding.displayString)
+            XCTAssertTrue(binding.isValidGlobalHotKey, binding.displayString)
+        }
+        XCTAssertTrue(ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"]).isMacOSScreenshotShortcut)
+        XCTAssertTrue(ShortcutBinding(key: "3", modifiers: ["⌃", "⇧", "⌘"]).isMacOSScreenshotShortcut)
+        XCTAssertFalse(ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"]).isMacOSScreenshotShortcut)
+    }
+
+    func testStoredSystemShortcutsMigrateButCustomOnesStay() throws {
+        var legacy = CaptureSettings.default
+        legacy.shortcutRegion = ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+        legacy.shortcutQuickOcr = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        legacy.shortcutWindow = ShortcutBinding(key: "W", modifiers: ["⌃", "⌥"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+        XCTAssertEqual(decoded.shortcutQuickOcr, .defaultQuickOcr)
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⌃⌥W")
     }
 
     func testCaptureSettingsDecodeIgnoresRemovedEditorFlag() throws {

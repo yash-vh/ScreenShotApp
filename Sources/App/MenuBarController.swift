@@ -10,6 +10,9 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private let config: AppConfiguration
     private let recorder = RecordingCoordinator.shared
     private var cancellables = Set<AnyCancellable>()
+    private var currentMenu: NSMenu?
+    /// True while the options menu is open during a recording (right-click)
+    private var isShowingMenuWhileRecording = false
 
     public init(coordinator: AppCoordinator? = nil, config: AppConfiguration? = nil) {
         self.coordinator = coordinator ?? .shared
@@ -24,6 +27,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
         // App glyph in the menu bar (template, so macOS tints it)
         button.image = AppBranding.menuBarIcon()
+        // Used while recording, when the item has no menu: click stops, right-click shows options
+        button.target = self
+        button.action = #selector(didClickStatusButton(_:))
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
 
         rebuildMenu()
 
@@ -68,6 +75,36 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
             button.image = image
             button.title = ""
             button.imagePosition = .imageOnly
+        }
+        attachMenuForCurrentState()
+    }
+
+    /// Normally the item opens the menu. While recording it acts as a stop button instead,
+    /// so one click ends the recording without hunting for "Stop Recording" in the menu.
+    private func attachMenuForCurrentState() {
+        guard !isShowingMenuWhileRecording else { return }
+        statusItem?.menu = recorder.isActive ? nil : currentMenu
+        statusItem?.button?.toolTip = recorder.isActive ? "Click to stop recording · Right-click for more options" : nil
+    }
+
+    @objc private func didClickStatusButton(_ sender: NSStatusBarButton) {
+        guard recorder.isActive else { return }
+        let event = NSApp.currentEvent
+        let wantsMenu = event?.type == .rightMouseUp
+            || event?.modifierFlags.contains(.option) == true
+            || event?.modifierFlags.contains(.control) == true
+        if wantsMenu {
+            // Pause / Discard and everything else stay one right-click away
+            isShowingMenuWhileRecording = true
+            rebuildMenu()
+            statusItem?.menu = currentMenu
+            sender.performClick(nil) // runs the menu modally
+            statusItem?.menu = nil
+            isShowingMenuWhileRecording = false
+            attachMenuForCurrentState()
+        } else {
+            recorder.stop()
+            rebuildMenu()
         }
     }
 
@@ -176,7 +213,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         quitItem.keyEquivalentModifierMask = [.command]
         menu.addItem(quitItem)
 
-        statusItem?.menu = menu
+        currentMenu = menu
+        attachMenuForCurrentState()
     }
 
     // MARK: - Menu Building Helpers

@@ -499,40 +499,39 @@ struct ShortcutsSettingsTab: View {
                     label: "Capture Selected Region",
                     icon: "crop",
                     binding: $config.captureSettings.shortcutRegion,
-                    defaultBinding: ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultRegion
                 )
 
                 ShortcutRecorderRow(
                     label: "Capture Full Screen",
                     icon: "macwindow",
                     binding: $config.captureSettings.shortcutFullScreen,
-                    defaultBinding: ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultFullScreen
                 )
 
                 ShortcutRecorderRow(
                     label: "Capture Window",
                     icon: "macwindow.on.rectangle",
                     binding: $config.captureSettings.shortcutWindow,
-                    defaultBinding: ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultWindow
                 )
 
                 ShortcutRecorderRow(
                     label: "Record Screen",
                     icon: "record.circle",
                     binding: $config.captureSettings.shortcutRecording,
-                    defaultBinding: ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultRecording
                 )
 
                 ShortcutRecorderRow(
                     label: "OCR Text from Screen",
                     icon: "text.viewfinder",
                     binding: $config.captureSettings.shortcutQuickOcr,
-                    defaultBinding: ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultQuickOcr
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("⌥⌘3 / ⌥⌘4 / ⌥⌘5 / ⌥⌘6 / ⌥⌘7 always work as backups.", systemImage: "info.circle")
-                    Text("macOS reserves ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshot tool. To use them here, turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.")
+                    Label("macOS's own screenshot keys (⇧⌘3, ⇧⌘4, ⇧⌘5, ⇧⌘6) are left to macOS, so both tools work side by side.", systemImage: "info.circle")
                         .foregroundColor(.secondary)
                     if !hotKeys.failedBindings.isEmpty {
                         Label("Unavailable (in use by another app): \(hotKeys.failedBindings.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
@@ -590,6 +589,7 @@ struct ShortcutRecorderRow: View {
 
     @State private var isRecording = false
     @State private var monitor: Any?
+    @State private var rejection: String?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -664,6 +664,15 @@ struct ShortcutRecorderRow: View {
                 .help("Delete custom shortcut")
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let rejection, isRecording {
+                Text(rejection)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .offset(y: 16)
+            }
+        }
+        .padding(.bottom, rejection != nil && isRecording ? 14 : 0)
         .onDisappear {
             stopRecording()
         }
@@ -699,8 +708,15 @@ struct ShortcutRecorderRow: View {
                     return nil
                 }
 
+                let candidate = ShortcutBinding(key: key, modifiers: mods)
                 DispatchQueue.main.async {
-                    self.binding = ShortcutBinding(key: key, modifiers: mods)
+                    if candidate.isMacOSScreenshotShortcut {
+                        // Keep listening so the user can try another combination
+                        self.rejection = "\(candidate.displayString) belongs to macOS Screenshot. Try ⌥⌘ or ⌃⌥ with a key."
+                        return
+                    }
+                    self.rejection = nil
+                    self.binding = candidate
                     self.stopRecording()
                 }
                 return nil
@@ -719,6 +735,7 @@ struct ShortcutRecorderRow: View {
             HotKeyManager.shared.resume()
         }
         isRecording = false
+        rejection = nil
     }
 }
 

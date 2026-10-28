@@ -106,6 +106,21 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         return mask
     }
 
+    /// Whether this is one of macOS's own screenshot shortcuts (⇧⌘3/4/5/6, plus the ⌃ "copy to clipboard"
+    /// variants). SyncShot never uses these so the built-in screenshot tool keeps working.
+    public var isMacOSScreenshotShortcut: Bool {
+        guard ["3", "4", "5", "6"].contains(key) else { return false }
+        let set = Set(modifiers)
+        return set == ["⇧", "⌘"] || set == ["⌃", "⇧", "⌘"]
+    }
+
+    // Defaults use ⌥⌘ + digit: free in macOS and close to the familiar ⇧⌘ screenshot keys
+    public static let defaultRegion = ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"])
+    public static let defaultFullScreen = ShortcutBinding(key: "3", modifiers: ["⌥", "⌘"])
+    public static let defaultWindow = ShortcutBinding(key: "5", modifiers: ["⌥", "⌘"])
+    public static let defaultRecording = ShortcutBinding(key: "6", modifiers: ["⌥", "⌘"])
+    public static let defaultQuickOcr = ShortcutBinding(key: "7", modifiers: ["⌥", "⌘"])
+
     /// Whether this binding is usable as a system-wide hotkey (needs ⌘, ⌃ or ⌥, or a function key)
     public var isValidGlobalHotKey: Bool {
         guard keyCode != nil else { return false }
@@ -180,11 +195,11 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         saveLocation: SaveLocation = .desktop,
         customSaveDirectory: String? = nil,
         fileNamePrefix: String = "Screenshot",
-        shortcutRegion: ShortcutBinding = ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"]),
-        shortcutFullScreen: ShortcutBinding = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"]),
-        shortcutWindow: ShortcutBinding = ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"]),
-        shortcutRecording: ShortcutBinding = ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"]),
-        shortcutQuickOcr: ShortcutBinding = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"]),
+        shortcutRegion: ShortcutBinding = .defaultRegion,
+        shortcutFullScreen: ShortcutBinding = .defaultFullScreen,
+        shortcutWindow: ShortcutBinding = .defaultWindow,
+        shortcutRecording: ShortcutBinding = .defaultRecording,
+        shortcutQuickOcr: ShortcutBinding = .defaultQuickOcr,
         shortcutCopy: ShortcutBinding = ShortcutBinding(key: "C", modifiers: ["⌘"]),
         shortcutUpload: ShortcutBinding = ShortcutBinding(key: "U", modifiers: ["⌘"]),
         shortcutCancel: ShortcutBinding = ShortcutBinding(key: "Esc", modifiers: []),
@@ -225,11 +240,17 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         let legacyCustom = !(customSaveDirectory ?? "").isEmpty
         self.saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? (legacyCustom ? .custom : .desktop)
         self.fileNamePrefix = try container.decodeIfPresent(String.self, forKey: .fileNamePrefix) ?? "Screenshot"
-        self.shortcutRegion = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutRegion) ?? ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
-        self.shortcutFullScreen = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutFullScreen) ?? ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
-        self.shortcutWindow = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutWindow) ?? ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
-        self.shortcutRecording = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutRecording) ?? ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
-        self.shortcutQuickOcr = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutQuickOcr) ?? ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        // Earlier versions defaulted to ⇧⌘3–7, which collide with macOS's screenshot tool; move those to ⌥⌘
+        func capture(_ key: CodingKeys, legacyKey: String, default fallback: ShortcutBinding) throws -> ShortcutBinding {
+            guard let stored = try container.decodeIfPresent(ShortcutBinding.self, forKey: key) else { return fallback }
+            let legacyDefault = ShortcutBinding(key: legacyKey, modifiers: ["⇧", "⌘"])
+            return stored.isMacOSScreenshotShortcut || stored == legacyDefault ? fallback : stored
+        }
+        self.shortcutRegion = try capture(.shortcutRegion, legacyKey: "4", default: .defaultRegion)
+        self.shortcutFullScreen = try capture(.shortcutFullScreen, legacyKey: "3", default: .defaultFullScreen)
+        self.shortcutWindow = try capture(.shortcutWindow, legacyKey: "5", default: .defaultWindow)
+        self.shortcutRecording = try capture(.shortcutRecording, legacyKey: "6", default: .defaultRecording)
+        self.shortcutQuickOcr = try capture(.shortcutQuickOcr, legacyKey: "7", default: .defaultQuickOcr)
         self.shortcutCopy = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCopy) ?? ShortcutBinding(key: "C", modifiers: ["⌘"])
         self.shortcutUpload = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutUpload) ?? ShortcutBinding(key: "U", modifiers: ["⌘"])
         self.shortcutCancel = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCancel) ?? ShortcutBinding(key: "Esc", modifiers: [])

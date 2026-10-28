@@ -31,8 +31,8 @@ private func carbonHotKeyEventHandler(
 ///
 /// Hotkeys are registered from the user's bindings in `CaptureSettings` (including custom capture
 /// shortcuts) and re-registered whenever those settings change. Works from any application without
-/// Accessibility permission. ⌥⌘3–7 are always registered as fallbacks because macOS reserves
-/// ⇧⌘3/4/5 for its own screenshot tool unless the user disables them.
+/// Accessibility permission. macOS's own screenshot shortcuts (⇧⌘3/4/5/6) are never registered,
+/// so the built-in screenshot tool keeps working alongside SyncShot.
 @MainActor
 public final class HotKeyManager: ObservableObject {
     public static let shared = HotKeyManager()
@@ -117,12 +117,7 @@ public final class HotKeyManager: ObservableObject {
                 result.append((action, custom.binding))
             }
         }
-        // Always-available fallbacks that macOS does not reserve
-        let fallbacks: [(CaptureActionType, String)] = [(.fullScreen, "3"), (.region, "4"), (.window, "5"), (.recording, "6"), (.ocr, "7")]
-        for (action, key) in fallbacks {
-            result.append((action, ShortcutBinding(key: key, modifiers: ["⌥", "⌘"])))
-        }
-        return result
+        return result.filter { !$0.1.isMacOSScreenshotShortcut }
     }
 
     private func registerHotKeys(from settings: CaptureSettings) {
