@@ -28,6 +28,53 @@ public enum DefaultRedactionStyle: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Where captures and recordings are saved
+public enum SaveLocation: String, Codable, Sendable, CaseIterable, Identifiable {
+    case desktop
+    case pictures
+    case documents
+    case downloads
+    case custom
+
+    public var id: String { rawValue }
+
+    /// Name of the folder created inside the preset locations
+    public static let folderName = "Screenshots"
+
+    public var displayName: String {
+        switch self {
+        case .desktop: return "Desktop › \(Self.folderName)"
+        case .pictures: return "Pictures › \(Self.folderName)"
+        case .documents: return "Documents › \(Self.folderName)"
+        case .downloads: return "Downloads › \(Self.folderName)"
+        case .custom: return "Custom Folder…"
+        }
+    }
+
+    public var systemImage: String {
+        switch self {
+        case .desktop: return "menubar.dock.rectangle"
+        case .pictures: return "photo"
+        case .documents: return "doc"
+        case .downloads: return "arrow.down.circle"
+        case .custom: return "folder"
+        }
+    }
+
+    /// Folder for a preset location; nil for `.custom`
+    public func presetURL(home: URL = FileManager.default.homeDirectoryForCurrentUser) -> URL? {
+        let parent: String
+        switch self {
+        case .desktop: parent = "Desktop"
+        case .pictures: parent = "Pictures"
+        case .documents: parent = "Documents"
+        case .downloads: parent = "Downloads"
+        case .custom: return nil
+        }
+        return home.appendingPathComponent(parent, isDirectory: true).appendingPathComponent(Self.folderName, isDirectory: true)
+    }
+}
+
 /// Global shortcut representation
 public struct ShortcutBinding: Codable, Sendable, Equatable {
     public var key: String
@@ -107,7 +154,11 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public var showMagnifier: Bool
     public var runOcrAutomatically: Bool
     public var defaultRedactionStyle: DefaultRedactionStyle
+    public var saveLocation: SaveLocation
+    /// Folder used when `saveLocation` is `.custom`
     public var customSaveDirectory: String?
+    /// File names look like "<prefix> 2026-10-28 at 14.03.22.png"
+    public var fileNamePrefix: String
 
     // Global Shortcuts
     public var shortcutRegion: ShortcutBinding
@@ -130,7 +181,9 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         showMagnifier: Bool = true,
         runOcrAutomatically: Bool = true,
         defaultRedactionStyle: DefaultRedactionStyle = .blur,
+        saveLocation: SaveLocation = .desktop,
         customSaveDirectory: String? = nil,
+        fileNamePrefix: String = "Screenshot",
         shortcutRegion: ShortcutBinding = ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"]),
         shortcutFullScreen: ShortcutBinding = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"]),
         shortcutWindow: ShortcutBinding = ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"]),
@@ -150,7 +203,9 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.showMagnifier = showMagnifier
         self.runOcrAutomatically = runOcrAutomatically
         self.defaultRedactionStyle = defaultRedactionStyle
+        self.saveLocation = saveLocation
         self.customSaveDirectory = customSaveDirectory
+        self.fileNamePrefix = fileNamePrefix
         self.shortcutRegion = shortcutRegion
         self.shortcutFullScreen = shortcutFullScreen
         self.shortcutWindow = shortcutWindow
@@ -174,6 +229,10 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.runOcrAutomatically = try container.decodeIfPresent(Bool.self, forKey: .runOcrAutomatically) ?? true
         self.defaultRedactionStyle = try container.decodeIfPresent(DefaultRedactionStyle.self, forKey: .defaultRedactionStyle) ?? .blur
         self.customSaveDirectory = try container.decodeIfPresent(String.self, forKey: .customSaveDirectory)
+        // Older settings only stored a custom path; keep honouring it
+        let legacyCustom = !(customSaveDirectory ?? "").isEmpty
+        self.saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? (legacyCustom ? .custom : .desktop)
+        self.fileNamePrefix = try container.decodeIfPresent(String.self, forKey: .fileNamePrefix) ?? "Screenshot"
         self.shortcutRegion = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutRegion) ?? ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
         self.shortcutFullScreen = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutFullScreen) ?? ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
         self.shortcutWindow = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutWindow) ?? ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
@@ -186,4 +245,13 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     }
 
     public static let `default` = CaptureSettings()
+
+    /// File-name-safe prefix, falling back to "Screenshot"
+    public var sanitizedFileNamePrefix: String {
+        let cleaned = fileNamePrefix
+            .components(separatedBy: CharacterSet(charactersIn: "/:\\").union(.newlines).union(.controlCharacters))
+            .joined(separator: "-")
+            .trimmingCharacters(in: .whitespaces)
+        return cleaned.isEmpty ? "Screenshot" : cleaned
+    }
 }

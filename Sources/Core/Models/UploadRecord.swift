@@ -6,13 +6,25 @@ public enum CloudProviderType: String, Codable, Sendable, CaseIterable {
     case s3Compatible = "s3_compatible"
     case supabase = "supabase"
     case cloudinary = "cloudinary"
+    case imgur = "imgur"
+    case imgbb = "imgbb"
 
     public var displayName: String {
         switch self {
-        case .managedCloud: return "Managed Cloud"
+        case .managedCloud: return "Shot Link (free)"
+        case .imgur:        return "Imgur (anonymous)"
+        case .imgbb:        return "ImgBB"
         case .s3Compatible: return "Amazon S3 / S3-Compatible"
         case .supabase:     return "Supabase Storage"
         case .cloudinary:   return "Cloudinary"
+        }
+    }
+
+    /// Providers with a working upload adapter
+    public var isImplemented: Bool {
+        switch self {
+        case .managedCloud, .imgur, .imgbb, .s3Compatible: return true
+        case .supabase, .cloudinary: return false
         }
     }
 }
@@ -54,6 +66,22 @@ public struct ProviderCapabilities: Codable, Sendable, Equatable {
         supportsLinkRevocation: false,
         supportsResumableUploads: true
     )
+
+    public static let imgbbDefault = ProviderCapabilities(
+        supportsDelete: false,
+        supportsExpiringLinks: true,
+        supportsPasswordProtection: false,
+        supportsLinkRevocation: false,
+        supportsResumableUploads: false
+    )
+
+    public static let imgurDefault = ProviderCapabilities(
+        supportsDelete: true,
+        supportsExpiringLinks: false,
+        supportsPasswordProtection: false,
+        supportsLinkRevocation: true,
+        supportsResumableUploads: false
+    )
 }
 
 /// Represents the status of an asset upload
@@ -63,6 +91,8 @@ public enum UploadStatus: String, Codable, Sendable {
     case completed = "completed"
     case failed = "failed"
     case cancelled = "cancelled"
+    /// Removed from the remote provider by the user
+    case deleted = "deleted"
 }
 
 /// Domain model recording an upload event to a remote cloud provider.

@@ -27,6 +27,9 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
     
     /// Media classification
     public var mediaType: MediaType
+
+    /// Length of a recording in seconds; nil for still images
+    public var durationSeconds: Double?
     
     /// Associated cloud upload history records
     public var uploadRecords: [UploadRecord]
@@ -48,6 +51,7 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
         fileSizeBytes: Int64,
         ocrText: String? = nil,
         mediaType: MediaType = .image,
+        durationSeconds: Double? = nil,
         uploadRecords: [UploadRecord] = [],
         isAvailableLocally: Bool = true
     ) {
@@ -64,6 +68,7 @@ public struct ScreenshotAsset: Identifiable, Codable, Sendable, Equatable {
         self.fileSizeBytes = fileSizeBytes
         self.ocrText = ocrText
         self.mediaType = mediaType
+        self.durationSeconds = durationSeconds
         self.uploadRecords = uploadRecords
         self.isAvailableLocally = isAvailableLocally
     }

@@ -100,23 +100,23 @@
 #### **Milestone 5: Local History & Metadata Store**
 - **Target:** Days 15–17
 - **Scope:**
-  - [ ] SwiftData schema for persistent asset indexing and search.
-  - [ ] Full-text search across titles, tags, and recognized OCR text.
-  - [ ] Media file lifecycle management in `~/Library/Application Support/com.screenshotapp.mac`.
-  - [ ] History browser UI with thumbnail grid, date filters, and type filtering.
-  - [ ] Local storage quota visualizer and one-click cache cleanup.
-  - [ ] Missing file recovery and stale database record pruning.
+  - [x] SwiftData schema for persistent asset indexing and search.
+  - [x] Full-text search across titles, tags, and recognized OCR text.
+  - [x] Media file lifecycle management in `~/Library/Application Support/com.screenshotapp.mac`.
+  - [x] History browser UI with thumbnail grid, date filters, and type filtering.
+  - [x] Local storage quota visualizer and one-click cache cleanup.
+  - [x] Missing file recovery and stale database record pruning.
 
 #### **Milestone 6: Screen & Audio Recording**
 - **Target:** Days 18–21
 - **Scope:**
-  - [ ] `RecordingCoordinator` based on `ScreenCaptureKit` stream APIs.
-  - [ ] Region, window, and full screen video capture.
-  - [ ] Microphone voiceover capture with privacy permissions check.
-  - [ ] Menu bar recording indicator with elapsed duration timer and pause/stop controls.
-  - [ ] Hardware-accelerated H.264/HEVC MP4 video export via `AVFoundation`.
-  - [ ] Animated GIF conversion pipeline with frame rate and resolution controls.
-  - [ ] Disk-space guard preventing recording exhaustion.
+  - [x] `RecordingCoordinator` based on `ScreenCaptureKit` stream APIs.
+  - [x] Region, window, and full screen video capture.
+  - [x] Microphone voiceover capture with privacy permissions check.
+  - [x] Menu bar recording indicator with elapsed duration timer and pause/stop controls.
+  - [x] Hardware-accelerated H.264/HEVC MP4 video export via `AVFoundation`.
+  - [x] Animated GIF conversion pipeline with frame rate and resolution controls.
+  - [x] Disk-space guard preventing recording exhaustion.
 
 ---
 
@@ -125,12 +125,12 @@
 #### **Milestone 7: Cloud Storage & Instant Sharing**
 - **Target:** Days 22–25
 - **Scope:**
-  - [ ] `CloudStorageProvider` actor protocol abstraction.
-  - [ ] User-owned Amazon S3 / S3-compatible provider adapter (endpoint, bucket, region, credentials via macOS Keychain).
-  - [ ] Managed Cloud backend client (presigned upload URLs, quotas, share tokens).
-  - [ ] Upload progress indicator and automatic link copying.
-  - [ ] Provider capability flags (deletion, link revocation, expiration).
-  - [ ] Offline resilience: queue uploads if network is disconnected.
+  - [x] `CloudStorageProvider` actor protocol abstraction.
+  - [x] User-owned Amazon S3 / S3-compatible provider adapter (endpoint, bucket, region, credentials via macOS Keychain).
+  - [x] Managed Cloud backend client (presigned upload URLs, quotas, share tokens).
+  - [x] Upload progress indicator and automatic link copying.
+  - [x] Provider capability flags (deletion, link revocation, expiration).
+  - [x] Offline resilience: queue uploads if network is disconnected.
 
 #### **Milestone 8: Production Hardening, Testing, Signing & Release**
 - **Target:** Days 26–30
@@ -154,9 +154,9 @@
 | **M2: Capture Engine** | Days 4–7 | **Done** | Pass | Pass |
 | **M3: Annotation & Redaction** | Days 8–11 | **Done** | Pass | Pass |
 | **M4: Styling & Recognition** | Days 12–14 | **Done** | Pass | Pass |
-| **M5: Local History & Database** | Days 15–17 | Planned | Planned | Planned |
-| **M6: Screen Recording & GIF** | Days 18–21 | Planned | Planned | Planned |
-| **M7: Cloud Storage & Sharing** | Days 22–25 | Planned | Planned | Planned |
+| **M5: Local History & Database** | Days 15–17 | **Done** | Pass | Pending |
+| **M6: Screen Recording & GIF** | Days 18–21 | **Done** | Pass | Pending |
+| **M7: Cloud Storage & Sharing** | Days 22–25 | **Done** (service not yet deployed) | Pass | Pending |
 | **M8: Hardening & Distribution** | Days 26–30 | Planned | Planned | Planned |
 
 ---

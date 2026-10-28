@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 import SwiftUI
 
 /// AppKit NSStatusItem menu-bar controller providing native menu bar dropdown.
@@ -7,6 +8,8 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
     private var statusItem: NSStatusItem?
     private let coordinator: AppCoordinator
     private let config: AppConfiguration
+    private let recorder = RecordingCoordinator.shared
+    private var cancellables = Set<AnyCancellable>()
 
     public init(coordinator: AppCoordinator? = nil, config: AppConfiguration? = nil) {
         self.coordinator = coordinator ?? .shared
@@ -26,6 +29,39 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         }
 
         rebuildMenu()
+
+        // Live recording indicator: red dot + elapsed time in the menu bar
+        recorder.$state.combineLatest(recorder.$elapsed)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] state, elapsed in
+                self?.updateStatusButton(state: state, elapsed: elapsed)
+            }
+            .store(in: &cancellables)
+    }
+
+    private func updateStatusButton(state: RecordingCoordinator.State, elapsed: TimeInterval) {
+        guard let button = statusItem?.button else { return }
+        let symbol: String
+        switch state {
+        case .recording: symbol = "record.circle.fill"
+        case .paused: symbol = "pause.circle.fill"
+        case .finishing: symbol = "hourglass"
+        default: symbol = "camera.viewfinder"
+        }
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: recorder.isActive ? "Recording" : "ScreenshotApp")
+        if recorder.isActive {
+            let color: NSColor = state == .paused ? .systemYellow : .systemRed
+            button.image = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
+            button.image?.isTemplate = false
+            button.title = " " + RecordingCoordinator.format(elapsed)
+            button.font = NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .medium)
+            button.imagePosition = .imageLeading
+        } else {
+            image?.isTemplate = true
+            button.image = image
+            button.title = ""
+            button.imagePosition = .imageOnly
+        }
     }
 
     public func rebuildMenu() {
@@ -68,16 +104,41 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         // 2. Screen Recording & OCR
-        let recordTitle = "Record Screen…"
-        let recordingItem = NSMenuItem(
-            title: recordTitle,
-            action: #selector(didSelectToggleRecording),
-            keyEquivalent: ""
-        )
-        applyShortcut(settings.shortcutRecording, to: recordingItem)
-        recordingItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
-        recordingItem.target = self
-        menu.addItem(recordingItem)
+        if recorder.isActive {
+            let stopItem = NSMenuItem(title: "Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", action: #selector(didSelectToggleRecording), keyEquivalent: "")
+            applyShortcut(settings.shortcutRecording, to: stopItem)
+            stopItem.image = NSImage(systemSymbolName: "stop.circle.fill", accessibilityDescription: nil)
+            stopItem.target = self
+            menu.addItem(stopItem)
+
+            let pauseItem = NSMenuItem(title: recorder.state == .paused ? "Resume Recording" : "Pause Recording", action: #selector(didSelectPauseRecording), keyEquivalent: "")
+            pauseItem.image = NSImage(systemSymbolName: recorder.state == .paused ? "play.circle" : "pause.circle", accessibilityDescription: nil)
+            pauseItem.target = self
+            menu.addItem(pauseItem)
+
+            let discardItem = NSMenuItem(title: "Discard Recording", action: #selector(didSelectDiscardRecording), keyEquivalent: "")
+            discardItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+            discardItem.target = self
+            menu.addItem(discardItem)
+        } else {
+            let recordMenu = NSMenu()
+            let recordRegion = NSMenuItem(title: "Selected Area", action: #selector(didSelectRecordRegion), keyEquivalent: "")
+            applyShortcut(settings.shortcutRecording, to: recordRegion)
+            recordRegion.image = NSImage(systemSymbolName: "crop", accessibilityDescription: nil)
+            let recordWindow = NSMenuItem(title: "Window", action: #selector(didSelectRecordWindow), keyEquivalent: "")
+            recordWindow.image = NSImage(systemSymbolName: "macwindow.on.rectangle", accessibilityDescription: nil)
+            let recordScreen = NSMenuItem(title: "Full Screen", action: #selector(didSelectRecordFullScreen), keyEquivalent: "")
+            recordScreen.image = NSImage(systemSymbolName: "macwindow", accessibilityDescription: nil)
+            for item in [recordRegion, recordWindow, recordScreen] {
+                item.target = self
+                item.isEnabled = recorder.state == .idle
+                recordMenu.addItem(item)
+            }
+            let recordingItem = NSMenuItem(title: "Record Screen", action: nil, keyEquivalent: "")
+            recordingItem.image = NSImage(systemSymbolName: "record.circle", accessibilityDescription: nil)
+            recordingItem.submenu = recordMenu
+            menu.addItem(recordingItem)
+        }
 
         let ocrItem = NSMenuItem(
             title: "OCR Text from Screen",
@@ -127,6 +188,11 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         let recentSubmenuItem = NSMenuItem(title: "Recent Captures", action: nil, keyEquivalent: "")
         recentSubmenuItem.submenu = recentMenu
         menu.addItem(recentSubmenuItem)
+
+        let libraryItem = NSMenuItem(title: "Open Library…", action: #selector(didSelectLibrary), keyEquivalent: "")
+        libraryItem.image = NSImage(systemSymbolName: "photo.stack", accessibilityDescription: nil)
+        libraryItem.target = self
+        menu.addItem(libraryItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -185,6 +251,26 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         rebuildMenu()
     }
 
+    @objc private func didSelectPauseRecording() {
+        recorder.togglePause()
+    }
+
+    @objc private func didSelectDiscardRecording() {
+        recorder.cancel()
+    }
+
+    @objc private func didSelectRecordRegion() {
+        coordinator.startRecording(.region)
+    }
+
+    @objc private func didSelectRecordWindow() {
+        coordinator.startRecording(.window)
+    }
+
+    @objc private func didSelectRecordFullScreen() {
+        coordinator.startRecording(.fullScreen)
+    }
+
     @objc private func didSelectOcr() {
         coordinator.triggerCapture(type: .ocr)
     }
@@ -196,6 +282,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         } else {
             CaptureHUD.shared.show(title: "Capture file not found", detail: asset.originalFileURL.lastPathComponent, symbol: "exclamationmark.triangle.fill")
         }
+    }
+
+    @objc private func didSelectLibrary() {
+        coordinator.openLibrary()
     }
 
     @objc private func didSelectSettings() {

@@ -24,6 +24,12 @@
     <string>ScreenshotApp needs screen recording access to capture your display, windows, and selected regions.</string>
     <key>NSMicrophoneUsageDescription</key>
     <string>ScreenshotApp requires microphone access if you choose to record voice-over commentary during screen recordings.</string>
+    <key>NSDesktopFolderUsageDescription</key>
+    <string>ScreenshotApp saves your screenshots and recordings to a folder on your Desktop.</string>
+    <key>NSDocumentsFolderUsageDescription</key>
+    <string>ScreenshotApp saves your screenshots and recordings to the folder you chose in Documents.</string>
+    <key>NSDownloadsFolderUsageDescription</key>
+    <string>ScreenshotApp saves your screenshots and recordings to the folder you chose in Downloads.</string>
     <key>NSSupportsAutomaticTermination</key>
     <false/>
     <key>NSSupportsSuddenTermination</key>

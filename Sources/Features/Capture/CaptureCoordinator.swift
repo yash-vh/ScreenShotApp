@@ -188,17 +188,18 @@ public final class CaptureCoordinator: ObservableObject {
         if settings.saveToDisk || forceSaveToDisk {
             saveDir = config.resolveLocalSaveDirectory()
         } else {
-            saveDir = config.appSupportDirectory().appendingPathComponent("Captures", isDirectory: true)
+            saveDir = HistoryStore.shared.capturesDirectory
         }
 
         let dateFormatter = DateFormatter()
         dateFormatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
         let timestamp = dateFormatter.string(from: Date())
         let fileExt = settings.defaultFormat == .jpeg ? "jpg" : "png"
-        var fileURL = saveDir.appendingPathComponent("Screenshot \(timestamp).\(fileExt)")
+        let prefix = settings.sanitizedFileNamePrefix
+        var fileURL = saveDir.appendingPathComponent("\(prefix) \(timestamp).\(fileExt)")
         var suffix = 2
         while FileManager.default.fileExists(atPath: fileURL.path) {
-            fileURL = saveDir.appendingPathComponent("Screenshot \(timestamp) (\(suffix)).\(fileExt)")
+            fileURL = saveDir.appendingPathComponent("\(prefix) \(timestamp) (\(suffix)).\(fileExt)")
             suffix += 1
         }
 
@@ -218,10 +219,7 @@ public final class CaptureCoordinator: ObservableObject {
             fileSizeBytes: (try? FileManager.default.attributesOfItem(atPath: fileURL.path)[.size] as? Int64) ?? 0,
             mediaType: .image
         )
-        AppCoordinator.shared.recentAssets.insert(asset, at: 0)
-        if AppCoordinator.shared.recentAssets.count > 50 {
-            AppCoordinator.shared.recentAssets.removeLast(AppCoordinator.shared.recentAssets.count - 50)
-        }
+        HistoryStore.shared.add(asset)
 
         if settings.runOcrAutomatically {
             indexText(of: image, assetId: asset.id)
@@ -232,9 +230,8 @@ public final class CaptureCoordinator: ObservableObject {
     /// Background on-device OCR so recent captures carry searchable text
     private func indexText(of image: CGImage, assetId: UUID) {
         Task { @MainActor in
-            guard let result = try? await VisionService.shared.recognize(in: image, recognitionLevel: .fast),
-                  let index = AppCoordinator.shared.recentAssets.firstIndex(where: { $0.id == assetId }) else { return }
-            AppCoordinator.shared.recentAssets[index].ocrText = result.fullText
+            guard let result = try? await VisionService.shared.recognize(in: image, recognitionLevel: .fast) else { return }
+            HistoryStore.shared.mutate(id: assetId) { $0.ocrText = result.fullText }
         }
     }
 
@@ -293,9 +290,7 @@ public final class CaptureCoordinator: ObservableObject {
             AppLogger.shared.capture.info("Region captured and copied directly to clipboard.")
 
         case .upload:
-            copyImageToPasteboard(cgImage: finalImage)
-            let shareURL = handleUpload(for: asset, image: finalImage)
-            AppLogger.shared.capture.info("Region captured and uploaded: \(shareURL, privacy: .public)")
+            UploadService.shared.requestUpload(assetId: asset.id, image: finalImage)
 
         case .save:
             if settings.copyToClipboard {
@@ -315,26 +310,6 @@ public final class CaptureCoordinator: ObservableObject {
                 EditorWindowController.present(for: asset)
             }
         }
-    }
-
-    @discardableResult
-    private func handleUpload(for asset: ScreenshotAsset, image: CGImage) -> String {
-        let config = AppConfiguration.shared
-        let shareId = UUID().uuidString.prefix(8).lowercased()
-        let shareURLString: String
-
-        if config.storageMode == .userOwned && !config.s3Bucket.isEmpty {
-            shareURLString = "https://\(config.s3Bucket).s3.amazonaws.com/\(asset.originalFileURL.lastPathComponent)"
-        } else {
-            shareURLString = "https://share.screenshotapp.local/s/\(shareId)"
-        }
-
-        // Copy share URL to pasteboard
-        let pasteboard = NSPasteboard.general
-        pasteboard.setString(shareURLString, forType: .string)
-
-        AppLogger.shared.storage.info("Uploaded screenshot to \(config.activeCloudProvider.displayName, privacy: .public): \(shareURLString, privacy: .public)")
-        return shareURLString
     }
 
     private func copyImageToPasteboard(cgImage: CGImage) {

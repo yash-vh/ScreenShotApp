@@ -8,6 +8,7 @@ public struct SettingsView: View {
     public enum Tab: String, CaseIterable, Identifiable {
         case general = "General"
         case capture = "Capture"
+        case recording = "Recording"
         case shortcuts = "Shortcuts"
         case storage = "Storage & Cloud"
         case privacy = "Privacy"
@@ -20,6 +21,7 @@ public struct SettingsView: View {
             switch self {
             case .general: return "gearshape"
             case .capture: return "camera"
+            case .recording: return "record.circle"
             case .shortcuts: return "command"
             case .storage: return "cloud"
             case .privacy: return "hand.raised"
@@ -29,12 +31,10 @@ public struct SettingsView: View {
         }
     }
 
-    @State private var selectedTab: Tab = .general
-
     public init() {}
 
     public var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView(selection: $coordinator.settingsTab) {
             GeneralSettingsTab()
                 .tabItem {
                     Label(Tab.general.rawValue, systemImage: Tab.general.systemIcon)
@@ -46,6 +46,12 @@ public struct SettingsView: View {
                     Label(Tab.capture.rawValue, systemImage: Tab.capture.systemIcon)
                 }
                 .tag(Tab.capture)
+
+            RecordingSettingsTab()
+                .tabItem {
+                    Label(Tab.recording.rawValue, systemImage: Tab.recording.systemIcon)
+                }
+                .tag(Tab.recording)
 
             ShortcutsSettingsTab()
                 .tabItem {
@@ -77,7 +83,7 @@ public struct SettingsView: View {
                 }
                 .tag(Tab.about)
         }
-        .frame(minWidth: 640, minHeight: 460)
+        .frame(minWidth: 720, minHeight: 520)
         .padding(20)
     }
 }
@@ -109,10 +115,56 @@ struct GeneralSettingsTab: View {
 
 struct CaptureSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
+    @State private var folderProblem: String?
 
     var body: some View {
         Form {
-            Section(header: Text("Export Format").font(.headline)) {
+            Section {
+                Toggle("Save captures to a folder", isOn: $config.captureSettings.saveToDisk)
+
+                if config.captureSettings.saveToDisk {
+                    Picker("Save to:", selection: saveLocationBinding) {
+                        ForEach(SaveLocation.allCases) { location in
+                            Label(location.displayName, systemImage: location.systemImage).tag(location)
+                        }
+                    }
+
+                    LabeledContent("Folder:") {
+                        HStack(spacing: 8) {
+                            Image(systemName: folderProblem == nil ? "folder.fill" : "exclamationmark.triangle.fill")
+                                .foregroundColor(folderProblem == nil ? .accentColor : .orange)
+                            Text(displayPath(config.configuredSaveDirectory))
+                                .lineLimit(1)
+                                .truncationMode(.middle)
+                                .textSelection(.enabled)
+                                .help(config.configuredSaveDirectory.path)
+                            Spacer()
+                            Button("Change…") { chooseCustomFolder() }
+                            Button("Show in Finder") { showInFinder() }
+                        }
+                    }
+
+                    if let folderProblem {
+                        Text(folderProblem)
+                            .font(.caption)
+                            .foregroundColor(.orange)
+                    }
+                } else {
+                    Text("Captures are kept only in the Library (Application Support) and count toward the cache limit in Storage & Cloud.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            } header: {
+                Text("Save Location").font(.headline)
+            } footer: {
+                if config.captureSettings.saveToDisk {
+                    Text("Screen recordings are saved to the same folder. The folder is created automatically.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            Section(header: Text("File Format & Naming").font(.headline)) {
                 Picker("Format:", selection: $config.captureSettings.defaultFormat) {
                     ForEach(ExportFormat.allCases, id: \.self) { format in
                         Text(format.displayName).tag(format)
@@ -121,49 +173,162 @@ struct CaptureSettingsTab: View {
                 .pickerStyle(.segmented)
 
                 if config.captureSettings.defaultFormat == .jpeg {
-                    HStack {
-                        Text("JPEG Quality:")
-                        Slider(value: $config.captureSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
-                        Text("\(Int(config.captureSettings.jpegQuality * 100))%")
-                            .frame(width: 40)
+                    LabeledContent("JPEG quality:") {
+                        HStack {
+                            Slider(value: $config.captureSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
+                            Text("\(Int(config.captureSettings.jpegQuality * 100))%")
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
                     }
+                }
+
+                TextField("File name prefix:", text: $config.captureSettings.fileNamePrefix, prompt: Text("Screenshot"))
+                LabeledContent("Example:") {
+                    Text(exampleFileName)
+                        .font(.caption.monospaced())
+                        .foregroundColor(.secondary)
                 }
             }
 
-            Section(header: Text("Post-Capture Behavior").font(.headline)) {
+            Section(header: Text("After Capture").font(.headline)) {
                 Toggle("Copy image to clipboard", isOn: $config.captureSettings.copyToClipboard)
                 Toggle("Open in annotation editor", isOn: $config.captureSettings.openInEditor)
-                Toggle("Save automatically to disk", isOn: $config.captureSettings.saveToDisk)
-                Toggle("Show magnifier loupe during region capture", isOn: $config.captureSettings.showMagnifier)
-                Toggle("Automatically recognize text (OCR)", isOn: $config.captureSettings.runOcrAutomatically)
+                Toggle("Recognize text automatically (OCR, on-device)", isOn: $config.captureSettings.runOcrAutomatically)
             }
 
-            Section(header: Text("Save Destination").font(.headline)) {
-                HStack {
-                    Text("Directory:")
-                    Text(config.resolveLocalSaveDirectory().path)
-                        .font(.caption)
+            Section(header: Text("Selection").font(.headline)) {
+                Toggle("Show magnifier loupe during region capture", isOn: $config.captureSettings.showMagnifier)
+            }
+        }
+        .formStyle(.grouped)
+        .onAppear(perform: refreshFolderStatus)
+        .onChange(of: config.captureSettings.saveLocation) { _ in refreshFolderStatus() }
+        .onChange(of: config.captureSettings.customSaveDirectory) { _ in refreshFolderStatus() }
+        .onChange(of: config.captureSettings.saveToDisk) { _ in refreshFolderStatus() }
+    }
+
+    /// Picking "Custom Folder…" without a folder yet opens the chooser straight away
+    private var saveLocationBinding: Binding<SaveLocation> {
+        Binding(
+            get: { config.captureSettings.saveLocation },
+            set: { location in
+                if location == .custom, (config.captureSettings.customSaveDirectory ?? "").isEmpty {
+                    chooseCustomFolder()
+                } else {
+                    config.captureSettings.saveLocation = location
+                }
+            }
+        )
+    }
+
+    private var exampleFileName: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd 'at' HH.mm.ss"
+        let ext = config.captureSettings.defaultFormat == .jpeg ? "jpg" : "png"
+        return "\(config.captureSettings.sanitizedFileNamePrefix) \(formatter.string(from: Date())).\(ext)"
+    }
+
+    private func displayPath(_ url: URL) -> String {
+        (url.path as NSString).abbreviatingWithTildeInPath
+    }
+
+    private func refreshFolderStatus() {
+        folderProblem = config.captureSettings.saveToDisk ? config.saveDirectoryProblem() : nil
+    }
+
+    private func chooseCustomFolder() {
+        let panel = NSOpenPanel()
+        panel.title = "Choose Save Folder"
+        panel.prompt = "Use Folder"
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.canCreateDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.directoryURL = config.configuredSaveDirectory
+        NSApp.activate(ignoringOtherApps: true)
+        if panel.runModal() == .OK, let url = panel.url {
+            config.captureSettings.customSaveDirectory = url.path
+            config.captureSettings.saveLocation = .custom
+        }
+        refreshFolderStatus()
+    }
+
+    private func showInFinder() {
+        let url = config.resolveLocalSaveDirectory()
+        NSWorkspace.shared.activateFileViewerSelecting([url])
+        refreshFolderStatus()
+    }
+}
+
+// MARK: - Recording Tab
+
+struct RecordingSettingsTab: View {
+    @EnvironmentObject var config: AppConfiguration
+
+    var body: some View {
+        Form {
+            Section(header: Text("Output").font(.headline)) {
+                Picker("Save as:", selection: $config.recordingSettings.outputFormat) {
+                    ForEach(RecordingOutputFormat.allCases) { Text($0.displayName).tag($0) }
+                }
+                .pickerStyle(.segmented)
+
+                if config.recordingSettings.outputFormat == .mp4 {
+                    Picker("Codec:", selection: $config.recordingSettings.codec) {
+                        ForEach(RecordingCodec.allCases) { Text($0.displayName).tag($0) }
+                    }
+                    Picker("Frame rate:", selection: $config.recordingSettings.frameRate) {
+                        Text("30 fps").tag(30)
+                        Text("60 fps").tag(60)
+                    }
+                } else {
+                    Picker("GIF frame rate:", selection: $config.recordingSettings.gifFrameRate) {
+                        Text("10 fps").tag(10)
+                        Text("15 fps").tag(15)
+                        Text("20 fps").tag(20)
+                        Text("25 fps").tag(25)
+                    }
+                    Picker("GIF size:", selection: $config.recordingSettings.gifMaxPixelSize) {
+                        Text("Small (480 px)").tag(480)
+                        Text("Medium (800 px)").tag(800)
+                        Text("Large (1280 px)").tag(1280)
+                        Text("Original").tag(0)
+                    }
+                }
+                LabeledContent("Saved to:") {
+                    Text(config.captureSettings.saveToDisk
+                         ? (config.configuredSaveDirectory.path as NSString).abbreviatingWithTildeInPath
+                         : "Library only")
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                         .truncationMode(.middle)
-                    Spacer()
-                    Button("Choose...") {
-                        selectFolder()
-                    }
+                }
+            }
+
+            if config.recordingSettings.outputFormat == .mp4 {
+                Section(header: Text("Audio").font(.headline)) {
+                    Toggle("Record microphone (voiceover)", isOn: $config.recordingSettings.recordMicrophone)
+                    Toggle("Record system audio", isOn: $config.recordingSettings.recordSystemAudio)
+                }
+            }
+
+            Section(header: Text("Pointer").font(.headline)) {
+                Toggle("Show cursor", isOn: $config.recordingSettings.showCursor)
+                if #available(macOS 15.0, *) {
+                    Toggle("Highlight mouse clicks", isOn: $config.recordingSettings.showClicks)
+                }
+            }
+
+            Section(header: Text("Safety").font(.headline)) {
+                Picker("Stop when free disk space falls below:", selection: $config.recordingSettings.minimumFreeSpaceMB) {
+                    Text("512 MB").tag(512)
+                    Text("1 GB").tag(1024)
+                    Text("5 GB").tag(5120)
                 }
             }
         }
         .formStyle(.grouped)
-    }
-
-    private func selectFolder() {
-        let panel = NSOpenPanel()
-        panel.canChooseFiles = false
-        panel.canChooseDirectories = true
-        panel.allowsMultipleSelection = false
-        if panel.runModal() == .OK, let url = panel.url {
-            config.captureSettings.customSaveDirectory = url.path
-        }
     }
 }
 
@@ -505,6 +670,13 @@ struct AddShortcutSheet: View {
 
 struct StorageSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
+    @ObservedObject private var history = HistoryStore.shared
+    @State private var s3AccessKeyID = ""
+    @State private var s3SecretAccessKey = ""
+    @State private var credentialStatus: String?
+    @State private var imgbbAPIKey = ""
+    @State private var imgbbKeySaved = false
+    @State private var usage = StorageUsage(cacheBytes: 0, thumbnailBytes: 0, savedBytes: 0, databaseBytes: 0)
 
     var body: some View {
         Form {
@@ -524,38 +696,141 @@ struct StorageSettingsTab: View {
                     .foregroundColor(.secondary)
             }
 
-            if config.storageMode == .userOwned {
-                Section(header: Text("My Storage Provider").font(.headline)) {
-                    Picker("Provider:", selection: $config.activeCloudProvider) {
-                        ForEach(CloudProviderType.allCases, id: \.self) { provider in
-                            Text(provider.displayName).tag(provider)
-                        }
+            if config.storageMode == .managedCloud {
+                Section(header: Text("Free Share Link").font(.headline)) {
+                    Picker("Service:", selection: $config.activeCloudProvider) {
+                        Text(CloudProviderType.managedCloud.displayName).tag(CloudProviderType.managedCloud)
+                        Text(CloudProviderType.imgbb.displayName).tag(CloudProviderType.imgbb)
+                        Text(CloudProviderType.imgur.displayName).tag(CloudProviderType.imgur)
                     }
 
-                    if config.activeCloudProvider == .s3Compatible {
-                        TextField("Endpoint URL (e.g. https://s3.amazonaws.com):", text: $config.s3Endpoint)
-                        TextField("Bucket Name:", text: $config.s3Bucket)
-                        TextField("Region:", text: $config.s3Region)
+                    if config.activeCloudProvider == .imgbb {
+                        HStack {
+                            SecureField("ImgBB API Key:", text: $imgbbAPIKey, prompt: Text(imgbbKeySaved ? "Saved in Keychain" : "Paste your API key"))
+                            Button("Save") { saveImgBBKey() }
+                                .disabled(imgbbAPIKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                            if imgbbKeySaved {
+                                Button("Remove") { removeImgBBKey() }
+                            }
+                        }
+                        HStack(spacing: 4) {
+                            Text(imgbbKeySaved ? "Key saved. Links point straight at the image." : "Free key, no account needed for viewers.")
+                            Link("Get a key at api.imgbb.com", destination: URL(string: "https://api.imgbb.com/")!)
+                        }
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                    } else if config.activeCloudProvider == .imgur {
+                        TextField("Imgur Client-ID:", text: $config.imgurClientID, prompt: Text("from api.imgur.com/oauth2/addclient"))
+                        Text("Imgur images are public and never expire. Imgur's API terms restrict commercial use.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    } else {
+                        TextField("Service URL:", text: $config.shareServiceURL, prompt: Text("https://your-share-domain"))
+                        Text("Links use 16-character random IDs and can be deleted at any time. Deploy the service from Services/share-worker.")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
                     }
+                }
+            }
+
+            if config.storageMode == .userOwned {
+                Section(header: Text("My S3 / S3-Compatible Bucket").font(.headline)) {
+                    TextField("Endpoint URL:", text: $config.s3Endpoint, prompt: Text("https://s3.us-east-1.amazonaws.com"))
+                    TextField("Bucket Name:", text: $config.s3Bucket)
+                    TextField("Region:", text: $config.s3Region)
+                    TextField("Public Base URL (optional):", text: $config.s3PublicBaseURL, prompt: Text("https://cdn.example.com"))
+                    TextField("Access Key ID:", text: $s3AccessKeyID)
+                    SecureField("Secret Access Key:", text: $s3SecretAccessKey)
+                    HStack {
+                        Button("Save Keys to Keychain") { saveS3Keys() }
+                            .disabled(s3AccessKeyID.isEmpty || s3SecretAccessKey.isEmpty)
+                        Button("Remove Keys") { removeS3Keys() }
+                        if let credentialStatus {
+                            Text(credentialStatus).font(.caption).foregroundColor(.secondary)
+                        }
+                    }
+                    Text("Without a public base URL, links are presigned and expire after at most 7 days.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+            }
+
+            if config.storageMode != .localOnly {
+                Section(header: Text("Upload Behavior").font(.headline)) {
+                    Picker("Link expires after:", selection: $config.uploadExpiry) {
+                        ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
+                    }
+                    Toggle("Ask before uploading", isOn: $config.askBeforeUploading)
                 }
             }
 
             Section(header: Text("Local Storage Maintenance").font(.headline)) {
+                StorageMeter(usage: usage, quotaBytes: Int64(config.cacheQuotaMB) * 1_048_576)
+                Picker("Cache limit:", selection: $config.cacheQuotaMB) {
+                    Text("512 MB").tag(512)
+                    Text("1 GB").tag(1024)
+                    Text("2 GB").tag(2048)
+                    Text("5 GB").tag(5120)
+                    Text("Unlimited").tag(0)
+                }
                 HStack {
                     VStack(alignment: .leading) {
-                        Text("Local Cache & Files")
-                        Text("Manage temporary export caches and disk space.")
+                        Text("\(history.assets.count) captures in history")
+                        Text("Cached captures live in Application Support; saved files in your folders are never deleted by cleanup.")
                             .font(.caption)
                             .foregroundColor(.secondary)
                     }
                     Spacer()
+                    Button("Open Library") { AppCoordinator.shared.openLibrary() }
                     Button("Clean Up Cache") {
-                        // Handled in local storage coordinator
+                        history.cleanUpCache(olderThanDays: 30)
+                        usage = history.storageUsage()
                     }
+                    .help("Remove cached captures older than 30 days and regenerate thumbnails on demand")
                 }
             }
         }
         .formStyle(.grouped)
+        .onAppear {
+            usage = history.storageUsage()
+            s3AccessKeyID = (try? KeychainStore.shared.value(for: KeychainStore.Account.s3AccessKeyID)) ?? ""
+            imgbbKeySaved = ((try? KeychainStore.shared.value(for: KeychainStore.Account.imgbbAPIKey)) ?? nil)?.isEmpty == false
+        }
+        .onChange(of: config.cacheQuotaMB) { _ in
+            history.enforceCacheQuota()
+            usage = history.storageUsage()
+        }
+    }
+
+    private func saveS3Keys() {
+        do {
+            try KeychainStore.shared.set(s3AccessKeyID.trimmingCharacters(in: .whitespaces), for: KeychainStore.Account.s3AccessKeyID)
+            try KeychainStore.shared.set(s3SecretAccessKey, for: KeychainStore.Account.s3SecretAccessKey)
+            s3SecretAccessKey = ""
+            credentialStatus = "Saved to Keychain"
+        } catch {
+            credentialStatus = error.localizedDescription
+        }
+    }
+
+    private func saveImgBBKey() {
+        let key = imgbbAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard (try? KeychainStore.shared.set(key, for: KeychainStore.Account.imgbbAPIKey)) != nil else { return }
+        imgbbAPIKey = ""
+        imgbbKeySaved = true
+    }
+
+    private func removeImgBBKey() {
+        KeychainStore.shared.remove(KeychainStore.Account.imgbbAPIKey)
+        imgbbKeySaved = false
+    }
+
+    private func removeS3Keys() {
+        KeychainStore.shared.remove(KeychainStore.Account.s3AccessKeyID)
+        KeychainStore.shared.remove(KeychainStore.Account.s3SecretAccessKey)
+        s3AccessKeyID = ""
+        s3SecretAccessKey = ""
+        credentialStatus = "Keys removed"
     }
 }
 

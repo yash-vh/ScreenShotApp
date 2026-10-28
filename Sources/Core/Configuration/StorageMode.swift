@@ -9,7 +9,7 @@ public enum StorageMode: String, Codable, Sendable, CaseIterable {
     public var title: String {
         switch self {
         case .localOnly: return "Local Only"
-        case .managedCloud: return "Managed Cloud"
+        case .managedCloud: return "Free Share Link"
         case .userOwned: return "My Storage"
         }
     }
@@ -17,11 +17,11 @@ public enum StorageMode: String, Codable, Sendable, CaseIterable {
     public var subtitle: String {
         switch self {
         case .localOnly:
-            return "Screenshots stay on your Mac. No cloud connection or account required."
+            return "Screenshots stay on your Mac. Uploading is turned off."
         case .managedCloud:
-            return "Instant share links hosted on our fast, secure managed cloud service."
+            return "Instant, unguessable share links with optional expiry. Uploads only when you press Upload (⌘U)."
         case .userOwned:
-            return "Directly upload to your personal Amazon S3, Supabase, or Cloudinary account."
+            return "Upload to your own Amazon S3 or S3-compatible bucket (R2, B2, MinIO). Keys are kept in the Keychain."
         }
     }
 

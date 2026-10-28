@@ -32,6 +32,7 @@ public final class AppCoordinator: ObservableObject {
     @Published public var lastErrorMessage: String?
 
     @Published public var hasPermission: Bool = false
+    @Published public var settingsTab: SettingsView.Tab = .general
 
     private var settingsWindowController: NSWindowController?
     private var cancellables = Set<AnyCancellable>()
@@ -45,6 +46,16 @@ public final class AppCoordinator: ObservableObject {
                 self?.hasPermission = authorized
             }
             .store(in: &cancellables)
+
+        // Recent captures mirror the persistent history
+        HistoryStore.shared.$assets
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] assets in
+                self?.recentAssets = Array(assets.prefix(50))
+            }
+            .store(in: &cancellables)
+        HistoryStore.shared.refreshAvailability()
+        UploadService.shared.startNetworkMonitoring()
     }
 
     // MARK: - Actions
@@ -85,7 +96,10 @@ public final class AppCoordinator: ObservableObject {
         }
     }
 
-    public func openSettings() {
+    public func openSettings(tab: SettingsView.Tab? = nil) {
+        if let tab {
+            settingsTab = tab
+        }
         if settingsWindowController == nil {
             let settingsView = SettingsView()
                 .environmentObject(AppConfiguration.shared)
@@ -95,7 +109,7 @@ public final class AppCoordinator: ObservableObject {
             let window = NSWindow(contentViewController: hostingController)
             window.title = "ScreenshotApp Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
-            window.setContentSize(NSSize(width: 680, height: 500))
+            window.setContentSize(NSSize(width: 760, height: 600))
             window.center()
             window.isReleasedWhenClosed = false
             
@@ -104,6 +118,10 @@ public final class AppCoordinator: ObservableObject {
 
         settingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
+    }
+
+    public func openLibrary() {
+        LibraryWindowController.present()
     }
 
     public func openEditor(for asset: ScreenshotAsset) {
@@ -134,13 +152,16 @@ public final class AppCoordinator: ObservableObject {
     }
 
     private func toggleScreenRecording() {
-        // Screen recording ships in Milestone 6; don't pretend a recording started
-        AppLogger.shared.recording.info("Screen recording requested; not yet available.")
-        CaptureHUD.shared.show(
-            title: "Screen recording is coming soon",
-            detail: "Video & GIF capture arrives with Milestone 6.",
-            symbol: "record.circle"
-        )
+        RecordingCoordinator.shared.toggle()
+    }
+
+    /// Starts a recording of a specific target (menu bar submenu)
+    public func startRecording(_ kind: RecordingCoordinator.TargetKind) {
+        guard hasScreenCapturePermission() else {
+            triggerCapture(type: .recording)
+            return
+        }
+        RecordingCoordinator.shared.start(kind)
     }
 
     private func startOcrCapture() {

@@ -16,6 +16,14 @@ public final class AppConfiguration: ObservableObject {
         static let s3Endpoint = "com.screenshotapp.s3Endpoint"
         static let s3Bucket = "com.screenshotapp.s3Bucket"
         static let s3Region = "com.screenshotapp.s3Region"
+        static let s3PublicBaseURL = "com.screenshotapp.s3PublicBaseURL"
+        static let shareServiceURL = "com.screenshotapp.shareServiceURL"
+        static let imgurClientID = "com.screenshotapp.imgurClientID"
+        static let uploadExpiry = "com.screenshotapp.uploadExpiry"
+        static let askBeforeUploading = "com.screenshotapp.askBeforeUploading"
+        static let cacheQuotaMB = "com.screenshotapp.cacheQuotaMB"
+        static let installID = "com.screenshotapp.installID"
+        static let recordingSettings = "com.screenshotapp.recordingSettings"
     }
 
     private let defaults: UserDefaults
@@ -71,6 +79,67 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
+    /// Public base URL for objects in the user's bucket (CDN / custom domain); presigned links are used when empty
+    @Published public var s3PublicBaseURL: String {
+        didSet {
+            defaults.set(s3PublicBaseURL, forKey: Keys.s3PublicBaseURL)
+        }
+    }
+
+    /// Base URL of the self-hosted Shot Link share service (see `Services/share-worker`)
+    @Published public var shareServiceURL: String {
+        didSet {
+            defaults.set(shareServiceURL, forKey: Keys.shareServiceURL)
+        }
+    }
+
+    /// Imgur application Client-ID used for anonymous uploads
+    @Published public var imgurClientID: String {
+        didSet {
+            defaults.set(imgurClientID, forKey: Keys.imgurClientID)
+        }
+    }
+
+    @Published public var uploadExpiry: UploadExpiry {
+        didSet {
+            defaults.set(uploadExpiry.rawValue, forKey: Keys.uploadExpiry)
+        }
+    }
+
+    /// Privacy rule: confirm every upload unless the user opts out
+    @Published public var askBeforeUploading: Bool {
+        didSet {
+            defaults.set(askBeforeUploading, forKey: Keys.askBeforeUploading)
+        }
+    }
+
+    /// Size limit for app-managed cached captures; the oldest are evicted beyond it (0 = unlimited)
+    @Published public var cacheQuotaMB: Int {
+        didSet {
+            defaults.set(cacheQuotaMB, forKey: Keys.cacheQuotaMB)
+        }
+    }
+
+    @Published public var recordingSettings: RecordingSettings {
+        didSet {
+            if let encoded = try? JSONEncoder().encode(recordingSettings) {
+                defaults.set(encoded, forKey: Keys.recordingSettings)
+            }
+        }
+    }
+
+    /// Anonymous per-install identifier sent to the share service for rate limiting
+    public let installID: String
+
+    /// The upload provider implied by the storage mode, or nil when uploads are off
+    public var uploadProvider: CloudProviderType? {
+        switch storageMode {
+        case .localOnly: return nil
+        case .managedCloud: return [.imgur, .imgbb].contains(activeCloudProvider) ? activeCloudProvider : .managedCloud
+        case .userOwned: return .s3Compatible
+        }
+    }
+
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
 
@@ -98,32 +167,81 @@ public final class AppConfiguration: ObservableObject {
            let provider = CloudProviderType(rawValue: rawProvider) {
             self.activeCloudProvider = provider
         } else {
-            self.activeCloudProvider = .managedCloud
+            self.activeCloudProvider = .imgbb
         }
 
         self.s3Endpoint = defaults.string(forKey: Keys.s3Endpoint) ?? ""
         self.s3Bucket = defaults.string(forKey: Keys.s3Bucket) ?? ""
         self.s3Region = defaults.string(forKey: Keys.s3Region) ?? "us-east-1"
+        self.s3PublicBaseURL = defaults.string(forKey: Keys.s3PublicBaseURL) ?? ""
+        self.shareServiceURL = defaults.string(forKey: Keys.shareServiceURL) ?? ""
+        self.imgurClientID = defaults.string(forKey: Keys.imgurClientID) ?? ""
+        self.uploadExpiry = defaults.string(forKey: Keys.uploadExpiry).flatMap(UploadExpiry.init(rawValue:)) ?? .thirtyDays
+        self.askBeforeUploading = defaults.object(forKey: Keys.askBeforeUploading) != nil ? defaults.bool(forKey: Keys.askBeforeUploading) : true
+        self.cacheQuotaMB = defaults.object(forKey: Keys.cacheQuotaMB) != nil ? defaults.integer(forKey: Keys.cacheQuotaMB) : 2048
+
+        if let data = defaults.data(forKey: Keys.recordingSettings),
+           let settings = try? JSONDecoder().decode(RecordingSettings.self, from: data) {
+            self.recordingSettings = settings
+        } else {
+            self.recordingSettings = .default
+        }
+
+        if let existing = defaults.string(forKey: Keys.installID) {
+            self.installID = existing
+        } else {
+            let fresh = UUID().uuidString.lowercased()
+            defaults.set(fresh, forKey: Keys.installID)
+            self.installID = fresh
+        }
     }
 
-    /// Resolves the local directory for saving captures
+    /// The folder the current settings point at, without touching the disk
+    public var configuredSaveDirectory: URL {
+        let settings = captureSettings
+        if settings.saveLocation == .custom, let custom = settings.customSaveDirectory, !custom.isEmpty {
+            return URL(fileURLWithPath: (custom as NSString).expandingTildeInPath, isDirectory: true)
+        }
+        return (settings.saveLocation.presetURL() ?? SaveLocation.desktop.presetURL())!
+    }
+
+    /// Why the configured folder can't be used right now, or nil when it's fine
+    public func saveDirectoryProblem() -> String? {
+        if captureSettings.saveLocation == .custom, (captureSettings.customSaveDirectory ?? "").isEmpty {
+            return "No custom folder chosen. Captures go to \(SaveLocation.desktop.displayName) until you pick one."
+        }
+        return Self.ensureWritableDirectory(configuredSaveDirectory)
+    }
+
+    /// Resolves the local directory for saving captures, creating it when needed.
+    /// Falls back to Desktop › Screenshots, then Application Support, if the chosen folder isn't writable.
     public func resolveLocalSaveDirectory() -> URL {
-        if let custom = captureSettings.customSaveDirectory, !custom.isEmpty {
-            let customURL = URL(fileURLWithPath: (custom as NSString).expandingTildeInPath)
-            if FileManager.default.isWritableFile(atPath: customURL.path) {
-                return customURL
+        let configured = configuredSaveDirectory
+        guard let problem = saveDirectoryProblem() else { return configured }
+        AppLogger.shared.storage.error("Save folder unavailable (\(problem, privacy: .public)); using fallback")
+
+        if let desktop = SaveLocation.desktop.presetURL(), Self.ensureWritableDirectory(desktop) == nil {
+            return desktop
+        }
+        let fallback = appSupportDirectory().appendingPathComponent("Captures", isDirectory: true)
+        try? FileManager.default.createDirectory(at: fallback, withIntermediateDirectories: true)
+        return fallback
+    }
+
+    /// Creates the folder if missing; returns an error message when it can't be written to
+    static func ensureWritableDirectory(_ url: URL) -> String? {
+        let fm = FileManager.default
+        var isDirectory: ObjCBool = false
+        if fm.fileExists(atPath: url.path, isDirectory: &isDirectory) {
+            guard isDirectory.boolValue else { return "\(url.lastPathComponent) is a file, not a folder." }
+        } else {
+            do {
+                try fm.createDirectory(at: url, withIntermediateDirectories: true)
+            } catch {
+                return "Couldn't create \(url.path): \(error.localizedDescription)"
             }
         }
-
-        // Default to ~/Pictures/Screenshots
-        let picturesDir = FileManager.default.urls(for: .picturesDirectory, in: .userDomainMask).first!
-        let screenshotDir = picturesDir.appendingPathComponent("Screenshots", isDirectory: true)
-
-        if !FileManager.default.fileExists(atPath: screenshotDir.path) {
-            try? FileManager.default.createDirectory(at: screenshotDir, withIntermediateDirectories: true)
-        }
-
-        return screenshotDir
+        return fm.isWritableFile(atPath: url.path) ? nil : "ScreenshotApp can't write to \(url.path)."
     }
 
     /// Directory for Application Support metadata and temporary working buffers

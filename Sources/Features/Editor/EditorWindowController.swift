@@ -103,7 +103,8 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
             onDelete: { [weak canvas] in canvas?.delete(nil) },
             onCopyToClipboard: { [weak self] in self?.handleCopy() },
             secondaryActions: [
-                EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save As… (⌘S)") { [weak self] in self?.handleExport() }
+                EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save As… (⌘S)") { [weak self] in self?.handleExport() },
+                EditorToolbarAction(id: "upload", symbol: "icloud.and.arrow.up", help: "Upload & Copy Link") { [weak self] in self?.handleUpload() }
             ],
             onClose: { [weak self] in self?.handleClose() }
         )
@@ -182,6 +183,15 @@ public final class EditorWindowController: NSWindowController, NSWindowDelegate 
         lastSavedDocument = undoRedoManager.document
         AppLogger.shared.editor.info("Copied annotated screenshot to pasteboard.")
         canvasView?.showToast("✓ Copied to Clipboard")
+    }
+
+    private func handleUpload() {
+        guard let compositeImage = renderComposite() else { return }
+        if HistoryStore.shared.asset(id: asset.id) == nil {
+            HistoryStore.shared.add(asset)
+        }
+        lastSavedDocument = undoRedoManager.document
+        UploadService.shared.requestUpload(assetId: asset.id, image: compositeImage)
     }
 
     private func handleClose() {
