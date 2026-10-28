@@ -221,6 +221,48 @@ final class UploadServiceTests: XCTestCase {
         return context.makeImage()!
     }
 
+    func testShortenerReplacesShareLinkAndKeepsOriginal() async throws {
+        config.linkShortener = .isgd
+        let transport = MockTransport([.init(status: 200, body: Data("https://is.gd/abc12\n".utf8))])
+        service.makeShortener = { LinkShortenerService(kind: $0, transport: transport) }
+
+        let record = try await service.upload(assetId: asset.id)
+
+        XCTAssertEqual(record.shareURL?.absoluteString, "https://is.gd/abc12")
+        XCTAssertEqual(record.originalURL?.absoluteString, "https://s.example/id1")
+        let query = try XCTUnwrap(transport.requests.first?.request.url?.absoluteString)
+        XCTAssertTrue(query.hasPrefix("https://is.gd/create.php?format=simple&url=https%3A%2F%2Fs.example%2Fid1"), query)
+    }
+
+    func testShortenerFailureFallsBackToFullLink() async throws {
+        config.linkShortener = .tinyurl
+        let transport = MockTransport([.init(status: 400, body: Data("Error".utf8))])
+        service.makeShortener = { LinkShortenerService(kind: $0, transport: transport) }
+
+        let record = try await service.upload(assetId: asset.id)
+
+        XCTAssertEqual(record.status, .completed)
+        XCTAssertEqual(record.shareURL?.absoluteString, "https://s.example/id1")
+        XCTAssertNil(record.originalURL)
+    }
+
+    func testShortenerEncodesPresignedQueryStrings() {
+        let service = LinkShortenerService(kind: .tinyurl)
+        let url = service.requestURL(for: URL(string: "https://b.s3.amazonaws.com/k.png?X-Amz-Date=1&X-Amz-Signature=ab")!)
+        XCTAssertEqual(url?.absoluteString, "https://tinyurl.com/api-create.php?url=https%3A%2F%2Fb.s3.amazonaws.com%2Fk.png%3FX-Amz-Date%3D1%26X-Amz-Signature%3Dab")
+    }
+
+    func testUploadDestinationMapsToStorageModeAndProvider() {
+        config.uploadDestination = .s3
+        XCTAssertEqual(config.uploadProvider, .s3Compatible)
+        config.uploadDestination = .imgbb
+        XCTAssertEqual(config.uploadProvider, .imgbb)
+        XCTAssertEqual(config.uploadDestination, .imgbb)
+        config.uploadDestination = .off
+        XCTAssertNil(config.uploadProvider)
+        XCTAssertEqual(config.uploadDestination, .off)
+    }
+
     func testSuccessfulUploadRecordsLinkAndStoresDeleteTokenInSecretStore() async throws {
         let record = try await service.upload(assetId: asset.id)
 
@@ -306,7 +348,8 @@ final class UploadServiceTests: XCTestCase {
         XCTAssertNoThrow(try UploadService.defaultProvider(for: .imgbb, config: config, secrets: secrets))
 
         XCTAssertThrowsError(try UploadService.defaultProvider(for: .s3Compatible, config: config, secrets: secrets))
-        config.s3Bucket = "b"
+        config.s3Bucket = " b "
+        config.s3Endpoint = "minio.example:9000"
         try? secrets.set("AK", for: KeychainStore.Account.s3AccessKeyID)
         try? secrets.set("SK", for: KeychainStore.Account.s3SecretAccessKey)
         XCTAssertNoThrow(try UploadService.defaultProvider(for: .s3Compatible, config: config, secrets: secrets))

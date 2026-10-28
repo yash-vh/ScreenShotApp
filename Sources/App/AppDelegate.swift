@@ -9,7 +9,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        AppLogger.shared.app.info("ScreenshotApp launched successfully.")
+        AppLogger.shared.app.info("SyncShot launched successfully.")
 
         // Disable automatic termination so the menu bar status item and global hotkeys remain active indefinitely
         ProcessInfo.processInfo.disableAutomaticTermination("Screenshot utility background runner")
@@ -59,6 +59,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         HotKeyManager.shared.stopMonitoring()
-        AppLogger.shared.app.info("ScreenshotApp terminating.")
+        AppLogger.shared.app.info("SyncShot terminating.")
     }
 }

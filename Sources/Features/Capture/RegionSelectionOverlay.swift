@@ -24,6 +24,8 @@ public final class RegionSelectionOverlayController: NSObject {
     public static let shared = RegionSelectionOverlayController()
 
     private var overlayWindows: [NSWindow] = []
+    private var selectionViews: [RegionSelectionView] = []
+    private var pointerMonitor: Any?
     private var isCursorPushed = false
     private var onSelectionComplete: ((CGRect, NSScreen, RegionCaptureAction, CGImage?) -> Void)?
     private var onCancelled: (() -> Void)?
@@ -59,10 +61,38 @@ public final class RegionSelectionOverlayController: NSObject {
 
         NSCursor.crosshair.push()
         isCursorPushed = true
+
+        // Mouse-moved events only reach the window under the pointer, so every display is told where
+        // the pointer is; otherwise the screen it just left keeps drawing a stale crosshair.
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved, .leftMouseDragged]) { [weak self] event in
+            self?.broadcastPointer()
+            return event
+        }
+        broadcastPointer()
+    }
+
+    private func broadcastPointer() {
+        let location = NSEvent.mouseLocation
+        for view in selectionViews {
+            view.updatePointer(globalLocation: location)
+        }
+    }
+
+    /// A new selection may start on one display only when no other display holds annotations
+    fileprivate func selectionWillBegin(in source: RegionSelectionView) -> Bool {
+        let others = selectionViews.filter { $0 !== source }
+        guard others.allSatisfy({ !$0.hasAnnotations }) else { return false }
+        others.forEach { $0.clearSelection() }
+        return true
     }
 
     /// Dismisses all overlay windows and restores mouse cursor
     public func dismiss() {
+        if let pointerMonitor {
+            NSEvent.removeMonitor(pointerMonitor)
+            self.pointerMonitor = nil
+        }
+        selectionViews.removeAll()
         if isCursorPushed {
             NSCursor.pop()
             isCursorPushed = false
@@ -90,6 +120,8 @@ public final class RegionSelectionOverlayController: NSObject {
             self?.handleCancelled()
         }
 
+        selectionView.coordinator = self
+        selectionViews.append(selectionView)
         window.contentView = selectionView
         return window
     }
@@ -116,7 +148,7 @@ public final class RegionSelectionOverlayController: NSObject {
 
 /// Full-screen selection surface for one display.
 ///
-/// Phase 1 draws the selection rectangle (with crosshair + loupe). Once a region is selected, the area is
+/// Phase 1 draws the selection rectangle (with crosshair). Once a region is selected, the area is
 /// annotated with the exact same components as the editor window: an embedded `AnnotationCanvasView`, the
 /// shared `EditorToolbarView`, `UndoRedoManager` history and `RecognitionController` — so tools, styling,
 /// shortcuts, move/resize and undo behave identically everywhere.
@@ -126,6 +158,7 @@ final class RegionSelectionView: NSView {
     private let mode: RegionSelectionMode
     private let onComplete: (CGRect, RegionCaptureAction, CGImage?) -> Void
     private let onCancel: () -> Void
+    fileprivate weak var coordinator: RegionSelectionOverlayController?
 
     // Selection state (AppKit view coordinates, y-up)
     private var startPoint: CGPoint?
@@ -185,6 +218,30 @@ final class RegionSelectionView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    var hasAnnotations: Bool { canvas != nil && !document.items.isEmpty }
+
+    /// Shows the crosshair only on the display that actually contains the pointer
+    func updatePointer(globalLocation: CGPoint) {
+        guard !hasActiveSelection, startPoint == nil else { return }
+        let frame = targetScreen.frame
+        let point: CGPoint? = NSMouseInRect(globalLocation, frame, false)
+            ? CGPoint(x: globalLocation.x - frame.minX, y: globalLocation.y - frame.minY)
+            : nil
+        guard point != currentPoint else { return }
+        currentPoint = point
+        needsDisplay = true
+    }
+
+    /// Drops this display's selection when the user starts selecting on another display
+    func clearSelection() {
+        if canvas != nil { endSession() }
+        hasActiveSelection = false
+        startPoint = nil
+        selectionRect = .zero
+        activeHandle = nil
+        needsDisplay = true
+    }
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
@@ -373,6 +430,10 @@ final class RegionSelectionView: NSView {
             endSession()
         }
 
+        guard coordinator?.selectionWillBegin(in: self) ?? true else {
+            NSSound.beep()
+            return
+        }
         hasActiveSelection = false
         startPoint = loc
         currentPoint = loc
@@ -394,9 +455,7 @@ final class RegionSelectionView: NSView {
     }
 
     override func mouseMoved(with event: NSEvent) {
-        guard !hasActiveSelection else { return }
-        currentPoint = convert(event.locationInWindow, from: nil)
-        needsDisplay = true
+        updatePointer(globalLocation: NSEvent.mouseLocation)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -596,12 +655,9 @@ final class RegionSelectionView: NSView {
             drawSelectionChrome(in: context)
         }
 
-        // 3. Crosshair and loupe while choosing the region
+        // 3. Crosshair while choosing the region
         if !hasActiveSelection, let current = currentPoint {
             drawProperCrosshair(at: current, in: context)
-            if AppConfiguration.shared.captureSettings.showMagnifier {
-                drawSmallRoundLoupe(at: current, in: context)
-            }
         }
     }
 
@@ -645,46 +701,6 @@ final class RegionSelectionView: NSView {
         context.setFillColor(NSColor.systemRed.cgColor)
         context.fillEllipse(in: CGRect(x: point.x - 1.5, y: point.y - 1.5, width: 3.0, height: 3.0))
         context.restoreGState()
-    }
-
-    private func drawSmallRoundLoupe(at point: CGPoint, in context: CGContext) {
-        guard let snapshot = screenSnapshot else { return }
-
-        let scale = CGFloat(snapshot.width) / bounds.width
-        let loupeDiameter: CGFloat = 64.0
-
-        var posX = point.x + 20.0
-        var posY = point.y + 20.0
-        if posX + loupeDiameter > bounds.width - 12 { posX = point.x - loupeDiameter - 20.0 }
-        if posY + loupeDiameter > bounds.height - 12 { posY = point.y - loupeDiameter - 20.0 }
-        posX = max(10, min(bounds.width - loupeDiameter - 10, posX))
-        posY = max(10, min(bounds.height - loupeDiameter - 10, posY))
-
-        let loupeRect = CGRect(x: posX, y: posY, width: loupeDiameter, height: loupeDiameter)
-        let zoom: CGFloat = 4.0
-        let sampleSize = loupeDiameter / zoom * scale
-        let sampleRect = CGRect(x: point.x * scale - sampleSize / 2, y: (bounds.height - point.y) * scale - sampleSize / 2, width: sampleSize, height: sampleSize)
-
-        let circlePath = NSBezierPath(ovalIn: loupeRect)
-        context.saveGState()
-        context.setShadow(offset: CGSize(width: 0, height: -2), blur: 8, color: NSColor.black.withAlphaComponent(0.55).cgColor)
-        NSColor.black.setFill()
-        circlePath.fill()
-        context.restoreGState()
-
-        context.saveGState()
-        circlePath.addClip()
-        if let cropped = snapshot.cropping(to: sampleRect) {
-            context.interpolationQuality = .none
-            context.draw(cropped, in: loupeRect)
-        }
-        context.setFillColor(NSColor.systemRed.cgColor)
-        context.fillEllipse(in: CGRect(x: loupeRect.midX - 1.5, y: loupeRect.midY - 1.5, width: 3.0, height: 3.0))
-        context.restoreGState()
-
-        NSColor.white.withAlphaComponent(0.95).setStroke()
-        circlePath.lineWidth = 1.5
-        circlePath.stroke()
     }
 
     private func drawSelectionHandles(for rect: CGRect, color: NSColor) {

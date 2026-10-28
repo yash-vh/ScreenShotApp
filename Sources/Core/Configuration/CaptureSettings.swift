@@ -151,7 +151,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public var openInEditor: Bool
     public var saveToDisk: Bool
     public var playCaptureSound: Bool
-    public var showMagnifier: Bool
     public var runOcrAutomatically: Bool
     public var defaultRedactionStyle: DefaultRedactionStyle
     public var saveLocation: SaveLocation
@@ -178,7 +177,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         openInEditor: Bool = true,
         saveToDisk: Bool = true,
         playCaptureSound: Bool = true,
-        showMagnifier: Bool = true,
         runOcrAutomatically: Bool = true,
         defaultRedactionStyle: DefaultRedactionStyle = .blur,
         saveLocation: SaveLocation = .desktop,
@@ -200,7 +198,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.openInEditor = openInEditor
         self.saveToDisk = saveToDisk
         self.playCaptureSound = playCaptureSound
-        self.showMagnifier = showMagnifier
         self.runOcrAutomatically = runOcrAutomatically
         self.defaultRedactionStyle = defaultRedactionStyle
         self.saveLocation = saveLocation
@@ -225,7 +222,6 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.openInEditor = try container.decodeIfPresent(Bool.self, forKey: .openInEditor) ?? true
         self.saveToDisk = try container.decodeIfPresent(Bool.self, forKey: .saveToDisk) ?? true
         self.playCaptureSound = try container.decodeIfPresent(Bool.self, forKey: .playCaptureSound) ?? true
-        self.showMagnifier = try container.decodeIfPresent(Bool.self, forKey: .showMagnifier) ?? true
         self.runOcrAutomatically = try container.decodeIfPresent(Bool.self, forKey: .runOcrAutomatically) ?? true
         self.defaultRedactionStyle = try container.decodeIfPresent(DefaultRedactionStyle.self, forKey: .defaultRedactionStyle) ?? .blur
         self.customSaveDirectory = try container.decodeIfPresent(String.self, forKey: .customSaveDirectory)

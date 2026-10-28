@@ -100,7 +100,10 @@ public struct UploadRecord: Identifiable, Codable, Sendable, Equatable {
     public let id: UUID
     public var providerType: CloudProviderType
     public var remoteKey: String
+    /// Link handed to the user (shortened when a shortener is on)
     public var shareURL: URL?
+    /// Provider's own link when `shareURL` is a short link
+    public var originalURL: URL?
     public var status: UploadStatus
     public var uploadedAt: Date?
     public var expiresAt: Date?

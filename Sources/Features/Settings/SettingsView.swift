@@ -92,13 +92,22 @@ public struct SettingsView: View {
 
 struct GeneralSettingsTab: View {
     @EnvironmentObject var config: AppConfiguration
+    @State private var loginProblem: String?
 
     var body: some View {
         Form {
             Section(header: Text("App Startup & Visibility").font(.headline)) {
-                Toggle("Launch ScreenshotApp at system login", isOn: $config.launchAtLogin)
-                Toggle("Show application icon in Dock", isOn: $config.showDockIcon)
-                Text("When disabled, the app operates silently exclusively from the macOS menu bar.")
+                Toggle("Launch SyncShot at login", isOn: Binding(
+                    get: { config.launchAtLogin },
+                    set: { loginProblem = config.setLaunchAtLogin($0) }
+                ))
+                if let loginProblem {
+                    Text(loginProblem)
+                        .font(.caption)
+                        .foregroundColor(.orange)
+                }
+                Toggle("Show icon in Dock", isOn: $config.showDockIcon)
+                Text("When off, SyncShot runs from the menu bar only.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -191,14 +200,16 @@ struct CaptureSettingsTab: View {
                 }
             }
 
-            Section(header: Text("After Capture").font(.headline)) {
+            Section {
                 Toggle("Copy image to clipboard", isOn: $config.captureSettings.copyToClipboard)
                 Toggle("Open in annotation editor", isOn: $config.captureSettings.openInEditor)
-                Toggle("Recognize text automatically (OCR, on-device)", isOn: $config.captureSettings.runOcrAutomatically)
-            }
-
-            Section(header: Text("Selection").font(.headline)) {
-                Toggle("Show magnifier loupe during region capture", isOn: $config.captureSettings.showMagnifier)
+                Toggle("Recognize text for Library search (OCR, on-device)", isOn: $config.captureSettings.runOcrAutomatically)
+            } header: {
+                Text("After Full Screen & Window Capture").font(.headline)
+            } footer: {
+                Text("Region captures use the toolbar instead: Return copies, ⌘S saves, ⌘E opens the editor, ⌘U uploads and copies the link.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
         .formStyle(.grouped)
@@ -673,94 +684,63 @@ struct StorageSettingsTab: View {
     @ObservedObject private var history = HistoryStore.shared
     @State private var s3AccessKeyID = ""
     @State private var s3SecretAccessKey = ""
-    @State private var credentialStatus: String?
+    @State private var s3KeysSaved = false
     @State private var imgbbAPIKey = ""
     @State private var imgbbKeySaved = false
+    @State private var testState: TestState = .idle
     @State private var usage = StorageUsage(cacheBytes: 0, thumbnailBytes: 0, savedBytes: 0, databaseBytes: 0)
+
+    enum TestState: Equatable {
+        case idle, running
+        case success(URL)
+        case failure(String)
+    }
+
+    private var destination: Binding<UploadDestination> {
+        Binding(
+            get: { config.uploadDestination },
+            set: { config.uploadDestination = $0; testState = .idle }
+        )
+    }
 
     var body: some View {
         Form {
-            Section(header: Text("Storage Destination").font(.headline)) {
-                Picker("Mode:", selection: $config.storageMode) {
-                    ForEach(StorageMode.allCases, id: \.self) { mode in
-                        HStack {
-                            Image(systemName: mode.iconName)
-                            Text(mode.title)
-                        }.tag(mode)
-                    }
+            Section {
+                Picker("Upload to:", selection: destination) {
+                    ForEach(UploadDestination.allCases) { Text($0.title).tag($0) }
                 }
-                .pickerStyle(.radioGroup)
-
-                Text(config.storageMode.subtitle)
+            } header: {
+                Text("Uploads").font(.headline)
+            } footer: {
+                Text(config.uploadDestination == .off
+                     ? "Screenshots stay on this Mac. The Upload button asks you to pick a destination."
+                     : "The Upload button (⌘U) uploads right away and copies the link to the clipboard.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
 
-            if config.storageMode == .managedCloud {
-                Section(header: Text("Free Share Link").font(.headline)) {
-                    Picker("Service:", selection: $config.activeCloudProvider) {
-                        Text(CloudProviderType.managedCloud.displayName).tag(CloudProviderType.managedCloud)
-                        Text(CloudProviderType.imgbb.displayName).tag(CloudProviderType.imgbb)
-                        Text(CloudProviderType.imgur.displayName).tag(CloudProviderType.imgur)
-                    }
-
-                    if config.activeCloudProvider == .imgbb {
-                        HStack {
-                            SecureField("ImgBB API Key:", text: $imgbbAPIKey, prompt: Text(imgbbKeySaved ? "Saved in Keychain" : "Paste your API key"))
-                            Button("Save") { saveImgBBKey() }
-                                .disabled(imgbbAPIKey.trimmingCharacters(in: .whitespaces).isEmpty)
-                            if imgbbKeySaved {
-                                Button("Remove") { removeImgBBKey() }
-                            }
-                        }
-                        HStack(spacing: 4) {
-                            Text(imgbbKeySaved ? "Key saved. Links point straight at the image." : "Free key, no account needed for viewers.")
-                            Link("Get a key at api.imgbb.com", destination: URL(string: "https://api.imgbb.com/")!)
-                        }
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                    } else if config.activeCloudProvider == .imgur {
-                        TextField("Imgur Client-ID:", text: $config.imgurClientID, prompt: Text("from api.imgur.com/oauth2/addclient"))
-                        Text("Imgur images are public and never expire. Imgur's API terms restrict commercial use.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    } else {
-                        TextField("Service URL:", text: $config.shareServiceURL, prompt: Text("https://your-share-domain"))
-                        Text("Links use 16-character random IDs and can be deleted at any time. Deploy the service from Services/share-worker.")
-                            .font(.caption)
-                            .foregroundColor(.secondary)
-                    }
-                }
+            switch config.uploadDestination {
+            case .imgbb: imgbbSection
+            case .s3: s3Section
+            case .imgur: imgurSection
+            case .shotLink: shotLinkSection
+            case .off: EmptyView()
             }
 
-            if config.storageMode == .userOwned {
-                Section(header: Text("My S3 / S3-Compatible Bucket").font(.headline)) {
-                    TextField("Endpoint URL:", text: $config.s3Endpoint, prompt: Text("https://s3.us-east-1.amazonaws.com"))
-                    TextField("Bucket Name:", text: $config.s3Bucket)
-                    TextField("Region:", text: $config.s3Region)
-                    TextField("Public Base URL (optional):", text: $config.s3PublicBaseURL, prompt: Text("https://cdn.example.com"))
-                    TextField("Access Key ID:", text: $s3AccessKeyID)
-                    SecureField("Secret Access Key:", text: $s3SecretAccessKey)
-                    HStack {
-                        Button("Save Keys to Keychain") { saveS3Keys() }
-                            .disabled(s3AccessKeyID.isEmpty || s3SecretAccessKey.isEmpty)
-                        Button("Remove Keys") { removeS3Keys() }
-                        if let credentialStatus {
-                            Text(credentialStatus).font(.caption).foregroundColor(.secondary)
+            if config.uploadDestination != .off {
+                Section(header: Text("Links").font(.headline)) {
+                    Picker("Short link:", selection: $config.linkShortener) {
+                        ForEach(LinkShortener.allCases) { Text($0.title).tag($0) }
+                    }
+                    if config.uploadDestination != .imgur {
+                        Picker("Delete after:", selection: $config.uploadExpiry) {
+                            ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
                         }
                     }
-                    Text("Without a public base URL, links are presigned and expire after at most 7 days.")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
-                }
-            }
-
-            if config.storageMode != .localOnly {
-                Section(header: Text("Upload Behavior").font(.headline)) {
-                    Picker("Link expires after:", selection: $config.uploadExpiry) {
-                        ForEach(UploadExpiry.allCases) { Text($0.title).tag($0) }
+                    if let note = linkNote {
+                        Text(note).font(.caption).foregroundColor(.secondary)
                     }
-                    Toggle("Ask before uploading", isOn: $config.askBeforeUploading)
+                    testRow
                 }
             }
 
@@ -794,6 +774,7 @@ struct StorageSettingsTab: View {
         .onAppear {
             usage = history.storageUsage()
             s3AccessKeyID = (try? KeychainStore.shared.value(for: KeychainStore.Account.s3AccessKeyID)) ?? ""
+            s3KeysSaved = !s3AccessKeyID.isEmpty && ((try? KeychainStore.shared.value(for: KeychainStore.Account.s3SecretAccessKey)) ?? nil)?.isEmpty == false
             imgbbKeySaved = ((try? KeychainStore.shared.value(for: KeychainStore.Account.imgbbAPIKey)) ?? nil)?.isEmpty == false
         }
         .onChange(of: config.cacheQuotaMB) { _ in
@@ -802,35 +783,160 @@ struct StorageSettingsTab: View {
         }
     }
 
-    private func saveS3Keys() {
-        do {
-            try KeychainStore.shared.set(s3AccessKeyID.trimmingCharacters(in: .whitespaces), for: KeychainStore.Account.s3AccessKeyID)
-            try KeychainStore.shared.set(s3SecretAccessKey, for: KeychainStore.Account.s3SecretAccessKey)
-            s3SecretAccessKey = ""
-            credentialStatus = "Saved to Keychain"
-        } catch {
-            credentialStatus = error.localizedDescription
+    // MARK: Provider sections
+
+    private var imgbbSection: some View {
+        Section(header: Text("ImgBB").font(.headline)) {
+            HStack {
+                SecureField("API key:", text: $imgbbAPIKey, prompt: Text(imgbbKeySaved ? "Saved in Keychain" : "Paste your API key"))
+                    .onSubmit(saveImgBBKey)
+                Button("Save", action: saveImgBBKey)
+                    .disabled(imgbbAPIKey.trimmingCharacters(in: .whitespaces).isEmpty)
+                if imgbbKeySaved {
+                    Button("Remove") {
+                        KeychainStore.shared.remove(KeychainStore.Account.imgbbAPIKey)
+                        imgbbKeySaved = false
+                        testState = .idle
+                    }
+                }
+            }
+            HStack(spacing: 4) {
+                Label(imgbbKeySaved ? "Key saved" : "No key yet", systemImage: imgbbKeySaved ? "checkmark.circle.fill" : "key")
+                    .foregroundColor(imgbbKeySaved ? .green : .secondary)
+                Spacer()
+                Link("Get a free key", destination: URL(string: "https://api.imgbb.com/")!)
+            }
+            .font(.caption)
+        }
+    }
+
+    private var s3Section: some View {
+        Section(header: Text("Amazon S3 / S3-Compatible").font(.headline)) {
+            TextField("Bucket:", text: $config.s3Bucket, prompt: Text("my-screenshots"))
+            TextField("Region:", text: $config.s3Region, prompt: Text("us-east-1"))
+            TextField("Endpoint:", text: $config.s3Endpoint, prompt: Text("Leave empty for AWS · R2/B2/MinIO URL"))
+            TextField("Public URL:", text: $config.s3PublicBaseURL, prompt: Text("Optional · https://cdn.example.com"))
+            TextField("Access key ID:", text: $s3AccessKeyID)
+            SecureField("Secret access key:", text: $s3SecretAccessKey, prompt: Text(s3KeysSaved ? "Saved in Keychain" : ""))
+                .onSubmit(saveS3Keys)
+            HStack {
+                Label(s3KeysSaved ? "Keys saved in Keychain" : "Keys not saved", systemImage: s3KeysSaved ? "checkmark.circle.fill" : "key")
+                    .font(.caption)
+                    .foregroundColor(s3KeysSaved ? .green : .secondary)
+                Spacer()
+                Button("Save Keys", action: saveS3Keys)
+                    .disabled(s3AccessKeyID.trimmingCharacters(in: .whitespaces).isEmpty || s3SecretAccessKey.isEmpty)
+                if s3KeysSaved {
+                    Button("Remove Keys") {
+                        KeychainStore.shared.remove(KeychainStore.Account.s3AccessKeyID)
+                        KeychainStore.shared.remove(KeychainStore.Account.s3SecretAccessKey)
+                        s3AccessKeyID = ""
+                        s3SecretAccessKey = ""
+                        s3KeysSaved = false
+                        testState = .idle
+                    }
+                }
+            }
+            Text("The keys need s3:PutObject and s3:DeleteObject on the bucket. Without a public URL, links are presigned and stop working after 7 days at most.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var imgurSection: some View {
+        Section(header: Text("Imgur").font(.headline)) {
+            TextField("Client-ID:", text: $config.imgurClientID, prompt: Text("from api.imgur.com/oauth2/addclient"))
+            Text("Imgur images are public and never expire. Imgur's API terms restrict commercial use.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var shotLinkSection: some View {
+        Section(header: Text("Self-hosted Shot Link").font(.headline)) {
+            TextField("Service URL:", text: $config.shareServiceURL, prompt: Text("https://your-share-domain"))
+            Text("Deploy the Cloudflare Worker in Services/share-worker. Links use 16-character random IDs and can be deleted at any time.")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+    }
+
+    private var linkNote: String? {
+        switch config.uploadDestination {
+        case .imgbb: return config.uploadExpiry == .never ? "Images stay on ImgBB until you delete them from their delete page." : "ImgBB removes the image automatically."
+        case .s3: return config.s3PublicBaseURL.isEmpty ? "Presigned links last at most 7 days." : nil
+        default: return nil
+        }
+    }
+
+    private var testRow: some View {
+        HStack(spacing: 8) {
+            Button("Test Upload") { runTest() }
+                .disabled(testState == .running)
+            switch testState {
+            case .idle:
+                EmptyView()
+            case .running:
+                ProgressView().controlSize(.small)
+                Text("Uploading test image…").font(.caption).foregroundColor(.secondary)
+            case .success(let url):
+                Image(systemName: "checkmark.circle.fill").foregroundColor(.green)
+                Link(url.absoluteString, destination: url)
+                    .font(.caption)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            case .failure(let message):
+                Image(systemName: "exclamationmark.triangle.fill").foregroundColor(.orange)
+                Text(message)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+                    .lineLimit(3)
+                    .textSelection(.enabled)
+            }
+        }
+    }
+
+    // MARK: Actions
+
+    private func runTest() {
+        // Unsaved typed keys count: save them first so the test uses what's on screen
+        if !imgbbAPIKey.trimmingCharacters(in: .whitespaces).isEmpty { saveImgBBKey() }
+        if !s3SecretAccessKey.isEmpty, !s3AccessKeyID.isEmpty { saveS3Keys() }
+        testState = .running
+        Task { @MainActor in
+            do {
+                testState = .success(try await UploadService.shared.testCurrentDestination())
+            } catch {
+                testState = .failure(error.localizedDescription)
+            }
         }
     }
 
     private func saveImgBBKey() {
         let key = imgbbAPIKey.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard (try? KeychainStore.shared.set(key, for: KeychainStore.Account.imgbbAPIKey)) != nil else { return }
-        imgbbAPIKey = ""
-        imgbbKeySaved = true
+        guard !key.isEmpty else { return }
+        do {
+            try KeychainStore.shared.set(key, for: KeychainStore.Account.imgbbAPIKey)
+            imgbbAPIKey = ""
+            imgbbKeySaved = true
+            testState = .idle
+        } catch {
+            testState = .failure(error.localizedDescription)
+        }
     }
 
-    private func removeImgBBKey() {
-        KeychainStore.shared.remove(KeychainStore.Account.imgbbAPIKey)
-        imgbbKeySaved = false
-    }
-
-    private func removeS3Keys() {
-        KeychainStore.shared.remove(KeychainStore.Account.s3AccessKeyID)
-        KeychainStore.shared.remove(KeychainStore.Account.s3SecretAccessKey)
-        s3AccessKeyID = ""
-        s3SecretAccessKey = ""
-        credentialStatus = "Keys removed"
+    private func saveS3Keys() {
+        let keyID = s3AccessKeyID.trimmingCharacters(in: .whitespaces)
+        guard !keyID.isEmpty, !s3SecretAccessKey.isEmpty else { return }
+        do {
+            try KeychainStore.shared.set(keyID, for: KeychainStore.Account.s3AccessKeyID)
+            try KeychainStore.shared.set(s3SecretAccessKey.trimmingCharacters(in: .whitespaces), for: KeychainStore.Account.s3SecretAccessKey)
+            s3SecretAccessKey = ""
+            s3KeysSaved = true
+            testState = .idle
+        } catch {
+            testState = .failure(error.localizedDescription)
+        }
     }
 }
 
@@ -881,7 +987,7 @@ struct PrivacySettingsTab: View {
                                 .font(.caption)
                                 .fontWeight(.semibold)
                                 .foregroundColor(.primary)
-                            Text("macOS requires ScreenshotApp to restart after granting Screen Recording access. If you already turned on the toggle in System Settings, click \"Relaunch App\" above to apply permissions immediately.")
+                            Text("macOS requires SyncShot to restart after granting Screen Recording access. If you already turned on the toggle in System Settings, click \"Relaunch App\" above to apply permissions immediately.")
                                 .font(.caption)
                                 .foregroundColor(.secondary)
                         }
@@ -893,13 +999,7 @@ struct PrivacySettingsTab: View {
             }
 
             Section(header: Text("Redaction & Security").font(.headline)) {
-                Picker("Default Redaction Style:", selection: $config.captureSettings.defaultRedactionStyle) {
-                    ForEach(DefaultRedactionStyle.allCases, id: \.self) { style in
-                        Text(style.displayName).tag(style)
-                    }
-                }
-
-                Text("Important: Redactions (blur and pixelation) are irreversibly rasterized into image pixels upon export. Hidden layers or original sensitive pixels are never retained in shared assets.")
+                Text("Blur (B) and Pixelate (X) are flattened into the image pixels on export and upload; the original pixels are never kept in shared files. Uploaded images are re-encoded without metadata.")
                     .font(.caption)
                     .foregroundColor(.secondary)
             }
@@ -985,11 +1085,11 @@ struct AboutSettingsTab: View {
                 .font(.system(size: 64))
                 .foregroundColor(.accentColor)
 
-            Text("ScreenshotApp")
+            Text("SyncShot")
                 .font(.title)
                 .bold()
 
-            Text("Version 1.0.0 (Build 1)")
+            Text("Version \(Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "1.0") (\(Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "1"))")
                 .font(.subheadline)
                 .foregroundColor(.secondary)
 
@@ -997,14 +1097,6 @@ struct AboutSettingsTab: View {
                 .font(.body)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
-
-            Divider().frame(width: 200)
-
-            HStack(spacing: 20) {
-                Link("Documentation", destination: URL(string: "https://github.com/screenshotapp/docs")!)
-                Link("Privacy Policy", destination: URL(string: "https://screenshotapp.local/privacy")!)
-            }
-            .font(.caption)
 
             Spacer()
         }

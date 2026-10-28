@@ -4,7 +4,7 @@ import ImageIO
 import Network
 import UniformTypeIdentifiers
 
-/// Orchestrates share uploads: confirmation, metadata stripping, provider calls, history records,
+/// Orchestrates share uploads: metadata stripping, short links, provider calls, history records,
 /// delete tokens in the Keychain, and an offline queue that retries when the network returns.
 @MainActor
 public final class UploadService: ObservableObject {
@@ -18,6 +18,8 @@ public final class UploadService: ObservableObject {
     private let secrets: SecretStore
     private let config: AppConfiguration
     private let makeProvider: ProviderFactory
+    /// Builds the short-link client; replaced in tests to avoid the network
+    var makeShortener: (LinkShortener) -> LinkShortenerService = { LinkShortenerService(kind: $0) }
     public let queueDirectory: URL
     private var pathMonitor: NWPathMonitor?
     private var isRetrying = false
@@ -60,14 +62,19 @@ public final class UploadService: ObservableObject {
             }
             return ImgBBProvider(apiKey: key)
         case .s3Compatible:
-            let endpointString = config.s3Endpoint.isEmpty ? "https://s3.\(config.s3Region).amazonaws.com" : config.s3Endpoint
-            guard let endpoint = URL(string: endpointString), endpoint.host != nil, !config.s3Bucket.isEmpty,
+            let region = config.s3Region.trimmingCharacters(in: .whitespaces).isEmpty ? "us-east-1" : config.s3Region.trimmingCharacters(in: .whitespaces)
+            var endpointString = config.s3Endpoint.trimmingCharacters(in: .whitespaces)
+            if endpointString.isEmpty { endpointString = "https://s3.\(region).amazonaws.com" }
+            if !endpointString.contains("://") { endpointString = "https://" + endpointString }
+            let bucket = config.s3Bucket.trimmingCharacters(in: .whitespaces)
+            guard let endpoint = URL(string: endpointString), endpoint.host != nil, !bucket.isEmpty,
                   let keyID = try secrets.value(for: KeychainStore.Account.s3AccessKeyID), !keyID.isEmpty,
                   let secret = try secrets.value(for: KeychainStore.Account.s3SecretAccessKey), !secret.isEmpty else {
                 throw AppError.invalidConfiguration(key: "S3", reason: "Enter the endpoint, bucket and access keys in Settings › Storage & Cloud.")
             }
-            let publicBase = config.s3PublicBaseURL.isEmpty ? nil : URL(string: config.s3PublicBaseURL)
-            return S3Provider(endpoint: endpoint, bucket: config.s3Bucket, region: config.s3Region, accessKeyID: keyID, secretAccessKey: secret, publicBaseURL: publicBase)
+            let publicBaseString = config.s3PublicBaseURL.trimmingCharacters(in: .whitespaces)
+            let publicBase = publicBaseString.isEmpty ? nil : URL(string: publicBaseString.contains("://") ? publicBaseString : "https://" + publicBaseString)
+            return S3Provider(endpoint: endpoint, bucket: bucket, region: region, accessKeyID: keyID.trimmingCharacters(in: .whitespaces), secretAccessKey: secret, publicBaseURL: publicBase)
         case .supabase, .cloudinary:
             throw AppError.invalidConfiguration(key: type.displayName, reason: "This provider isn't supported yet.")
         }
@@ -146,10 +153,12 @@ public final class UploadService: ObservableObject {
                 try? secrets.set(token, for: KeychainStore.Account.deleteToken(for: recordId))
             }
             try? FileManager.default.removeItem(at: queuedFile)
+            let shortURL = await shortened(result.shareURL)
             let record = setRecord(recordId, on: assetId) {
                 $0.status = .completed
                 $0.remoteKey = result.remoteKey
-                $0.shareURL = result.shareURL
+                $0.shareURL = shortURL ?? result.shareURL
+                $0.originalURL = shortURL == nil ? nil : result.shareURL
                 $0.uploadedAt = Date()
                 $0.expiresAt = result.expiresAt
             }
@@ -165,6 +174,17 @@ public final class UploadService: ObservableObject {
             setRecord(recordId, on: assetId) { $0.status = .failed; $0.errorMessage = error.localizedDescription }
             AppLogger.shared.sharing.error("Upload failed: \(error.localizedDescription, privacy: .public)")
             throw error
+        }
+    }
+
+    /// Short link for `url`, or nil when shortening is off or the shortener fails (the full link is used then)
+    private func shortened(_ url: URL) async -> URL? {
+        guard config.linkShortener != .off else { return nil }
+        do {
+            return try await makeShortener(config.linkShortener).shorten(url)
+        } catch {
+            AppLogger.shared.sharing.notice("Link shortener failed, using full link: \(error.localizedDescription, privacy: .public)")
+            return nil
         }
     }
 
@@ -269,20 +289,19 @@ public final class UploadService: ObservableObject {
 
     // MARK: - User-Facing Flow
 
-    /// Entry point for ⌘U / Upload buttons: confirms (privacy rule), shows progress, copies the link
+    /// Entry point for ⌘U / Upload buttons: uploads straight away, shows progress and copies the link
     public func requestUpload(assetId: UUID, image: CGImage? = nil) {
         guard let providerType = config.uploadProvider else {
             let alert = NSAlert()
-            alert.messageText = "Uploading is turned off"
-            alert.informativeText = "Your storage mode is Local Only. Turn on ImgBB to get instant share links, or pick another provider in Settings › Storage & Cloud."
+            alert.messageText = "Choose where to upload"
+            alert.informativeText = "Uploading is off. Pick ImgBB or your own S3 bucket in Settings › Storage & Cloud to get instant share links."
             alert.addButton(withTitle: "Use ImgBB")
             alert.addButton(withTitle: "Open Settings")
             alert.addButton(withTitle: "Cancel")
             NSApp.activate(ignoringOtherApps: true)
             switch alert.runModal() {
             case .alertFirstButtonReturn:
-                config.storageMode = .managedCloud
-                config.activeCloudProvider = .imgbb
+                config.uploadDestination = .imgbb
                 requestUpload(assetId: assetId, image: image)
             case .alertSecondButtonReturn:
                 AppCoordinator.shared.openSettings(tab: .storage)
@@ -294,27 +313,20 @@ public final class UploadService: ObservableObject {
 
         if providerType == .imgbb, !ensureImgBBKey() { return }
 
-        if config.askBeforeUploading {
+        // Missing credentials are a setup problem, not an upload failure: send the user to Settings
+        do {
+            _ = try makeProvider(providerType)
+        } catch {
             let alert = NSAlert()
-            alert.messageText = "Upload this screenshot?"
-            let expiry: String
-            switch providerType {
-            case .imgur: expiry = "Imgur links don't expire; you can delete them later."
-            case .imgbb where config.uploadExpiry == .never: expiry = "The image stays on ImgBB until you delete it."
-            case .imgbb: expiry = "ImgBB deletes it after \(config.uploadExpiry.title.lowercased())."
-            default: expiry = "The link expires after \(config.uploadExpiry.title.lowercased())."
-            }
-            alert.informativeText = "It will be uploaded to \(providerType.displayName). Anyone with the link can view it. \(expiry)"
-            alert.addButton(withTitle: "Upload")
+            alert.messageText = "\(providerType.displayName) isn't set up yet"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "Open Settings")
             alert.addButton(withTitle: "Cancel")
-            alert.showsSuppressionButton = true
-            alert.suppressionButton?.title = "Don't ask again"
             NSApp.activate(ignoringOtherApps: true)
-            let response = alert.runModal()
-            if alert.suppressionButton?.state == .on, response == .alertFirstButtonReturn {
-                config.askBeforeUploading = false
+            if alert.runModal() == .alertFirstButtonReturn {
+                AppCoordinator.shared.openSettings(tab: .storage)
             }
-            guard response == .alertFirstButtonReturn else { return }
+            return
         }
 
         let hud = UploadHUD.shared
@@ -346,6 +358,24 @@ public final class UploadService: ObservableObject {
                 hud.showMessage(title: "Upload failed", detail: error.localizedDescription, symbol: "exclamationmark.icloud.fill")
             }
         }
+    }
+
+    /// Settings "Test Upload": sends a tiny image to the chosen provider and returns its (possibly shortened) link.
+    /// The test object is removed again where the provider supports deleting.
+    public func testCurrentDestination() async throws -> URL {
+        guard let providerType = config.uploadProvider else { throw AppError.cloudProviderNotConfigured }
+        let provider = try makeProvider(providerType)
+        let context = CGContext(data: nil, width: 16, height: 16, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)
+        context?.setFillColor(CGColor(red: 0.2, green: 0.5, blue: 1, alpha: 1))
+        context?.fill(CGRect(x: 0, y: 0, width: 16, height: 16))
+        guard let image = context?.makeImage(), let payload = Self.makePayload(from: image, expiry: .oneDay) else {
+            throw AppError.cloudUploadFailed(provider: providerType.displayName, reason: "Could not create the test image.")
+        }
+        let result = try await provider.upload(payload) { _ in }
+        if provider.capabilities.supportsDelete {
+            try? await provider.delete(remoteKey: result.remoteKey, deleteToken: result.deleteToken)
+        }
+        return await shortened(result.shareURL) ?? result.shareURL
     }
 
     /// Asks for an ImgBB API key inline when none is saved, so the first upload needs no trip to Settings

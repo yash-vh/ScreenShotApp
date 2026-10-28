@@ -23,7 +23,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         guard let button = statusItem?.button else { return }
 
         // Configure system image for status bar
-        if let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "ScreenshotApp") {
+        if let image = NSImage(systemSymbolName: "camera.viewfinder", accessibilityDescription: "SyncShot") {
             image.isTemplate = true
             button.image = image
         }
@@ -48,7 +48,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         case .finishing: symbol = "hourglass"
         default: symbol = "camera.viewfinder"
         }
-        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: recorder.isActive ? "Recording" : "ScreenshotApp")
+        let image = NSImage(systemSymbolName: symbol, accessibilityDescription: recorder.isActive ? "Recording" : "SyncShot")
         if recorder.isActive {
             let color: NSColor = state == .paused ? .systemYellow : .systemRed
             button.image = image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [color]))
@@ -209,7 +209,7 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(NSMenuItem.separator())
 
         let quitItem = NSMenuItem(
-            title: "Quit ScreenshotApp",
+            title: "Quit SyncShot",
             action: #selector(didSelectQuit),
             keyEquivalent: "q"
         )

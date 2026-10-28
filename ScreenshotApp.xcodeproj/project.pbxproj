@@ -17,6 +17,7 @@
 		1C8E4AA00266F5F046B42B7F /* RegionOverlayAnnotationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = AFFE0642D39ADC4E8665A354 /* RegionOverlayAnnotationTests.swift */; };
 		1F1387380A770B62534F520A /* UndoRedoManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4343C8A8BC770F6C2B74AEAA /* UndoRedoManager.swift */; };
 		21ABB11920E027ED8A0DF278 /* KeychainStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 870AD3A1333214A56B8816C7 /* KeychainStore.swift */; };
+		2A0A09711479263435FA3083 /* LinkShortener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 099D793868746D72EBBF0F4F /* LinkShortener.swift */; };
 		2E91FB79FCAE353EB8A21908 /* ImageComposer.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6CAFD232405F30001A0A8998 /* ImageComposer.swift */; };
 		3490ADBDA289B72F3D9D5E36 /* BackgroundPresets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1E28BC5906A1C41D2BA256FA /* BackgroundPresets.swift */; };
 		37D795CE8087D82F10A1EB2D /* KeyCodeMap.swift in Sources */ = {isa = PBXBuildFile; fileRef = D23888113479FF87CCCF7266 /* KeyCodeMap.swift */; };
@@ -95,6 +96,7 @@
 		0374D0DA56939FDAA008EB3A /* AppCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCoordinator.swift; sourceTree = "<group>"; };
 		0581FC1B5B301F7FA1494AE6 /* RecordingTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingTests.swift; sourceTree = "<group>"; };
 		08E142FE31AE77B03991CDAA /* AnnotationDocument.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationDocument.swift; sourceTree = "<group>"; };
+		099D793868746D72EBBF0F4F /* LinkShortener.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LinkShortener.swift; sourceTree = "<group>"; };
 		0A3A69A822F0D7D5AF6F8492 /* MenuBarController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MenuBarController.swift; sourceTree = "<group>"; };
 		0FACB7A2D3BC37DEDD944FD7 /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
 		113F0B45AEFE7ADD2DF6AFD1 /* VisionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionServiceTests.swift; sourceTree = "<group>"; };
@@ -315,6 +317,7 @@
 				EA5A7BBF6A02BB210850E612 /* ImgBBProvider.swift */,
 				EDB9CA932CF90CBBEF4D75E0 /* ImgurProvider.swift */,
 				870AD3A1333214A56B8816C7 /* KeychainStore.swift */,
+				099D793868746D72EBBF0F4F /* LinkShortener.swift */,
 				C9E4077C4C283511DDCAE679 /* S3Provider.swift */,
 				6AC2A95005D8CA22D1FC15F3 /* ShotLinkProvider.swift */,
 				55DDD04A700D5388DC4A742F /* UploadHUD.swift */,
@@ -453,7 +456,6 @@
 			buildPhases = (
 				B7215A09520CAF379CE59658 /* Sources */,
 				B875CA4B282B6D6E9BAC534A /* Resources */,
-				F45FDEFF219619D8F9D76AF1 /* Stable Ad-Hoc Code Signing for TCC */,
 			);
 			buildRules = (
 			);
@@ -507,27 +509,6 @@
 			runOnlyForDeploymentPostprocessing = 0;
 		};
 /* End PBXResourcesBuildPhase section */
-
-/* Begin PBXShellScriptBuildPhase section */
-		F45FDEFF219619D8F9D76AF1 /* Stable Ad-Hoc Code Signing for TCC */ = {
-			isa = PBXShellScriptBuildPhase;
-			buildActionMask = 2147483647;
-			files = (
-			);
-			inputFileListPaths = (
-			);
-			inputPaths = (
-			);
-			name = "Stable Ad-Hoc Code Signing for TCC";
-			outputFileListPaths = (
-			);
-			outputPaths = (
-			);
-			runOnlyForDeploymentPostprocessing = 0;
-			shellPath = /bin/sh;
-			shellScript = "codesign --force --deep --sign - --identifier \"com.screenshotapp.mac\" --requirements '=designated => identifier \"com.screenshotapp.mac\"' \"${BUILT_PRODUCTS_DIR}/${FULL_PRODUCT_NAME}\"\n";
-		};
-/* End PBXShellScriptBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
 		54DA17939B0644679CE34413 /* Sources */ = {
@@ -586,6 +567,7 @@
 				37D795CE8087D82F10A1EB2D /* KeyCodeMap.swift in Sources */,
 				21ABB11920E027ED8A0DF278 /* KeychainStore.swift in Sources */,
 				EEEEB99348343C293EBF14B2 /* LibraryView.swift in Sources */,
+				2A0A09711479263435FA3083 /* LinkShortener.swift in Sources */,
 				D584C0C6CE4941A8642817AF /* MediaType.swift in Sources */,
 				07CB3A4E2C3FAF082527C57D /* MenuBarController.swift in Sources */,
 				AC5E2DEAE5F7C053A05CFE06 /* OCRResultOverlay.swift in Sources */,
@@ -641,7 +623,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_CODE_SIGN_FLAGS = "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac;
-				PRODUCT_NAME = ScreenshotApp;
+				PRODUCT_MODULE_NAME = ScreenshotApp;
+				PRODUCT_NAME = SyncShot;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -661,7 +644,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac.tests;
 				PRODUCT_NAME = ScreenshotAppTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ScreenshotApp.app/Contents/MacOS/ScreenshotApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SyncShot.app/Contents/MacOS/SyncShot";
 			};
 			name = Release;
 		};
@@ -804,7 +787,8 @@
 				MACOSX_DEPLOYMENT_TARGET = 14.0;
 				OTHER_CODE_SIGN_FLAGS = "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac;
-				PRODUCT_NAME = ScreenshotApp;
+				PRODUCT_MODULE_NAME = ScreenshotApp;
+				PRODUCT_NAME = SyncShot;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -824,7 +808,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac.tests;
 				PRODUCT_NAME = ScreenshotAppTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ScreenshotApp.app/Contents/MacOS/ScreenshotApp";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/SyncShot.app/Contents/MacOS/SyncShot";
 			};
 			name = Debug;
 		};

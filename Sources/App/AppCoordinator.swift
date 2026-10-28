@@ -107,7 +107,7 @@ public final class AppCoordinator: ObservableObject {
             
             let hostingController = NSHostingController(rootView: settingsView)
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "ScreenshotApp Settings"
+            window.title = "SyncShot Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
             window.setContentSize(NSSize(width: 760, height: 600))
             window.center()

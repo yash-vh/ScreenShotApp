@@ -1,5 +1,26 @@
 import Foundation
 
+/// Where the Upload button sends captures; maps onto `StorageMode` + `CloudProviderType`
+public enum UploadDestination: String, CaseIterable, Identifiable, Sendable {
+    case off
+    case imgbb
+    case s3
+    case imgur
+    case shotLink
+
+    public var id: String { rawValue }
+
+    public var title: String {
+        switch self {
+        case .off: return "Off (keep screenshots on this Mac)"
+        case .imgbb: return "ImgBB"
+        case .s3: return "Amazon S3 / S3-compatible bucket"
+        case .imgur: return "Imgur"
+        case .shotLink: return "Self-hosted Shot Link"
+        }
+    }
+}
+
 /// Active storage mode configuration
 public enum StorageMode: String, Codable, Sendable, CaseIterable {
     case localOnly = "local_only"

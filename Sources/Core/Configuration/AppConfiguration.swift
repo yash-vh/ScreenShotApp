@@ -1,5 +1,6 @@
 import Foundation
 import Combine
+import ServiceManagement
 
 /// Centralized observable app configuration manager.
 /// Synchronizes user preferences with macOS `UserDefaults`.
@@ -20,7 +21,7 @@ public final class AppConfiguration: ObservableObject {
         static let shareServiceURL = "com.screenshotapp.shareServiceURL"
         static let imgurClientID = "com.screenshotapp.imgurClientID"
         static let uploadExpiry = "com.screenshotapp.uploadExpiry"
-        static let askBeforeUploading = "com.screenshotapp.askBeforeUploading"
+        static let linkShortener = "com.screenshotapp.linkShortener"
         static let cacheQuotaMB = "com.screenshotapp.cacheQuotaMB"
         static let installID = "com.screenshotapp.installID"
         static let recordingSettings = "com.screenshotapp.recordingSettings"
@@ -43,10 +44,30 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    @Published public var launchAtLogin: Bool {
-        didSet {
-            defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+    /// Mirrors the system login-item state; change it with `setLaunchAtLogin(_:)`
+    @Published public private(set) var launchAtLogin: Bool
+
+    /// Registers or removes SyncShot as a login item. Returns an error message when macOS refuses.
+    @discardableResult
+    public func setLaunchAtLogin(_ enabled: Bool) -> String? {
+        var problem: String?
+        do {
+            if enabled {
+                try SMAppService.mainApp.register()
+            } else {
+                try SMAppService.mainApp.unregister()
+            }
+        } catch {
+            problem = error.localizedDescription
+            AppLogger.shared.app.error("Login item change failed: \(error.localizedDescription, privacy: .public)")
         }
+        let status = SMAppService.mainApp.status
+        launchAtLogin = status == .enabled || status == .requiresApproval
+        defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
+        if status == .requiresApproval {
+            problem = "Approve SyncShot in System Settings › General › Login Items."
+        }
+        return problem
     }
 
     @Published public var showDockIcon: Bool {
@@ -106,10 +127,10 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    /// Privacy rule: confirm every upload unless the user opts out
-    @Published public var askBeforeUploading: Bool {
+    /// Short-link service applied after each upload
+    @Published public var linkShortener: LinkShortener {
         didSet {
-            defaults.set(askBeforeUploading, forKey: Keys.askBeforeUploading)
+            defaults.set(linkShortener.rawValue, forKey: Keys.linkShortener)
         }
     }
 
@@ -130,6 +151,28 @@ public final class AppConfiguration: ObservableObject {
 
     /// Anonymous per-install identifier sent to the share service for rate limiting
     public let installID: String
+
+    /// Single user-facing choice behind the Upload button
+    public var uploadDestination: UploadDestination {
+        get {
+            switch uploadProvider {
+            case nil: return .off
+            case .imgbb: return .imgbb
+            case .imgur: return .imgur
+            case .s3Compatible: return .s3
+            default: return .shotLink
+            }
+        }
+        set {
+            switch newValue {
+            case .off: storageMode = .localOnly
+            case .s3: storageMode = .userOwned
+            case .imgbb: storageMode = .managedCloud; activeCloudProvider = .imgbb
+            case .imgur: storageMode = .managedCloud; activeCloudProvider = .imgur
+            case .shotLink: storageMode = .managedCloud; activeCloudProvider = .managedCloud
+            }
+        }
+    }
 
     /// The upload provider implied by the storage mode, or nil when uploads are off
     public var uploadProvider: CloudProviderType? {
@@ -160,7 +203,8 @@ public final class AppConfiguration: ObservableObject {
         }
 
         // App general preferences
-        self.launchAtLogin = defaults.bool(forKey: Keys.launchAtLogin)
+        let loginStatus = SMAppService.mainApp.status
+        self.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
         
         if let rawProvider = defaults.string(forKey: Keys.activeCloudProvider),
@@ -177,7 +221,7 @@ public final class AppConfiguration: ObservableObject {
         self.shareServiceURL = defaults.string(forKey: Keys.shareServiceURL) ?? ""
         self.imgurClientID = defaults.string(forKey: Keys.imgurClientID) ?? ""
         self.uploadExpiry = defaults.string(forKey: Keys.uploadExpiry).flatMap(UploadExpiry.init(rawValue:)) ?? .thirtyDays
-        self.askBeforeUploading = defaults.object(forKey: Keys.askBeforeUploading) != nil ? defaults.bool(forKey: Keys.askBeforeUploading) : true
+        self.linkShortener = defaults.string(forKey: Keys.linkShortener).flatMap(LinkShortener.init(rawValue:)) ?? .off
         self.cacheQuotaMB = defaults.object(forKey: Keys.cacheQuotaMB) != nil ? defaults.integer(forKey: Keys.cacheQuotaMB) : 2048
 
         if let data = defaults.data(forKey: Keys.recordingSettings),
@@ -241,7 +285,7 @@ public final class AppConfiguration: ObservableObject {
                 return "Couldn't create \(url.path): \(error.localizedDescription)"
             }
         }
-        return fm.isWritableFile(atPath: url.path) ? nil : "ScreenshotApp can't write to \(url.path)."
+        return fm.isWritableFile(atPath: url.path) ? nil : "SyncShot can't write to \(url.path)."
     }
 
     /// Directory for Application Support metadata and temporary working buffers
