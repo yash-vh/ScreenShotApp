@@ -13,5 +13,6 @@ struct ScreenshotApp: App {
                 .environmentObject(config)
                 .environmentObject(coordinator)
         }
+        .commands { AppCommands() }
     }
 }

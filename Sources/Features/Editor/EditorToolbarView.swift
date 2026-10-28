@@ -80,24 +80,21 @@ public struct EditorToolbarView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             // MARK: - 1. Tools Group
-            HStack(spacing: 2) {
+            ToolbarGroup {
                 ForEach(Self.toolOrder, id: \.0) { tool, shortcut in
                     toolButton(tool, shortcut: shortcut)
                 }
             }
-            .padding(3)
-            .background(RoundedRectangle(cornerRadius: 9).fill(Color.secondary.opacity(0.12)))
 
             // MARK: - 2. Contextual Properties (Color, Thickness, or Intensity)
-            contextualProperties
-                .padding(.horizontal, 6)
-                .padding(.vertical, 3)
-                .frame(height: 28)
-                .background(RoundedRectangle(cornerRadius: 7).fill(Color.secondary.opacity(0.08)))
+            ToolbarGroup {
+                contextualProperties
+                    .padding(.horizontal, 6)
+            }
 
-            Divider().frame(height: 20)
+            ToolbarSeparator()
 
             // MARK: - 3. History & Layer Actions
             HStack(spacing: 2) {
@@ -106,7 +103,7 @@ public struct EditorToolbarView: View {
                 iconButton("trash", help: "Delete Selection (⌫)", enabled: state.hasSelection, action: onDelete)
             }
 
-            Divider().frame(height: 20)
+            ToolbarSeparator()
 
             // MARK: - 4. Styling & Recognition
             HStack(spacing: 2) {
@@ -114,13 +111,8 @@ public struct EditorToolbarView: View {
                     isShowingStyle.toggle()
                 } label: {
                     Image(systemName: "paintpalette")
-                        .font(.system(size: 12, weight: .semibold))
-                        .frame(width: 28, height: 26)
-                        .background(undoRedoManager.document.hasStyling ? Color.accentColor.opacity(0.25) : Color.clear)
-                        .cornerRadius(6)
-                        .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ToolbarIconButtonStyle(isActive: undoRedoManager.document.hasStyling, activeStyle: .tinted))
                 .help("Background, Padding & Shadow")
                 .popover(isPresented: $isShowingStyle, arrowEdge: .bottom) {
                     StylePanel(undoRedoManager: undoRedoManager)
@@ -129,78 +121,62 @@ public struct EditorToolbarView: View {
                 Button {
                     state.isShowingRecognition.toggle()
                 } label: {
-                    Group {
-                        if state.isRecognizing {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "text.viewfinder")
-                                .font(.system(size: 12, weight: .semibold))
-                        }
+                    if state.isRecognizing {
+                        ProgressView().controlSize(.small)
+                    } else {
+                        Image(systemName: "text.viewfinder")
                     }
-                    .frame(width: 28, height: 26)
-                    .background(state.isShowingRecognition ? Color.accentColor : Color.clear)
-                    .foregroundColor(state.isShowingRecognition ? .white : .primary)
-                    .cornerRadius(6)
-                    .contentShape(Rectangle())
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ToolbarIconButtonStyle(isActive: state.isShowingRecognition))
                 .help("Recognize Text & QR Codes (⇧⌘T)")
             }
 
             if placement == .docked {
                 Spacer(minLength: 8)
             } else {
-                Divider().frame(height: 20)
+                ToolbarSeparator()
             }
 
             // MARK: - 5. Direct Actions
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Button(action: onCopyToClipboard) {
-                    HStack(spacing: 5) {
-                        Image(systemName: "doc.on.doc.fill").font(.system(size: 11))
-                        Text("Copy").font(.system(size: 12, weight: .semibold))
-                    }
-                    .padding(.horizontal, 11)
-                    .padding(.vertical, 5)
-                    .background(
-                        LinearGradient(colors: [Color.accentColor, Color.accentColor.opacity(0.85)], startPoint: .top, endPoint: .bottom)
-                    )
-                    .foregroundColor(.white)
-                    .cornerRadius(6)
-                    .shadow(color: Color.accentColor.opacity(0.35), radius: 3, y: 1)
+                    Label("Copy", systemImage: "doc.on.doc.fill")
+                        .labelStyle(.titleAndIcon)
+                        .font(.system(size: 12, weight: .semibold))
+                        .padding(.horizontal, 12)
+                        .frame(height: 28)
+                        .foregroundStyle(.white)
+                        .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .shadow(color: Color.accentColor.opacity(0.4), radius: 4, y: 1)
+                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(PressableButtonStyle())
                 .help("Copy to Clipboard (⌘C)")
 
                 ForEach(secondaryActions) { item in
                     Button(action: item.action) {
                         Image(systemName: item.symbol)
-                            .font(.system(size: 12, weight: .medium))
-                            .frame(width: 28, height: 24)
-                            .background(Color.secondary.opacity(0.12))
-                            .cornerRadius(6)
-                            .contentShape(Rectangle())
                     }
-                    .buttonStyle(.plain)
+                    .buttonStyle(ToolbarIconButtonStyle(isActive: false, filled: true))
                     .help(item.help)
                 }
 
                 Button(action: onClose) {
                     Text(closeTitle)
                         .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.secondary)
-                        .padding(.horizontal, 6)
-                        .padding(.vertical, 5)
-                        .contentShape(Rectangle())
+                        .padding(.horizontal, 8)
+                        .frame(height: 28)
                 }
-                .buttonStyle(.plain)
+                .buttonStyle(ToolbarIconButtonStyle(isActive: false, fixedWidth: false))
                 .help(closeHelp)
             }
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 7)
+        .padding(.horizontal, placement == .floating ? 10 : 12)
+        .padding(.vertical, 8)
         .fixedSize(horizontal: placement == .floating, vertical: false)
         .background(toolbarBackground)
+        .animation(.snappy(duration: 0.18), value: state.tool)
+        .animation(.snappy(duration: 0.18), value: state.isShowingRecognition)
     }
 
     @ViewBuilder
@@ -209,10 +185,17 @@ public struct EditorToolbarView: View {
         case .docked:
             Rectangle().fill(.ultraThinMaterial)
         case .floating:
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.regularMaterial)
-                .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.white.opacity(0.18), lineWidth: 1))
-                .shadow(color: .black.opacity(0.45), radius: 10, y: 4)
+            let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
+            shape
+                .fill(.ultraThinMaterial)
+                .overlay(
+                    shape.strokeBorder(
+                        LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom),
+                        lineWidth: 1
+                    )
+                )
+                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
+                .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
         }
     }
 
@@ -224,34 +207,36 @@ public struct EditorToolbarView: View {
             HStack(spacing: 6) {
                 Image(systemName: state.tool == .blur ? "drop.fill" : "checkerboard.rectangle")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Slider(value: $state.blurRadius, in: 8...60, step: 2)
-                    .frame(width: 80)
+                    .controlSize(.small)
+                    .frame(width: 90)
                 Text("\(Int(state.blurRadius))px")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
-                    .frame(width: 32, alignment: .leading)
+                    .foregroundStyle(.secondary)
+                    .frame(width: 34, alignment: .leading)
             }
         } else if state.tool == .text {
             HStack(spacing: 6) {
                 Image(systemName: "textformat.size")
                     .font(.system(size: 11))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                 Slider(value: $state.fontSize, in: 12...72, step: 2)
-                    .frame(width: 70)
+                    .controlSize(.small)
+                    .frame(width: 76)
                 Text("\(Int(state.fontSize))pt")
                     .font(.system(size: 11, design: .monospaced))
-                    .foregroundColor(.secondary)
+                    .foregroundStyle(.secondary)
                     .frame(width: 30, alignment: .leading)
-                Divider().frame(height: 16)
+                ToolbarSeparator(height: 16)
                 colorChips
             }
         } else {
             HStack(spacing: 8) {
                 colorChips
                 if state.tool != .highlight {
-                    Divider().frame(height: 16)
-                    HStack(spacing: 3) {
+                    ToolbarSeparator(height: 16)
+                    HStack(spacing: 2) {
                         thicknessButton(width: 2.0, label: "Fine")
                         thicknessButton(width: 4.0, label: "Medium")
                         thicknessButton(width: 8.0, label: "Bold")
@@ -268,46 +253,34 @@ public struct EditorToolbarView: View {
             state.tool = tool
         } label: {
             Image(systemName: tool.systemIcon)
-                .font(.system(size: 12, weight: state.tool == tool ? .bold : .medium))
-                .frame(width: 28, height: 26)
-                .background(state.tool == tool ? Color.accentColor : Color.clear)
-                .foregroundColor(state.tool == tool ? .white : .primary)
-                .cornerRadius(6)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolbarIconButtonStyle(isActive: state.tool == tool))
         .help("\(tool.rawValue) (\(shortcut))")
     }
 
     private func iconButton(_ symbol: String, help: String, enabled: Bool, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             Image(systemName: symbol)
-                .font(.system(size: 12, weight: .semibold))
-                .frame(width: 26, height: 26)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolbarIconButtonStyle(isActive: false))
         .disabled(!enabled)
-        .opacity(enabled ? 1.0 : 0.35)
         .help(help)
     }
 
     private var colorChips: some View {
-        HStack(spacing: 5) {
+        HStack(spacing: 6) {
             ForEach(standardColors, id: \.self) { color in
+                let isSelected = state.color == color
                 Circle()
-                    .fill(Color(red: color.red, green: color.green, blue: color.blue))
-                    .frame(width: 14, height: 14)
-                    .overlay(Circle().stroke(Color.primary.opacity(0.25), lineWidth: 0.5))
-                    .overlay(
-                        Circle()
-                            .stroke(Color.primary, lineWidth: state.color == color ? 2 : 0)
-                            .padding(-2)
-                    )
+                    .fill(Color(red: color.red, green: color.green, blue: color.blue).gradient)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
+                    .padding(2)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(isSelected ? 0.85 : 0), lineWidth: 1.5))
+                    .scaleEffect(isSelected ? 1.06 : 1)
                     .contentShape(Circle())
-                    .onTapGesture {
-                        state.color = color
-                    }
+                    .onTapGesture { state.color = color }
+                    .animation(.snappy(duration: 0.15), value: isSelected)
             }
         }
     }
@@ -319,13 +292,94 @@ public struct EditorToolbarView: View {
             Circle()
                 .fill(Color.primary)
                 .frame(width: CGFloat(width + 1), height: CGFloat(width + 1))
-                .frame(width: 20, height: 20)
-                .background(state.strokeWidth == width ? Color.accentColor.opacity(0.25) : Color.clear)
-                .cornerRadius(4)
-                .contentShape(Rectangle())
         }
-        .buttonStyle(.plain)
+        .buttonStyle(ToolbarIconButtonStyle(isActive: state.strokeWidth == width, activeStyle: .tinted, size: 24))
         .help(label)
+    }
+}
+
+// MARK: - Toolbar Building Blocks
+
+/// Inset well that groups related controls
+private struct ToolbarGroup<Content: View>: View {
+    @ViewBuilder var content: Content
+
+    var body: some View {
+        HStack(spacing: 2) { content }
+            .padding(3)
+            .frame(minHeight: 36)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+    }
+}
+
+private struct ToolbarSeparator: View {
+    var height: CGFloat = 22
+
+    var body: some View {
+        Rectangle()
+            .fill(Color.primary.opacity(0.12))
+            .frame(width: 1, height: height)
+    }
+}
+
+/// Icon button with hover and pressed feedback; `isActive` highlights the current tool or toggle
+private struct ToolbarIconButtonStyle: ButtonStyle {
+    enum ActiveStyle { case filled, tinted }
+
+    var isActive: Bool
+    var activeStyle: ActiveStyle = .filled
+    var filled = false
+    var fixedWidth = true
+    var size: CGFloat = 30
+
+    func makeBody(configuration: Configuration) -> some View {
+        StyledLabel(configuration: configuration, style: self)
+    }
+
+    private struct StyledLabel: View {
+        let configuration: ButtonStyleConfiguration
+        let style: ToolbarIconButtonStyle
+        @State private var isHovered = false
+        @Environment(\.isEnabled) private var isEnabled
+
+        var body: some View {
+            let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+            configuration.label
+                .font(.system(size: 13, weight: style.isActive ? .semibold : .medium))
+                .frame(width: style.fixedWidth ? style.size : nil, height: style.size)
+                .foregroundStyle(foreground)
+                .background(background, in: shape)
+                .contentShape(shape)
+                .scaleEffect(configuration.isPressed ? 0.94 : 1)
+                .opacity(isEnabled ? 1 : 0.35)
+                .onHover { isHovered = $0 }
+                .animation(.snappy(duration: 0.12), value: isHovered)
+                .animation(.snappy(duration: 0.12), value: configuration.isPressed)
+        }
+
+        private var foreground: Color {
+            if style.isActive && style.activeStyle == .filled { return .white }
+            if style.isActive { return .accentColor }
+            return .primary
+        }
+
+        private var background: Color {
+            if style.isActive {
+                return style.activeStyle == .filled ? .accentColor : Color.accentColor.opacity(0.2)
+            }
+            if isHovered && isEnabled { return Color.primary.opacity(0.1) }
+            return style.filled ? Color.primary.opacity(0.06) : .clear
+        }
+    }
+}
+
+/// Subtle press feedback for custom-drawn buttons
+private struct PressableButtonStyle: ButtonStyle {
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .scaleEffect(configuration.isPressed ? 0.96 : 1)
+            .brightness(configuration.isPressed ? -0.05 : 0)
+            .animation(.snappy(duration: 0.12), value: configuration.isPressed)
     }
 }
 
@@ -349,6 +403,18 @@ struct StylePanel: View {
                     }
                 } action: {
                     update("background") { $0.backgroundPresetID = nil; $0.backgroundColor = nil }
+                }
+
+                swatch(selected: document.backgroundPresetID == BackgroundPresets.desktopID, help: "Desktop Wallpaper") {
+                    DesktopWallpaperSwatch()
+                } action: {
+                    update("background") { doc in
+                        doc.backgroundPresetID = BackgroundPresets.desktopID
+                        doc.backgroundColor = nil
+                        if doc.padding == 0 { doc.padding = 48 }
+                        if doc.cornerRadius == 0 { doc.cornerRadius = 10 }
+                        if doc.shadowRadius == 0 { doc.shadowRadius = 24 }
+                    }
                 }
 
                 ForEach(BackgroundPresets.all) { preset in
@@ -432,6 +498,23 @@ struct StylePanel: View {
                 .font(.system(size: 11, design: .monospaced))
                 .foregroundColor(.secondary)
                 .frame(width: 40, alignment: .trailing)
+        }
+    }
+}
+
+/// Thumbnail of the current desktop picture for the Desktop backdrop swatch
+private struct DesktopWallpaperSwatch: View {
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: 6, style: .continuous)
+        if let wallpaper = DesktopWallpaper.current() {
+            Image(decorative: wallpaper, scale: 1)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 30, height: 30)
+                .clipShape(shape)
+        } else {
+            shape.fill(Color.secondary.opacity(0.2))
+                .overlay(Image(systemName: "photo").font(.system(size: 12)).foregroundStyle(.secondary))
         }
     }
 }

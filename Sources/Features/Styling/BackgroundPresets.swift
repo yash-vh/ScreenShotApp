@@ -55,6 +55,28 @@ public enum BackgroundPresets {
         ])
     ]
 
+    /// Backdrop that uses the current desktop picture (see `DesktopWallpaper`) instead of a color preset
+    public static let desktopID = "desktop"
+
+    /// Fills `rect` with the backdrop `id` names: the desktop picture or a color preset.
+    /// Returns false when `id` names neither (or the wallpaper can't be read), so callers can fall back.
+    @discardableResult
+    public static func fillBackdrop(id: String?, in context: CGContext, rect: CGRect, flipped: Bool = false) -> Bool {
+        if id == desktopID {
+            if let wallpaper = DesktopWallpaper.current() {
+                DesktopWallpaper.drawAspectFill(wallpaper, in: context, rect: rect, flipped: flipped)
+                return true
+            }
+            // Wallpaper unavailable (e.g. a dynamic aerial without a still): use a neutral gradient
+            guard let fallback = preset(id: "midnight") else { return false }
+            ImageComposer.fill(preset: fallback, in: context, rect: rect, flipped: flipped)
+            return true
+        }
+        guard let preset = preset(id: id) else { return false }
+        ImageComposer.fill(preset: preset, in: context, rect: rect, flipped: flipped)
+        return true
+    }
+
     public static func preset(id: String?) -> BackgroundPreset? {
         guard let id = id else { return nil }
         return all.first { $0.id == id }

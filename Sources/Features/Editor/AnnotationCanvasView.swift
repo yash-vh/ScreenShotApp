@@ -1212,8 +1212,8 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         let outer = styledRect
 
         if doc.hasStyling {
-            if let preset = BackgroundPresets.preset(id: doc.backgroundPresetID) {
-                ImageComposer.fill(preset: preset, in: context, rect: outer, flipped: true)
+            if BackgroundPresets.fillBackdrop(id: doc.backgroundPresetID, in: context, rect: outer, flipped: true) {
+                // backdrop drawn
             } else if let color = doc.backgroundColor {
                 context.setFillColor(CGColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha))
                 context.fill(outer)

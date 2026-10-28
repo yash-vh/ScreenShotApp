@@ -36,6 +36,7 @@
 		688F07B21980104B140568E8 /* ExportCompositorTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = A17932D6DEBFD5C8880755D3 /* ExportCompositorTests.swift */; };
 		6BC268B8FD9D5741AFA92AB9 /* AppBranding.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7E9DCDB9220BA07CA01097BC /* AppBranding.swift */; };
 		733A000A5E7B42E4CFF6E0FE /* ScreenshotAsset.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47D3586C150A2C3BCDA2C637 /* ScreenshotAsset.swift */; };
+		7517B99CEDD0D54EB0E4F814 /* DesktopWallpaper.swift in Sources */ = {isa = PBXBuildFile; fileRef = FCAEDC4B9C6AFB6DA1A42F4D /* DesktopWallpaper.swift */; };
 		75C0630887A961E4BEEA69A8 /* ScreenCaptureServiceTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 177DE3800DAA96348E85591D /* ScreenCaptureServiceTests.swift */; };
 		7CFCF3FE741C035B18346F1D /* RecordingSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = 20FC9D56BBAD3FC911B3EEDD /* RecordingSettings.swift */; };
 		8204C2F93FBC59E270BDD553 /* PermissionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9892994A21ABCEFFD63686CC /* PermissionManager.swift */; };
@@ -75,6 +76,7 @@
 		E25218023E97872D8676142B /* WindowSelectionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = AE27FB4E277F36E5C857D4A2 /* WindowSelectionOverlay.swift */; };
 		E262AD2A5E8D1BF40AAE560E /* RegionSelectionOverlay.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6A49D407DF6CF82B7FF17F3 /* RegionSelectionOverlay.swift */; };
 		E6FD1512ADDB37FB133AB118 /* HistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1905DBE4FB82927D76E4361B /* HistoryStoreTests.swift */; };
+		E93F71D12792C2FCC6734675 /* AppCommands.swift in Sources */ = {isa = PBXBuildFile; fileRef = 3D373236D9545D5A4CE36F30 /* AppCommands.swift */; };
 		EC6AA3CD90C6F9A7FF19B1E2 /* S3Provider.swift in Sources */ = {isa = PBXBuildFile; fileRef = C9E4077C4C283511DDCAE679 /* S3Provider.swift */; };
 		ED7EABD9FAD96579572DCEEF /* HotKeyManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = 752E4E66CB229AD24E799ACB /* HotKeyManager.swift */; };
 		EEEEB99348343C293EBF14B2 /* LibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A2232CD13796528A35E7F3D8 /* LibraryView.swift */; };
@@ -126,6 +128,7 @@
 		2F75E4DBCE4D09A5BC6E3C6A /* RecordingCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingCoordinator.swift; sourceTree = "<group>"; };
 		30A798E81E3054EF2F1984A3 /* HistoryStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStore.swift; sourceTree = "<group>"; };
 		3B9D41EF8FBEE362CE992AF1 /* ScreenshotApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotApp.swift; sourceTree = "<group>"; };
+		3D373236D9545D5A4CE36F30 /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
 		4343C8A8BC770F6C2B74AEAA /* UndoRedoManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UndoRedoManager.swift; sourceTree = "<group>"; };
 		4479E0D5C0896DBC578959F3 /* ConfigurationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ConfigurationTests.swift; sourceTree = "<group>"; };
 		47D3586C150A2C3BCDA2C637 /* ScreenshotAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAsset.swift; sourceTree = "<group>"; };
@@ -181,6 +184,7 @@
 		F66E3F44848C560E09CA19E8 /* GIFEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFEncoder.swift; sourceTree = "<group>"; };
 		F8384A669B211D66E4EE6CB6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FB26A50D7F7BB72A61C04801 /* RecordingWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWriter.swift; sourceTree = "<group>"; };
+		FCAEDC4B9C6AFB6DA1A42F4D /* DesktopWallpaper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DesktopWallpaper.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXGroup section */
@@ -243,6 +247,7 @@
 		4A5B76AAEF6040FAE1435B67 /* App */ = {
 			isa = PBXGroup;
 			children = (
+				3D373236D9545D5A4CE36F30 /* AppCommands.swift */,
 				0374D0DA56939FDAA008EB3A /* AppCoordinator.swift */,
 				00D10C1C3CB86E0A1164A5C7 /* AppDelegate.swift */,
 				02D7F794F9B02919A075DCA4 /* BackgroundRelauncher.swift */,
@@ -342,6 +347,7 @@
 			isa = PBXGroup;
 			children = (
 				1E28BC5906A1C41D2BA256FA /* BackgroundPresets.swift */,
+				FCAEDC4B9C6AFB6DA1A42F4D /* DesktopWallpaper.swift */,
 				6CAFD232405F30001A0A8998 /* ImageComposer.swift */,
 			);
 			path = Styling;
@@ -565,6 +571,7 @@
 				5FDAB0B3AEE06A4ECAF0E8AD /* AnnotationDocument.swift in Sources */,
 				0D564E94A0C50EEC447CE766 /* AnnotationRenderer.swift in Sources */,
 				6BC268B8FD9D5741AFA92AB9 /* AppBranding.swift in Sources */,
+				E93F71D12792C2FCC6734675 /* AppCommands.swift in Sources */,
 				50DC25043C6D17320E9FE747 /* AppConfiguration.swift in Sources */,
 				480551CAA766A151C4090F3F /* AppCoordinator.swift in Sources */,
 				8814E2EB9C82F895CFC78BB5 /* AppDelegate.swift in Sources */,
@@ -576,6 +583,7 @@
 				4E10C9F6BED95D335416A229 /* CaptureCoordinator.swift in Sources */,
 				CEA2818592285264FF1D8DBA /* CaptureSettings.swift in Sources */,
 				BF9D48755A3C9015B8F7976F /* CloudStorageProvider.swift in Sources */,
+				7517B99CEDD0D54EB0E4F814 /* DesktopWallpaper.swift in Sources */,
 				D825D4E3266D6FB49F116B0F /* EditorState.swift in Sources */,
 				971D73A94664447A3D3F7FD8 /* EditorTool.swift in Sources */,
 				959F22F3CF7769B45FE43C77 /* EditorToolbarView.swift in Sources */,

@@ -64,4 +64,41 @@ final class ImageComposerTests: XCTestCase {
         }
         XCTAssertNil(BackgroundPresets.preset(id: "does-not-exist"))
     }
+
+    func testDesktopBackdropFillsPaddingOpaquely() {
+        let image = solidImage(width: 40, height: 40)
+        let doc = AnnotationDocument(assetId: UUID(), pixelsPerPoint: 1.0, backgroundPresetID: BackgroundPresets.desktopID, padding: 10)
+        let result = ImageComposer.shared.compose(image, document: doc)
+        XCTAssertEqual(result.width, 60)
+        // Wallpaper, or the fallback gradient when no desktop picture is readable
+        XCTAssertEqual(pixel(result, x: 2, y: 2)[3], 255)
+    }
+
+    /// Top half red, bottom half blue (top-left origin)
+    private func twoToneImage() -> CGImage {
+        let context = CGContext(
+            data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        context.setFillColor(CGColor(red: 0, green: 0, blue: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 4, height: 2))
+        context.setFillColor(CGColor(red: 1, green: 0, blue: 0, alpha: 1))
+        context.fill(CGRect(x: 0, y: 2, width: 4, height: 2))
+        return context.makeImage()!
+    }
+
+    func testWallpaperAspectFillKeepsOrientationInFlippedContext() {
+        let size = 40
+        let context = CGContext(
+            data: nil, width: size, height: size, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        )!
+        // Same y-down setup as the live canvas
+        context.translateBy(x: 0, y: CGFloat(size))
+        context.scaleBy(x: 1, y: -1)
+        DesktopWallpaper.drawAspectFill(twoToneImage(), in: context, rect: CGRect(x: 0, y: 0, width: size, height: size), flipped: true)
+        let result = context.makeImage()!
+        XCTAssertGreaterThan(pixel(result, x: 20, y: 5)[0], 200, "Red stays on top")
+        XCTAssertGreaterThan(pixel(result, x: 20, y: 35)[2], 200, "Blue stays at the bottom")
+    }
 }

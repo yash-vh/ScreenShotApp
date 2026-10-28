@@ -67,8 +67,8 @@ public final class ImageComposer: @unchecked Sendable {
     }
 
     private func fillBackground(in context: CGContext, rect: CGRect, document: AnnotationDocument) {
-        if let preset = BackgroundPresets.preset(id: document.backgroundPresetID) {
-            Self.fill(preset: preset, in: context, rect: rect)
+        if BackgroundPresets.fillBackdrop(id: document.backgroundPresetID, in: context, rect: rect) {
+            return
         } else if let color = document.backgroundColor {
             context.setFillColor(CGColor(red: color.red, green: color.green, blue: color.blue, alpha: color.alpha))
             context.fill(rect)
