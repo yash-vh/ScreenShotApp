@@ -33,7 +33,17 @@ public struct SettingsView: View {
             }
         }
 
-        /// Pane accent: sidebar tile, header and the pane's toggles, pickers and sliders
+        /// Accent for the pane's switches, pickers and sliders. Matches the tile, except where
+        /// the tile color is too muted (gray) or too light (yellow) to read as an "on" switch.
+        public var controlTint: Color {
+            switch self {
+            case .general: return .blue
+            case .subscription: return .orange
+            default: return color
+            }
+        }
+
+        /// Sidebar tile color
         public var color: Color {
             switch self {
             case .general: return .gray
@@ -81,7 +91,8 @@ public struct SettingsView: View {
         } detail: {
             pane(for: coordinator.settingsTab)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .tint(coordinator.settingsTab.color)
+                .tint(coordinator.settingsTab.controlTint)
+                .toggleStyle(.switch)
         }
         .frame(minWidth: 820, minHeight: 560)
     }
@@ -150,31 +161,32 @@ struct GeneralSettingsTab: View {
 
     var body: some View {
         Form {
-            Section(header: Text("App Startup & Visibility")) {
+            Section {
                 Toggle(isOn: Binding(
                     get: { config.launchAtLogin },
                     set: { loginProblem = config.setLaunchAtLogin($0) }
                 )) {
-                    SettingsRowLabel(title: "Launch SyncShot at login")
+                    SettingsRowLabel(title: "Launch at login", subtitle: "Start SyncShot when you log in to your Mac.")
                 }
                 if let loginProblem {
-                    Text(loginProblem)
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                    SettingsWarning(loginProblem)
                 }
                 Toggle(isOn: $config.showDockIcon) {
-                    SettingsRowLabel(title: "Show icon in Dock", subtitle: "When off, SyncShot runs from the menu bar only.")
+                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, SyncShot runs from the menu bar only.")
                 }
                 Toggle(isOn: $config.showMenuBarIcon) {
                     SettingsRowLabel(
-                        title: "Show menu in menu bar",
+                        title: "Show in menu bar",
                         subtitle: config.showMenuBarIcon
-                            ? "The SyncShot menu sits in the menu bar."
-                            : "Hidden. Shortcuts keep working; open SyncShot from Finder or Spotlight to reach Settings.")
+                            ? "Quick access to captures, recording and the Library."
+                            : "Hidden. Shortcuts still work; open SyncShot from Finder or Spotlight for Settings."
+                    )
                 }
+            } header: {
+                Text("Startup & Visibility")
             }
 
-            Section(header: Text("Background")) {
+            Section {
                 Toggle(isOn: Binding(
                     get: { config.relaunchAfterUnexpectedQuit },
                     set: { enabled in
@@ -186,23 +198,45 @@ struct GeneralSettingsTab: View {
                     }
                 )) {
                     SettingsRowLabel(
-                        title: "Reopen SyncShot if it's force quit or crashes",
-                        subtitle: "macOS relaunches SyncShot in the background. Quit SyncShot still quits it. Turning this on restarts SyncShot once and starts it at login.")
+                        title: "Reopen after a force quit or crash",
+                        subtitle: "Keeps the menu and shortcuts available. Quitting from the menu still quits."
+                    )
                 }
                 if let relaunchProblem {
-                    Text(relaunchProblem)
-                        .font(.caption)
-                        .foregroundColor(.orange)
+                    SettingsWarning(relaunchProblem)
                 }
+            } header: {
+                Text("Background")
+            } footer: {
+                Text("Turning this on restarts SyncShot once and also starts it at login.")
+                    .font(.footnote)
+                    .foregroundStyle(.secondary)
             }
 
-            Section(header: Text("Feedback & Alerts")) {
+            Section {
                 Toggle(isOn: $config.captureSettings.playCaptureSound) {
-                    SettingsRowLabel(title: "Play shutter sound on capture")
+                    SettingsRowLabel(title: "Shutter sound", subtitle: "Play a sound when a capture is taken.")
                 }
+            } header: {
+                Text("Feedback")
             }
         }
         .formStyle(.grouped)
+    }
+}
+
+/// Inline problem message under a settings row
+struct SettingsWarning: View {
+    let message: String
+
+    init(_ message: String) {
+        self.message = message
+    }
+
+    var body: some View {
+        Label(message, systemImage: "exclamationmark.triangle.fill")
+            .font(.callout)
+            .foregroundStyle(.orange)
     }
 }
 

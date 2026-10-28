@@ -37,6 +37,7 @@ public struct EditorToolbarView: View {
     var onClose: () -> Void
 
     @State private var isShowingStyle = false
+    @State private var isShowingInk = false
 
     private let standardColors: [AnnotationColor] = [
         .red,
@@ -88,10 +89,16 @@ public struct EditorToolbarView: View {
                 }
             }
 
-            // MARK: - 2. Contextual Properties (Color, Thickness, or Intensity)
-            ToolbarGroup {
-                contextualProperties
-                    .padding(.horizontal, 6)
+            // MARK: - 2. Ink: color + stroke / size / intensity for the current tool, in one popover
+            Button {
+                isShowingInk.toggle()
+            } label: {
+                inkButtonLabel
+            }
+            .buttonStyle(ToolbarIconButtonStyle(isActive: isShowingInk, activeStyle: .tinted, fixedWidth: false))
+            .help(inkHelp)
+            .popover(isPresented: $isShowingInk, arrowEdge: .bottom) {
+                inkPanel
             }
 
             ToolbarSeparator()
@@ -142,13 +149,12 @@ public struct EditorToolbarView: View {
                 Button(action: onCopyToClipboard) {
                     Label("Copy", systemImage: "doc.on.doc.fill")
                         .labelStyle(.titleAndIcon)
-                        .font(.system(size: 12, weight: .semibold))
-                        .padding(.horizontal, 12)
-                        .frame(height: 28)
+                        .font(.system(size: 12.5, weight: .semibold))
+                        .padding(.horizontal, 14)
+                        .frame(height: 30)
                         .foregroundStyle(.white)
-                        .background(Color.accentColor.gradient, in: RoundedRectangle(cornerRadius: 8, style: .continuous))
-                        .shadow(color: Color.accentColor.opacity(0.4), radius: 4, y: 1)
-                        .contentShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                        .background(Color.accentColor, in: Capsule())
+                        .contentShape(Capsule())
                 }
                 .buttonStyle(PressableButtonStyle())
                 .help("Copy to Clipboard (⌘C)")
@@ -162,17 +168,16 @@ public struct EditorToolbarView: View {
                 }
 
                 Button(action: onClose) {
-                    Text(closeTitle)
-                        .font(.system(size: 12, weight: .medium))
-                        .padding(.horizontal, 8)
-                        .frame(height: 28)
+                    Image(systemName: "xmark")
+                        .font(.system(size: 12, weight: .semibold))
                 }
-                .buttonStyle(ToolbarIconButtonStyle(isActive: false, fixedWidth: false))
+                .buttonStyle(ToolbarIconButtonStyle(isActive: false))
+                .accessibilityLabel(closeTitle)
                 .help(closeHelp)
             }
         }
-        .padding(.horizontal, placement == .floating ? 10 : 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, placement == .floating ? 8 : 12)
+        .padding(.vertical, 7)
         .fixedSize(horizontal: placement == .floating, vertical: false)
         .background(toolbarBackground)
         .animation(.snappy(duration: 0.18), value: state.tool)
@@ -185,64 +190,104 @@ public struct EditorToolbarView: View {
         case .docked:
             Rectangle().fill(.ultraThinMaterial)
         case .floating:
-            let shape = RoundedRectangle(cornerRadius: 16, style: .continuous)
-            shape
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    shape.strokeBorder(
-                        LinearGradient(colors: [.white.opacity(0.28), .white.opacity(0.06)], startPoint: .top, endPoint: .bottom),
-                        lineWidth: 1
-                    )
-                )
-                .shadow(color: .black.opacity(0.18), radius: 2, y: 1)
-                .shadow(color: .black.opacity(0.32), radius: 18, y: 8)
+            // Liquid Glass on macOS 26+, vibrancy before; one soft shadow lifts it off the screenshot
+            Color.clear
+                .hudGlass(cornerRadius: 22)
+                .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
         }
     }
 
-    // MARK: - Contextual Properties
+    // MARK: - Ink (color, stroke, size, intensity)
 
+    private var usesIntensity: Bool { state.tool == .blur || state.tool == .pixelate }
+
+    private var currentColor: Color {
+        Color(red: state.color.red, green: state.color.green, blue: state.color.blue)
+    }
+
+    private var inkHelp: String {
+        if usesIntensity { return "Intensity" }
+        return state.tool == .text ? "Color & Text Size" : "Color & Stroke"
+    }
+
+    /// Current color swatch (or intensity) so the setting is visible without opening the popover
     @ViewBuilder
-    private var contextualProperties: some View {
-        if state.tool == .blur || state.tool == .pixelate {
-            HStack(spacing: 6) {
+    private var inkButtonLabel: some View {
+        HStack(spacing: 5) {
+            if usesIntensity {
                 Image(systemName: state.tool == .blur ? "drop.fill" : "checkerboard.rectangle")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Slider(value: $state.blurRadius, in: 8...60, step: 2)
-                    .controlSize(.small)
-                    .frame(width: 90)
-                Text("\(Int(state.blurRadius))px")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 34, alignment: .leading)
+                    .font(.system(size: 12, weight: .medium))
+                Text("\(Int(state.blurRadius))")
+                    .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+            } else {
+                Circle()
+                    .fill(currentColor.gradient)
+                    .frame(width: 16, height: 16)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
+                    .padding(2)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.35), lineWidth: 1.5))
+                if state.tool == .text {
+                    Text("\(Int(state.fontSize))")
+                        .font(.system(size: 11.5, weight: .medium).monospacedDigit())
+                } else if state.tool != .highlight {
+                    Capsule()
+                        .fill(Color.primary)
+                        .frame(width: 12, height: CGFloat(max(1.5, state.strokeWidth / 2)))
+                }
             }
-        } else if state.tool == .text {
-            HStack(spacing: 6) {
-                Image(systemName: "textformat.size")
-                    .font(.system(size: 11))
-                    .foregroundStyle(.secondary)
-                Slider(value: $state.fontSize, in: 12...72, step: 2)
-                    .controlSize(.small)
-                    .frame(width: 76)
-                Text("\(Int(state.fontSize))pt")
-                    .font(.system(size: 11, design: .monospaced))
-                    .foregroundStyle(.secondary)
-                    .frame(width: 30, alignment: .leading)
-                ToolbarSeparator(height: 16)
-                colorChips
-            }
-        } else {
-            HStack(spacing: 8) {
-                colorChips
-                if state.tool != .highlight {
-                    ToolbarSeparator(height: 16)
-                    HStack(spacing: 2) {
-                        thicknessButton(width: 2.0, label: "Fine")
-                        thicknessButton(width: 4.0, label: "Medium")
-                        thicknessButton(width: 8.0, label: "Bold")
+            Image(systemName: "chevron.down")
+                .font(.system(size: 8, weight: .bold))
+                .foregroundStyle(.secondary)
+        }
+        .padding(.horizontal, 8)
+    }
+
+    private var inkPanel: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            if usesIntensity {
+                panelSlider(state.tool == .blur ? "Blur" : "Pixel Size", value: $state.blurRadius, range: 8...60, unit: "px")
+            } else {
+                VStack(alignment: .leading, spacing: 8) {
+                    panelHeading("Color")
+                    HStack(spacing: 8) { colorChips }
+                }
+                if state.tool == .text {
+                    panelSlider("Size", value: $state.fontSize, range: 12...72, unit: "pt")
+                } else if state.tool != .highlight {
+                    VStack(alignment: .leading, spacing: 8) {
+                        panelHeading("Stroke")
+                        Picker("Stroke", selection: $state.strokeWidth) {
+                            Text("Fine").tag(2.0)
+                            Text("Medium").tag(4.0)
+                            Text("Bold").tag(8.0)
+                        }
+                        .pickerStyle(.segmented)
+                        .labelsHidden()
                     }
                 }
             }
+        }
+        .padding(14)
+        .frame(width: 236)
+    }
+
+    private func panelHeading(_ title: String) -> some View {
+        Text(title)
+            .font(.system(size: 11, weight: .semibold))
+            .foregroundStyle(.secondary)
+    }
+
+    private func panelSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                panelHeading(title)
+                Spacer()
+                Text("\(Int(value.wrappedValue)) \(unit)")
+                    .font(.system(size: 11).monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            Slider(value: value, in: range, step: 2)
+                .controlSize(.small)
         }
     }
 
@@ -268,14 +313,14 @@ public struct EditorToolbarView: View {
     }
 
     private var colorChips: some View {
-        HStack(spacing: 6) {
+        HStack(spacing: 4) {
             ForEach(standardColors, id: \.self) { color in
                 let isSelected = state.color == color
                 Circle()
                     .fill(Color(red: color.red, green: color.green, blue: color.blue).gradient)
-                    .frame(width: 16, height: 16)
+                    .frame(width: 20, height: 20)
                     .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
-                    .padding(2)
+                    .padding(2.5)
                     .overlay(Circle().strokeBorder(Color.primary.opacity(isSelected ? 0.85 : 0), lineWidth: 1.5))
                     .scaleEffect(isSelected ? 1.06 : 1)
                     .contentShape(Circle())
@@ -283,18 +328,6 @@ public struct EditorToolbarView: View {
                     .animation(.snappy(duration: 0.15), value: isSelected)
             }
         }
-    }
-
-    private func thicknessButton(width: Double, label: String) -> some View {
-        Button {
-            state.strokeWidth = width
-        } label: {
-            Circle()
-                .fill(Color.primary)
-                .frame(width: CGFloat(width + 1), height: CGFloat(width + 1))
-        }
-        .buttonStyle(ToolbarIconButtonStyle(isActive: state.strokeWidth == width, activeStyle: .tinted, size: 24))
-        .help(label)
     }
 }
 
