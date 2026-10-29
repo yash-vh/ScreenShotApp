@@ -73,7 +73,12 @@ public final class CaptureCoordinator: ObservableObject {
             do {
                 let cgImage = try await ScreenCaptureService.shared.captureDisplay(displayId: displayId)
                 PermissionManager.shared.markAuthorized()
-                self.processCapturedImage(cgImage, title: "Full Screen Capture", scaleFactor: Double(screen?.backingScaleFactor ?? 2.0))
+                if let screen {
+                    // Same annotate / copy / save / upload toolbar as an area capture, over the whole display
+                    self.presentEditor(cgImage, frame: screen.frame, on: screen, title: "Full Screen Capture")
+                    return
+                }
+                self.processCapturedImage(cgImage, title: "Full Screen Capture", scaleFactor: 2.0)
             } catch {
                 AppLogger.shared.capture.error("Full screen capture error: \(error.localizedDescription, privacy: .public)")
                 AppCoordinator.shared.lastErrorMessage = error.localizedDescription
@@ -102,6 +107,10 @@ public final class CaptureCoordinator: ObservableObject {
                     do {
                         let cgImage = try await ScreenCaptureService.shared.captureWindow(windowId: windowId)
                         PermissionManager.shared.markAuthorized()
+                        if let placement = Self.editorPlacement(forWindow: windowId, imageSize: CGSize(width: cgImage.width, height: cgImage.height)) {
+                            self.presentEditor(cgImage, frame: placement.frame, on: placement.screen, title: "Window Capture")
+                            return
+                        }
                         self.processCapturedImage(cgImage, title: "Window Capture", scaleFactor: Double(OverlayWindow.screenUnderMouse?.backingScaleFactor ?? 2.0))
                     } catch {
                         AppLogger.shared.capture.error("Window capture error: \(error.localizedDescription, privacy: .public)")
@@ -114,6 +123,54 @@ public final class CaptureCoordinator: ObservableObject {
                 self?.isCapturing = false
             }
         )
+    }
+
+    // MARK: - Editor for Full Screen & Window Captures
+
+    /// Shows the annotation toolbar over an already-captured image; finishing runs the area-capture pipeline
+    private func presentEditor(_ image: CGImage, frame: CGRect, on screen: NSScreen, title: String) {
+        let scale = Double(image.width) / Double(max(frame.width, 1))
+        RegionSelectionOverlayController.shared.presentEditor(
+            image: image,
+            frame: frame,
+            on: screen,
+            onComplete: { [weak self] _, _, action, edited in
+                Task { @MainActor [weak self] in
+                    self?.processCapturedRegion(edited ?? image, title: title, scaleFactor: scale, action: action)
+                    self?.isCapturing = false
+                }
+            },
+            onCancel: { [weak self] in
+                self?.isCapturing = false
+            }
+        )
+    }
+
+    /// Where to show a captured window for editing: over the window itself when it fits on one display,
+    /// otherwise scaled to fit the display that shows most of it
+    static func editorPlacement(forWindow windowId: CGWindowID, imageSize: CGSize) -> (frame: CGRect, screen: NSScreen)? {
+        guard let info = (CGWindowListCopyWindowInfo([.optionIncludingWindow], windowId) as? [[String: Any]])?.first,
+              let boundsDict = info[kCGWindowBounds as String] as? [String: Any],
+              let cgRect = CGRect(dictionaryRepresentation: boundsDict as CFDictionary),
+              let primary = NSScreen.screens.first else { return nil }
+        // CoreGraphics is top-left origin on the primary display; AppKit is bottom-left
+        let rect = CGRect(x: cgRect.minX, y: primary.frame.height - cgRect.maxY, width: cgRect.width, height: cgRect.height)
+        let screen = NSScreen.screens.max { a, b in
+            a.frame.intersection(rect).width * a.frame.intersection(rect).height < b.frame.intersection(rect).width * b.frame.intersection(rect).height
+        } ?? primary
+        return (fittedFrame(for: rect, imageSize: imageSize, in: screen.visibleFrame), screen)
+    }
+
+    /// `rect` when it lies inside `area`, else the image aspect-fitted and centered in `area` (with a margin)
+    static func fittedFrame(for rect: CGRect, imageSize: CGSize, in area: CGRect) -> CGRect {
+        if area.contains(rect) { return rect }
+        let bounds = area.insetBy(dx: 40, dy: 40)
+        let aspect = imageSize.width / max(imageSize.height, 1)
+        var size = CGSize(width: min(rect.width, bounds.width), height: min(rect.width, bounds.width) / aspect)
+        if size.height > bounds.height {
+            size = CGSize(width: bounds.height * aspect, height: bounds.height)
+        }
+        return CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height).integral
     }
 
     /// Select a region and copy the recognized text (or QR / barcode payload) to the clipboard

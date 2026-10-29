@@ -3,7 +3,7 @@ import CoreGraphics
 import CoreSpotlight
 @testable import ScreenshotApp
 
-/// Auto-blur detection, text-snapping highlights, scrolling-capture stitching and Spotlight items
+/// Auto-blur detection, text-snapping highlights, step numbering and Spotlight items
 final class CaptureToolsTests: XCTestCase {
     // MARK: - Sensitive Info
 
@@ -81,70 +81,6 @@ final class CaptureToolsTests: XCTestCase {
         XCTAssertEqual(doc.nextStepNumber, 5)
     }
 
-    // MARK: - Scroll Stitching
-
-    /// A tall "page" of distinct rows with a fixed header and footer, viewed through a window at `offset`
-    private static func viewport(offset: Int, height: Int = 120, width: Int = 64, header: Int = 10, footer: Int = 8) -> CGImage {
-        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4,
-                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
-        // CGContext is y-up: row r from the top lives at y = height - 1 - r
-        for r in 0..<height {
-            let color: CGColor
-            if r < header {
-                color = CGColor(red: 0.1, green: 0.1, blue: 0.1, alpha: 1)
-            } else if r >= height - footer {
-                color = CGColor(red: 0.9, green: 0.9, blue: 0.9, alpha: 1)
-            } else {
-                color = pageRowColor(r - header + offset)
-            }
-            ctx.setFillColor(color)
-            ctx.fill(CGRect(x: 0, y: height - 1 - r, width: width / 2, height: 1))
-            // Second half varies too so every row is distinct; header / footer rows are keyed to their own edge
-            if r < header {
-                ctx.setFillColor(pageRowColor(5_000 + r))
-            } else if r >= height - footer {
-                ctx.setFillColor(pageRowColor(9_000 + height - r))
-            } else {
-                ctx.setFillColor(pageRowColor((r - header + offset) * 7 + 3))
-            }
-            ctx.fill(CGRect(x: width / 2, y: height - 1 - r, width: width / 2, height: 1))
-        }
-        return ctx.makeImage()!
-    }
-
-    private static func pageRowColor(_ row: Int) -> CGColor {
-        let v = (row * 37) % 251
-        let w = (row * 91) % 241
-        return CGColor(red: CGFloat(v) / 255, green: CGFloat(w) / 255, blue: CGFloat((row * 13) % 233) / 255, alpha: 1)
-    }
-
-    func testStitchesScrolledFramesWithStickyHeaderAndFooter() throws {
-        var stitcher = try XCTUnwrap(ScrollStitcher(firstFrame: Self.viewport(offset: 0)))
-        XCTAssertEqual(stitcher.append(Self.viewport(offset: 0)), .unchanged)
-        XCTAssertEqual(stitcher.append(Self.viewport(offset: 30)), .appended(rows: 30))
-        XCTAssertEqual(stitcher.append(Self.viewport(offset: 75)), .appended(rows: 45))
-
-        let image = try XCTUnwrap(stitcher.makeImage())
-        // Frame 120 = 10 header + 102 content + 8 footer; 75 rows of new content scrolled in
-        XCTAssertEqual(image.height, 120 + 75)
-        XCTAssertEqual(stitcher.acceptedFrames, 3)
-
-        // The stitched content equals a viewport over the whole scrolled page
-        let expected = Self.viewport(offset: 0, height: 195, footer: 8)
-        let spaceRGB = CGColorSpace(name: CGColorSpace.sRGB)!
-        let got = ScrollStitcher.pixels(of: image, width: 64, height: 195, bytesPerRow: 256, colorSpace: spaceRGB)
-        let want = ScrollStitcher.pixels(of: expected, width: 64, height: 195, bytesPerRow: 256, colorSpace: spaceRGB)
-        let g = try XCTUnwrap(got), w = try XCTUnwrap(want)
-        let firstBadRow = (0..<195).first { g[($0 * 256)..<($0 * 256 + 256)] != w[($0 * 256)..<($0 * 256 + 256)] }
-        XCTAssertNil(firstBadRow, "First mismatching row")
-    }
-
-    func testJumpWithoutOverlapLosesTrack() throws {
-        var stitcher = try XCTUnwrap(ScrollStitcher(firstFrame: Self.viewport(offset: 0)))
-        XCTAssertEqual(stitcher.append(Self.viewport(offset: 500)), .lostTrack)
-        XCTAssertEqual(stitcher.height, 120)
-    }
-
     // MARK: - Spotlight
 
     func testSpotlightItemCarriesTitleAndText() {
@@ -160,5 +96,23 @@ final class CaptureToolsTests: XCTestCase {
         XCTAssertEqual(item.attributeSet.title, "Region Capture")
         XCTAssertEqual(item.attributeSet.textContent, "Invoice total 42")
         XCTAssertEqual(item.attributeSet.contentURL, asset.originalFileURL)
+    }
+
+    // MARK: - Window Editor Placement
+
+    @MainActor
+    func testWindowEditorKeepsWindowPositionWhenItFits() {
+        let area = CGRect(x: 1440, y: 0, width: 1920, height: 1050) // second display to the right
+        let window = CGRect(x: 1600, y: 200, width: 800, height: 600)
+        XCTAssertEqual(CaptureCoordinator.fittedFrame(for: window, imageSize: CGSize(width: 1600, height: 1200), in: area), window)
+    }
+
+    @MainActor
+    func testWindowEditorFitsOversizedWindowOnScreen() {
+        let area = CGRect(x: 0, y: 0, width: 1440, height: 875)
+        let window = CGRect(x: -200, y: 100, width: 2000, height: 1000)
+        let fitted = CaptureCoordinator.fittedFrame(for: window, imageSize: CGSize(width: 4000, height: 2000), in: area)
+        XCTAssertTrue(area.contains(fitted))
+        XCTAssertEqual(fitted.width / fitted.height, 2, accuracy: 0.01)
     }
 }

@@ -132,8 +132,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         applyShortcut(settings.shortcutWindow, to: windowItem)
         menu.addItem(windowItem)
 
-        menu.addItem(actionItem("Scrolling Capture", symbol: CaptureActionType.scrolling.systemIcon, action: #selector(didSelectScrollingCapture)))
-
         let ocrItem = actionItem("Capture Text", symbol: "text.viewfinder", action: #selector(didSelectOcr))
         applyShortcut(settings.shortcutQuickOcr, to: ocrItem)
         menu.addItem(ocrItem)
@@ -335,10 +333,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func didSelectRecordFullScreen() {
         coordinator.startRecording(.fullScreen)
-    }
-
-    @objc private func didSelectScrollingCapture() {
-        coordinator.triggerCapture(type: .scrolling)
     }
 
     @objc private func didSelectOcr() {

@@ -53,7 +53,6 @@ private struct CaptureMenuContent: View {
         Button("Capture Selected Area") { coordinator.triggerCapture(type: .region) }
         Button("Capture Full Screen") { coordinator.triggerCapture(type: .fullScreen) }
         Button("Capture Window") { coordinator.triggerCapture(type: .window) }
-        Button("Scrolling Capture") { coordinator.triggerCapture(type: .scrolling) }
 
         Divider()
 

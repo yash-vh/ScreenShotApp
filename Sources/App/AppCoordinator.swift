@@ -7,7 +7,6 @@ public enum CaptureActionType: String, Sendable, CaseIterable {
     case region = "Selected Region"
     case fullScreen = "Full Screen"
     case window = "Window"
-    case scrolling = "Scrolling Capture"
     case recording = "Screen Recording"
     case ocr = "OCR Text from Screen"
 
@@ -16,7 +15,6 @@ public enum CaptureActionType: String, Sendable, CaseIterable {
         case .region: return "crop"
         case .fullScreen: return "macwindow"
         case .window: return "macwindow.on.rectangle"
-        case .scrolling: return "arrow.up.and.down.text.horizontal"
         case .recording: return "record.circle"
         case .ocr: return "text.viewfinder"
         }
@@ -91,8 +89,6 @@ public final class AppCoordinator: ObservableObject {
             startFullScreenCapture()
         case .window:
             startWindowCapture()
-        case .scrolling:
-            ScrollingCaptureController.shared.start()
         case .recording:
             toggleScreenRecording()
         case .ocr:

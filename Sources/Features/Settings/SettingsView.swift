@@ -762,7 +762,6 @@ struct AddShortcutSheet: View {
         "Capture Selected Region",
         "Capture Full Screen",
         "Capture Window",
-        "Scrolling Capture",
         "Record Screen",
         "OCR Text from Screen"
     ]

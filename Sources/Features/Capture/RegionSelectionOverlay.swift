@@ -15,6 +15,8 @@ public enum RegionCaptureAction {
 public enum RegionSelectionMode {
     case capture
     case quickSelect
+    /// Annotate an image that is already captured (full screen or window); the frame can't be moved or resized
+    case edit
 }
 
 /// Interactive multi-display transparent overlay window controller for region selection.
@@ -75,6 +77,11 @@ public final class RegionSelectionOverlayController: NSObject {
         for view in selectionViews {
             view.updatePointer(globalLocation: location)
         }
+        // Before anything is selected, the display under the pointer takes keyboard focus (Esc works there)
+        guard selectionViews.allSatisfy(\.isIdle) else { return }
+        if let window = overlayWindows.first(where: { NSMouseInRect(location, $0.frame, false) }), !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     /// A new selection may start on one display only when no other display holds annotations
@@ -83,6 +90,42 @@ public final class RegionSelectionOverlayController: NSObject {
         guard others.allSatisfy({ !$0.hasAnnotations }) else { return false }
         others.forEach { $0.clearSelection() }
         return true
+    }
+
+    /// Opens the annotation toolbar over an image that was already captured (full screen or window).
+    /// `frame` is where the image is shown, in global AppKit coordinates on `screen`.
+    public func presentEditor(
+        image: CGImage,
+        frame: CGRect,
+        on screen: NSScreen,
+        onComplete: @escaping (CGRect, NSScreen, RegionCaptureAction, CGImage?) -> Void,
+        onCancel: @escaping () -> Void
+    ) {
+        dismiss()
+        self.onSelectionComplete = onComplete
+        self.onCancelled = onCancel
+        NSApp.activate(ignoringOtherApps: true)
+
+        let window = OverlayWindow(screen: screen)
+        let local = CGRect(x: frame.minX - screen.frame.minX, y: frame.minY - screen.frame.minY, width: frame.width, height: frame.height)
+        let view = RegionSelectionView(
+            frame: NSRect(origin: .zero, size: screen.frame.size),
+            screen: screen,
+            screenSnapshot: nil,
+            mode: .edit,
+            fixedImage: image,
+            initialSelection: local
+        ) { [weak self] selectedRect, action, image in
+            self?.handleSelectionComplete(selectedRect, on: screen, action: action, image: image)
+        } onCancel: { [weak self] in
+            self?.handleCancelled()
+        }
+        view.coordinator = self
+        selectionViews.append(view)
+        window.contentView = view
+        overlayWindows.append(window)
+        window.makeKeyAndOrderFront(nil)
+        view.beginEditingFixedImage()
     }
 
     /// Dismisses all overlay windows and restores mouse cursor
@@ -155,6 +198,8 @@ final class RegionSelectionView: NSView {
     private let targetScreen: NSScreen
     private let screenSnapshot: CGImage?
     private let mode: RegionSelectionMode
+    /// Already-captured image annotated in `.edit` mode
+    private let fixedImage: CGImage?
     private let onComplete: (CGRect, RegionCaptureAction, CGImage?) -> Void
     private let onCancel: () -> Void
     fileprivate weak var coordinator: RegionSelectionOverlayController?
@@ -194,23 +239,48 @@ final class RegionSelectionView: NSView {
         screen: NSScreen,
         screenSnapshot: CGImage?,
         mode: RegionSelectionMode = .capture,
+        fixedImage: CGImage? = nil,
+        initialSelection: CGRect? = nil,
         onComplete: @escaping (CGRect, RegionCaptureAction, CGImage?) -> Void,
         onCancel: @escaping () -> Void
     ) {
         self.targetScreen = screen
         self.screenSnapshot = screenSnapshot
         self.mode = mode
+        self.fixedImage = fixedImage
         self.onComplete = onComplete
         self.onCancel = onCancel
         // Annotation sizes are in points; the frozen snapshot defines how many pixels each point covers
-        let pixelsPerPoint = screenSnapshot.map { Double($0.width) / Double(max(frame.width, 1)) } ?? Double(screen.backingScaleFactor)
+        var pixelsPerPoint = screenSnapshot.map { Double($0.width) / Double(max(frame.width, 1)) } ?? Double(screen.backingScaleFactor)
+        if let fixedImage, let initialSelection, initialSelection.width > 0 {
+            pixelsPerPoint = Double(fixedImage.width) / Double(initialSelection.width)
+        }
         self.undoRedoManager = UndoRedoManager(document: AnnotationDocument(assetId: UUID(), pixelsPerPoint: pixelsPerPoint))
         super.init(frame: frame)
 
         chromeView.frame = bounds
         chromeView.autoresizingMask = [.width, .height]
         chromeView.drawHandler = { [weak self] context in self?.drawSelectionChrome(in: context) }
+
+        if let initialSelection {
+            selectionRect = initialSelection
+            hasActiveSelection = true
+            croppedSnapshot = fixedImage
+        }
     }
+
+    /// Starts annotating the fixed image right away (call once the view is in its window)
+    func beginEditingFixedImage() {
+        guard mode == .edit, hasActiveSelection else { return }
+        startSessionIfNeeded()
+        needsDisplay = true
+    }
+
+    /// Nothing selected or being selected on this display
+    var isIdle: Bool { !hasActiveSelection && startPoint == nil }
+
+    // Overlays on other displays aren't key; take the first click instead of just activating the window
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
@@ -348,6 +418,7 @@ final class RegionSelectionView: NSView {
 
     /// Crops the frozen display snapshot to the current selection (pixels, top-left origin)
     private func updateCroppedSnapshot() {
+        guard mode != .edit else { return }
         guard let snapshot = screenSnapshot, selectionRect.width >= 1, selectionRect.height >= 1 else {
             croppedSnapshot = nil
             return
@@ -413,6 +484,12 @@ final class RegionSelectionView: NSView {
 
     override func mouseDown(with event: NSEvent) {
         let loc = convert(event.locationInWindow, from: nil)
+        if window?.isKeyWindow == false {
+            window?.makeKeyAndOrderFront(nil)
+        }
+
+        // An already-captured image keeps its frame; clicks outside it do nothing
+        if mode == .edit { return }
 
         if hasActiveSelection {
             if let handle = handleAt(point: loc), handle != .body {
@@ -441,6 +518,7 @@ final class RegionSelectionView: NSView {
     }
 
     override func mouseDragged(with event: NSEvent) {
+        guard mode != .edit else { return }
         let loc = convert(event.locationInWindow, from: nil)
         currentPoint = loc
 
@@ -457,6 +535,7 @@ final class RegionSelectionView: NSView {
     }
 
     override func mouseUp(with event: NSEvent) {
+        guard mode != .edit else { return }
         if activeHandle != nil {
             endSelectionDrag()
             return
@@ -487,6 +566,7 @@ final class RegionSelectionView: NSView {
                 finish(.copy)
                 return false
             }
+            guard mode != .edit else { return false }
             beginSelectionDrag(.body, at: loc)
         case .changed:
             updateSelectionDrag(to: loc)
@@ -717,7 +797,8 @@ final class RegionSelectionView: NSView {
 
     private func drawDimensionBadge(for rect: CGRect) {
         let scale = screenSnapshot.map { CGFloat($0.width) / bounds.width } ?? targetScreen.backingScaleFactor
-        let dimensionText = "\(Int(rect.width * scale)) × \(Int(rect.height * scale)) px"
+        let dimensionText = fixedImage.map { "\($0.width) × \($0.height) px" }
+            ?? "\(Int(rect.width * scale)) × \(Int(rect.height * scale)) px"
         let attributes: [NSAttributedString.Key: Any] = [
             .font: NSFont.monospacedSystemFont(ofSize: 11, weight: .semibold),
             .foregroundColor: NSColor.white

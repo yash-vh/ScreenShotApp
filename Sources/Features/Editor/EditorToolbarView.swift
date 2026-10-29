@@ -50,10 +50,11 @@ public struct EditorToolbarView: View {
         .black
     ]
 
-    private static let toolOrder: [(EditorTool, String)] = [
-        (.select, "V"), (.arrow, "A"), (.rectangle, "R"), (.ellipse, "O"), (.freehand, "P"),
-        (.highlight, "H"), (.text, "T"), (.step, "N"), (.blur, "B"), (.pixelate, "X")
+    private static let drawTools: [(EditorTool, String)] = [
+        (.select, "V"), (.arrow, "A"), (.rectangle, "R"), (.ellipse, "O"), (.freehand, "P")
     ]
+    private static let markTools: [(EditorTool, String)] = [(.highlight, "H"), (.text, "T"), (.step, "N")]
+    private static let redactTools: [(EditorTool, String)] = [(.blur, "B"), (.pixelate, "X")]
 
     public init(
         undoRedoManager: UndoRedoManager,
@@ -84,39 +85,55 @@ public struct EditorToolbarView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 10) {
-            // MARK: - 1. Tools Group
+        HStack(spacing: 8) {
+            // MARK: - 1. Tools, grouped by purpose: draw · mark up · redact
             ToolbarGroup {
-                ForEach(Self.toolOrder, id: \.0) { tool, shortcut in
-                    toolButton(tool, shortcut: shortcut)
+                ForEach(Self.drawTools, id: \.0) { toolButton($0.0, shortcut: $0.1) }
+            }
+            ToolbarGroup {
+                ForEach(Self.markTools, id: \.0) { toolButton($0.0, shortcut: $0.1) }
+            }
+            ToolbarGroup {
+                ForEach(Self.redactTools, id: \.0) { toolButton($0.0, shortcut: $0.1) }
+                if let onAutoRedact {
+                    Button(action: onAutoRedact) {
+                        if state.isAutoRedacting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "eye.slash")
+                        }
+                    }
+                    .buttonStyle(ToolbarIconButtonStyle(isActive: state.isAutoRedacting, activeStyle: .tinted))
+                    .disabled(state.isAutoRedacting)
+                    .help("Auto-Blur Sensitive Info: emails, phone numbers, cards, keys")
                 }
             }
 
             // MARK: - 2. Ink: color + stroke / size / intensity for the current tool, in one popover
-            Button {
-                isShowingInk.toggle()
-            } label: {
-                inkButtonLabel
-            }
-            .buttonStyle(ToolbarIconButtonStyle(isActive: isShowingInk, activeStyle: .tinted, fixedWidth: false))
-            .help(inkHelp)
-            .popover(isPresented: $isShowingInk, arrowEdge: .bottom) {
-                inkPanel
+            ToolbarGroup {
+                Button {
+                    isShowingInk.toggle()
+                } label: {
+                    inkButtonLabel
+                }
+                .buttonStyle(ToolbarIconButtonStyle(isActive: isShowingInk, activeStyle: .tinted, fixedWidth: false))
+                .help(inkHelp)
+                .popover(isPresented: $isShowingInk, arrowEdge: .bottom) {
+                    inkPanel
+                }
             }
 
             ToolbarSeparator()
 
-            // MARK: - 3. History & Layer Actions
-            HStack(spacing: 4) {
+            // MARK: - 3. History
+            ToolbarGroup {
                 iconButton("arrow.uturn.backward", help: "Undo (⌘Z)", enabled: undoRedoManager.canUndo, action: onUndo)
                 iconButton("arrow.uturn.forward", help: "Redo (⇧⌘Z)", enabled: undoRedoManager.canRedo, action: onRedo)
                 iconButton("trash", help: "Delete Selection (⌫)", enabled: state.hasSelection, action: onDelete)
             }
 
-            ToolbarSeparator()
-
             // MARK: - 4. Styling & Recognition
-            HStack(spacing: 4) {
+            ToolbarGroup {
                 Button {
                     isShowingStyle.toggle()
                 } label: {
@@ -139,19 +156,6 @@ public struct EditorToolbarView: View {
                 }
                 .buttonStyle(ToolbarIconButtonStyle(isActive: state.isShowingRecognition))
                 .help("Recognize Text & QR Codes (⇧⌘T)")
-
-                if let onAutoRedact {
-                    Button(action: onAutoRedact) {
-                        if state.isAutoRedacting {
-                            ProgressView().controlSize(.small)
-                        } else {
-                            Image(systemName: "eye.slash")
-                        }
-                    }
-                    .buttonStyle(ToolbarIconButtonStyle(isActive: state.isAutoRedacting))
-                    .disabled(state.isAutoRedacting)
-                    .help("Auto-Blur Sensitive Info: emails, phone numbers, cards, keys")
-                }
             }
 
             if placement == .docked {
@@ -160,37 +164,37 @@ public struct EditorToolbarView: View {
                 ToolbarSeparator()
             }
 
-            // MARK: - 5. Direct Actions
-            HStack(spacing: 8) {
-                Button(action: onCopyToClipboard) {
-                    Label("Copy", systemImage: "doc.on.doc.fill")
-                        .labelStyle(.titleAndIcon)
-                        .font(.system(size: 12.5, weight: .semibold))
-                        .padding(.horizontal, 16)
-                        .frame(height: 32)
-                        .foregroundStyle(.white)
-                        .background(Color.accentColor, in: Capsule())
-                        .contentShape(Capsule())
-                }
-                .buttonStyle(PressableButtonStyle())
-                .help("Copy to Clipboard (⌘C)")
-
+            // MARK: - 5. Output: secondary actions, then the primary Copy, then close
+            HStack(spacing: 4) {
                 ForEach(secondaryActions) { item in
                     Button(action: item.action) {
                         Image(systemName: item.symbol)
                     }
-                    .buttonStyle(ToolbarIconButtonStyle(isActive: false, filled: true))
+                    .buttonStyle(ToolbarIconButtonStyle(isActive: false))
                     .help(item.help)
                 }
-
-                Button(action: onClose) {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 12, weight: .semibold))
-                }
-                .buttonStyle(ToolbarIconButtonStyle(isActive: false))
-                .accessibilityLabel(closeTitle)
-                .help(closeHelp)
             }
+
+            Button(action: onCopyToClipboard) {
+                Label("Copy", systemImage: "doc.on.doc.fill")
+                    .labelStyle(.titleAndIcon)
+                    .font(.system(size: 12.5, weight: .semibold))
+                    .padding(.horizontal, 16)
+                    .frame(height: 32)
+                    .foregroundStyle(.white)
+                    .background(Color.accentColor.gradient, in: Capsule())
+                    .contentShape(Capsule())
+            }
+            .buttonStyle(PressableButtonStyle())
+            .help("Copy to Clipboard (⌘C · Return)")
+
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .bold))
+            }
+            .buttonStyle(ToolbarIconButtonStyle(isActive: false, filled: true, size: 28, shape: .circle))
+            .accessibilityLabel(closeTitle)
+            .help(closeHelp)
         }
         .padding(.horizontal, placement == .floating ? 12 : 14)
         .padding(.vertical, 10)
@@ -357,9 +361,9 @@ private struct ToolbarGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        HStack(spacing: 4) { content }
-            .padding(4)
-            .frame(minHeight: 40)
+        HStack(spacing: 2) { content }
+            .padding(3)
+            .frame(minHeight: 38)
             .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
@@ -383,6 +387,9 @@ private struct ToolbarIconButtonStyle: ButtonStyle {
     var filled = false
     var fixedWidth = true
     var size: CGFloat = 32
+    var shape: Shape = .rounded
+
+    enum Shape { case rounded, circle }
 
     func makeBody(configuration: Configuration) -> some View {
         StyledLabel(configuration: configuration, style: self)
@@ -395,7 +402,7 @@ private struct ToolbarIconButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
-            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
+            let shape = RoundedRectangle(cornerRadius: style.shape == .circle ? style.size / 2 : 9, style: .continuous)
             configuration.label
                 .font(.system(size: 13, weight: style.isActive ? .semibold : .medium))
                 .frame(width: style.fixedWidth ? style.size : nil, height: style.size)

@@ -174,7 +174,6 @@ extension CaptureActionType {
         case "Capture Selected Region": self = .region
         case "Capture Full Screen": self = .fullScreen
         case "Capture Window": self = .window
-        case "Scrolling Capture": self = .scrolling
         case "Record Screen": self = .recording
         case "OCR Text from Screen": self = .ocr
         default: return nil
