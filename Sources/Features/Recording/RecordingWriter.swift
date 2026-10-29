@@ -5,7 +5,7 @@ import Foundation
 /// Writes screen frames plus optional system-audio and microphone tracks to an MP4.
 /// Every method must be called on `queue`; the stream and microphone outputs deliver there.
 public final class RecordingWriter: @unchecked Sendable {
-    public let queue = DispatchQueue(label: "com.screenshotapp.recording-writer", qos: .userInitiated)
+    public let queue = DispatchQueue(label: "com.screenmint.recording-writer", qos: .userInitiated)
     public let outputURL: URL
 
     private let writer: AVAssetWriter

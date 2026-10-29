@@ -21,7 +21,7 @@ public struct StorageUsage: Equatable, Sendable {
 }
 
 /// Persistent, searchable capture history backed by SwiftData.
-/// Owns the app-managed media folder in `~/Library/Application Support/com.screenshotapp.mac`.
+/// Owns the app-managed media folder in `~/Library/Application Support/com.screenmint.mac`.
 @MainActor
 public final class HistoryStore: ObservableObject {
     public static let shared = HistoryStore()

@@ -28,6 +28,10 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     public var baseCGImage: CGImage? {
         didSet {
             rebuildPreviewBase()
+            textLineTask?.cancel()
+            textLineTask = nil
+            textLineBoxes = nil
+            if state.tool == .highlight { loadTextLinesIfNeeded() }
             needsDisplay = true
         }
     }
@@ -79,6 +83,11 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     private var previewBaseImage: CGImage?
     private var previewImage: CGImage?
     private var previewRedactionItems: [AnnotationItem] = []
+
+    // Recognized text lines the highlighter snaps to (loaded when the highlighter is picked)
+    private var textLineBoxes: [NormalizedRect]?
+    private var textLineTask: Task<Void, Never>?
+    private var autoRedactTask: Task<Void, Never>?
 
     // Floating Toast Notification
     private var toastMessage: String?
@@ -245,6 +254,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     private func toolDidChange(to tool: EditorTool) {
         commitInlineTextEditor()
+        if tool == .highlight { loadTextLinesIfNeeded() }
         if tool != .select {
             selectedItemId = nil
         }
@@ -268,7 +278,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         if Self.strokedTypes.contains(item.type) && state.strokeWidth != item.strokeWidth {
             state.strokeWidth = item.strokeWidth
         }
-        if item.type == .text, let size = item.fontSize, state.fontSize != size {
+        if item.type == .text || item.type == .step, let size = item.fontSize, state.fontSize != size {
             state.fontSize = size
         }
         if let radius = item.blurRadius, item.type == .blur || item.type == .pixelation, state.blurRadius != radius {
@@ -285,6 +295,17 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     }
 
     private func applyFontSize(_ size: Double) {
+        if selectedItem?.type == .step {
+            applyToSelection(key: "font", where: { $0.type == .step }) { updated in
+                let center = renderer.point(for: NormalizedPoint(
+                    x: updated.bounds.origin.x + updated.bounds.width / 2,
+                    y: updated.bounds.origin.y + updated.bounds.height / 2
+                ))
+                updated.fontSize = size
+                updated.bounds = stepBounds(centeredAt: center, size: size)
+            }
+            return
+        }
         let origin = selectedItem.map { renderer.point(for: $0.bounds.origin) } ?? .zero
         applyToSelection(key: "font", where: { $0.type == .text }) { updated in
             updated.fontSize = size
@@ -401,7 +422,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     public static let toolShortcuts: [String: EditorTool] = [
         "v": .select, "a": .arrow, "r": .rectangle, "o": .ellipse, "p": .freehand,
-        "h": .highlight, "t": .text, "b": .blur, "x": .pixelate
+        "h": .highlight, "t": .text, "n": .step, "b": .blur, "x": .pixelate
     ]
 
     public override func cancelOperation(_ sender: Any?) {
@@ -502,22 +523,96 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     public override func menu(for event: NSEvent) -> NSMenu? {
         let loc = convert(event.locationInWindow, from: nil)
-        guard let hit = findItem(at: loc, forSelectTool: true) else { return nil }
         commitInlineTextEditor()
-        selectedItemId = hit.id
-
         let menu = NSMenu()
+
+        guard let hit = findItem(at: loc, forSelectTool: true) else {
+            // Empty canvas: history, tool picker and quick actions
+            selectedItemId = nil
+            menu.addItem(Self.menuItem("Undo", symbol: "arrow.uturn.backward", action: #selector(undo(_:)), key: "z"))
+            menu.addItem(Self.menuItem("Redo", symbol: "arrow.uturn.forward", action: #selector(redo(_:)), key: "z", modifiers: [.command, .shift]))
+            menu.addItem(.separator())
+            let tools = NSMenu()
+            for tool in EditorTool.allCases {
+                let item = Self.menuItem(tool.rawValue, symbol: tool.systemIcon, action: #selector(selectToolFromMenu(_:)))
+                item.representedObject = tool.rawValue
+                item.state = tool == currentTool ? .on : .off
+                item.target = self
+                tools.addItem(item)
+            }
+            let toolItem = Self.menuItem("Tool", symbol: currentTool.systemIcon, action: nil)
+            toolItem.submenu = tools
+            menu.addItem(toolItem)
+            menu.addItem(.separator())
+            menu.addItem(Self.menuItem("Copy Image", symbol: "doc.on.doc", action: #selector(copy(_:)), key: "c"))
+            menu.items.forEach { if $0.action != nil { $0.target = self } }
+            return menu
+        }
+
+        selectedItemId = hit.id
         if hit.type == .text {
-            menu.addItem(withTitle: "Edit Text", action: #selector(editText(_:)), keyEquivalent: "\r")
+            menu.addItem(Self.menuItem("Edit Text", symbol: "character.cursor.ibeam", action: #selector(editText(_:)), key: "\r", modifiers: []))
             menu.addItem(.separator())
         }
-        menu.addItem(withTitle: "Duplicate", action: #selector(duplicate(_:)), keyEquivalent: "d")
-        menu.addItem(withTitle: "Bring to Front", action: #selector(bringToFront(_:)), keyEquivalent: "]")
-        menu.addItem(withTitle: "Send to Back", action: #selector(sendToBack(_:)), keyEquivalent: "[")
+        if hit.type != .blur && hit.type != .pixelation {
+            let colors = NSMenu()
+            for (name, color) in Self.menuColors {
+                let item = NSMenuItem(title: name, action: #selector(setColorFromMenu(_:)), keyEquivalent: "")
+                item.image = Self.colorSwatch(color)
+                item.representedObject = name
+                item.state = hit.strokeColor == color ? .on : .off
+                item.target = self
+                colors.addItem(item)
+            }
+            let colorItem = Self.menuItem("Color", symbol: "paintpalette", action: nil)
+            colorItem.submenu = colors
+            menu.addItem(colorItem)
+        }
+        menu.addItem(Self.menuItem("Duplicate", symbol: "plus.square.on.square", action: #selector(duplicate(_:)), key: "d"))
         menu.addItem(.separator())
-        menu.addItem(withTitle: "Delete", action: #selector(delete(_:)), keyEquivalent: "")
-        menu.items.forEach { $0.target = self }
+        menu.addItem(Self.menuItem("Bring to Front", symbol: "square.3.layers.3d.top.filled", action: #selector(bringToFront(_:)), key: "]"))
+        menu.addItem(Self.menuItem("Send to Back", symbol: "square.3.layers.3d.bottom.filled", action: #selector(sendToBack(_:)), key: "["))
+        menu.addItem(.separator())
+        let delete = Self.menuItem("Delete", symbol: "trash", action: #selector(delete(_:)), key: "\u{8}", modifiers: [])
+        delete.image = delete.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemRed]))
+        menu.addItem(delete)
+        menu.items.forEach { if $0.action != nil { $0.target = self } }
         return menu
+    }
+
+    private static let menuColors: [(String, AnnotationColor)] = [
+        ("Red", .red), ("Yellow", .yellow), ("Green", .green), ("Blue", .blue), ("White", .white), ("Black", .black)
+    ]
+
+    private static func menuItem(_ title: String, symbol: String, action: Selector?, key: String = "", modifiers: NSEvent.ModifierFlags = [.command]) -> NSMenuItem {
+        let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+        item.keyEquivalentModifierMask = modifiers
+        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+        return item
+    }
+
+    private static func colorSwatch(_ color: AnnotationColor) -> NSImage {
+        NSImage(size: NSSize(width: 14, height: 14), flipped: false) { rect in
+            let circle = NSBezierPath(ovalIn: rect.insetBy(dx: 1, dy: 1))
+            NSColor(srgbRed: color.red, green: color.green, blue: color.blue, alpha: 1).setFill()
+            circle.fill()
+            NSColor.labelColor.withAlphaComponent(0.25).setStroke()
+            circle.lineWidth = 0.5
+            circle.stroke()
+            return true
+        }
+    }
+
+    @objc private func selectToolFromMenu(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let tool = EditorTool(rawValue: raw) else { return }
+        currentTool = tool
+    }
+
+    @objc private func setColorFromMenu(_ sender: NSMenuItem) {
+        guard let name = sender.representedObject as? String,
+              let color = Self.menuColors.first(where: { $0.0 == name })?.1 else { return }
+        state.color = color
     }
 
     // MARK: - Live Redaction Preview
@@ -608,6 +703,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         // Select & move an existing annotation
         if let hit = findItem(at: loc, forSelectTool: currentTool == .select) {
             selectedItemId = hit.id
+            NSCursor.closedHand.set()
             beginInteraction(.moving(original: hit, mouseStart: loc))
             return
         }
@@ -628,6 +724,11 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         if currentTool == .text {
             selectedItemId = nil
             startNewInlineTextEditor(at: loc)
+            return
+        }
+
+        if currentTool == .step {
+            placeStep(at: loc)
             return
         }
 
@@ -860,7 +961,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
                 if Self.ellipseHit(point, in: rect, tolerance: tolerance, filled: forSelectTool) {
                     return item
                 }
-            case .text, .highlight, .blur, .pixelation:
+            case .text, .highlight, .blur, .pixelation, .step:
                 if rect.insetBy(dx: -4, dy: -4).contains(point) {
                     return item
                 }
@@ -945,14 +1046,10 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         guard interaction == nil else { return }
         if let item = selectedItem {
             if item.type == .arrow, arrowEndpointIndex(of: item, at: loc) != nil {
-                NSCursor.crosshair.set(); return
+                NSCursor.pointingHand.set(); return
             }
             if let handle = handle(of: item, at: loc) {
-                switch handle {
-                case .left, .right: NSCursor.resizeLeftRight.set()
-                case .top, .bottom: NSCursor.resizeUpDown.set()
-                default: NSCursor.crosshair.set()
-                }
+                ToolCursor.resize(Self.resizePosition(for: handle)).set()
                 return
             }
         }
@@ -960,10 +1057,20 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
             NSCursor.openHand.set()
             return
         }
-        switch currentTool {
-        case .select: NSCursor.arrow.set()
-        case .text: (imageRect.contains(loc) ? NSCursor.iBeam : NSCursor.arrow).set()
-        default: (imageRect.contains(loc) ? NSCursor.crosshair : NSCursor.arrow).set()
+        (imageRect.contains(loc) ? ToolCursor.cursor(for: currentTool) : NSCursor.arrow).set()
+    }
+
+    /// Canvas is flipped (y down), so `.top` handles sit at the visual top
+    private static func resizePosition(for handle: Handle) -> ToolCursor.ResizePosition {
+        switch handle {
+        case .topLeft: return .topLeft
+        case .top: return .top
+        case .topRight: return .topRight
+        case .right: return .right
+        case .bottomRight: return .bottomRight
+        case .bottom: return .bottom
+        case .bottomLeft: return .bottomLeft
+        case .left: return .left
         }
     }
 
@@ -993,6 +1100,17 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
             guard hypot(end.x - start.x, end.y - start.y) >= minDragPoints * 2 else { return }
             itemType = .arrow
             points = [normStart, normEnd]
+        case .highlight where abs(end.x - start.x) >= minDragPoints:
+            // Snap to the text lines under the stroke; a drag over no text falls back to a plain box
+            let snapped = TextHighlightSnapper.snap(drag: bounds, lines: textLineBoxes ?? [])
+            if !snapped.isEmpty {
+                let items = snapped.map { AnnotationItem(type: .highlight, bounds: $0, strokeColor: state.color, strokeWidth: state.strokeWidth) }
+                undoRedoManager.updateDocument { $0.items.append(contentsOf: items) }
+                selectedItemId = items.count == 1 ? items[0].id : nil
+                return
+            }
+            guard abs(end.y - start.y) >= minDragPoints else { return }
+            itemType = .highlight
         default:
             guard abs(end.x - start.x) >= minDragPoints, abs(end.y - start.y) >= minDragPoints else { return }
             switch currentTool {
@@ -1016,6 +1134,74 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         )
         undoRedoManager.addItem(item)
         selectedItemId = item.id
+    }
+
+    // MARK: - Step Markers
+
+    /// Diameter of a step badge for the given size setting, in annotation points
+    private static func stepDiameter(for size: Double) -> CGFloat { CGFloat(size) * 1.35 }
+
+    private func stepBounds(centeredAt center: CGPoint, size: Double) -> NormalizedRect {
+        let iRect = imageRect
+        let d = Self.stepDiameter(for: size) * renderer.scale
+        let x = min(max(center.x - d / 2, iRect.minX), iRect.maxX - d)
+        let y = min(max(center.y - d / 2, iRect.minY), iRect.maxY - d)
+        let origin = normalize(point: CGPoint(x: x, y: y))
+        let corner = normalize(point: CGPoint(x: x + d, y: y + d))
+        return NormalizedRect(x: origin.x, y: origin.y, width: corner.x - origin.x, height: corner.y - origin.y)
+    }
+
+    /// Drops the next numbered step (1, 2, 3…) centered on the click
+    private func placeStep(at loc: CGPoint) {
+        let item = AnnotationItem(
+            type: .step,
+            bounds: stepBounds(centeredAt: loc, size: state.fontSize),
+            strokeColor: state.color,
+            textContent: String(document.nextStepNumber),
+            fontSize: state.fontSize
+        )
+        undoRedoManager.addItem(item)
+        selectedItemId = item.id
+    }
+
+    // MARK: - Text-Aware Highlighting & Auto Redaction
+
+    /// Recognizes text lines once per image so highlighter strokes can snap to them
+    private func loadTextLinesIfNeeded() {
+        guard textLineBoxes == nil, textLineTask == nil, let image = baseCGImage else { return }
+        textLineTask = Task { @MainActor [weak self] in
+            let result = try? await VisionService.shared.recognize(in: image, recognitionLevel: .fast)
+            guard let self, !Task.isCancelled else { return }
+            self.textLineBoxes = result?.textBlocks.map(\.boundingBox) ?? []
+            self.textLineTask = nil
+        }
+    }
+
+    /// Finds emails, phone numbers, card numbers, keys and similar text in the image and covers each with a redaction
+    public func autoRedactSensitiveInfo() {
+        guard autoRedactTask == nil, let image = baseCGImage else { return }
+        commitInlineTextEditor()
+        state.isAutoRedacting = true
+        let style: AnnotationType = AppConfiguration.shared.captureSettings.defaultRedactionStyle == .pixelate ? .pixelation : .blur
+        autoRedactTask = Task { @MainActor [weak self] in
+            let regions = (try? await SensitiveInfoDetector.detectRegions(in: image)) ?? []
+            guard let self else { return }
+            self.autoRedactTask = nil
+            self.state.isAutoRedacting = false
+            guard !Task.isCancelled else { return }
+
+            // Skip areas that are already covered by an earlier redaction
+            let existing = self.document.items.filter { $0.type == .blur || $0.type == .pixelation }.map(\.bounds)
+            let fresh = regions.filter { region in !existing.contains { $0 == region } }
+            guard !fresh.isEmpty else {
+                self.showToast("No sensitive info found")
+                return
+            }
+            let items = fresh.map { AnnotationItem(type: style, bounds: $0, strokeColor: .black, blurRadius: self.state.blurRadius) }
+            self.undoRedoManager.updateDocument { $0.items.append(contentsOf: items) }
+            self.selectedItemId = nil
+            self.showToast("Blurred \(items.count) sensitive item\(items.count == 1 ? "" : "s")")
+        }
     }
 
     // MARK: - In-Place Text Editor

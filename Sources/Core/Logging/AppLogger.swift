@@ -2,12 +2,12 @@ import Foundation
 import os
 import OSLog
 
-/// Unified logging facility for ScreenshotApp.
+/// Unified logging facility for ScreenMint.
 /// Wraps `os.Logger` with domain categories, sensitive data redaction, and in-memory log auditing.
 public final class AppLogger: @unchecked Sendable {
     public static let shared = AppLogger()
 
-    private let subsystem = "com.screenshotapp.mac"
+    private let subsystem = "com.screenmint.mac"
 
     // Unified OS Loggers
     public let app: Logger
@@ -120,7 +120,7 @@ public final class AppLogger: @unchecked Sendable {
     /// Entries before this are hidden from `loadRecentLogs` (the system log itself can't be erased)
     private var clearedAt: Date?
 
-    /// This process's SyncShot entries from the unified system log, oldest first, redacted.
+    /// This process's ScreenMint entries from the unified system log, oldest first, redacted.
     /// Covers every `Logger` category (app, capture, sharing, …), not just the in-memory buffer.
     public func loadRecentLogs(within interval: TimeInterval = 3600, limit: Int = 500) async -> [LogEntry] {
         let since = max(Date().addingTimeInterval(-interval), lock.withLock { clearedAt } ?? .distantPast)

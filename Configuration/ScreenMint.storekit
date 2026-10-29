@@ -23,7 +23,7 @@
       "localizations" : [
 
       ],
-      "name" : "SyncShot Pro",
+      "name" : "ScreenMint Pro",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -39,12 +39,12 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "All SyncShot Pro features, billed monthly.",
-              "displayName" : "SyncShot Pro Monthly",
+              "description" : "All ScreenMint Pro features, billed monthly.",
+              "displayName" : "ScreenMint Pro Monthly",
               "locale" : "en_US"
             }
           ],
-          "productID" : "com.screenshotapp.mac.pro.monthly",
+          "productID" : "com.screenmint.mac.pro.monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Pro Monthly",
           "subscriptionGroupID" : "21500001",
@@ -71,12 +71,12 @@
           },
           "localizations" : [
             {
-              "description" : "All SyncShot Pro features, billed yearly.",
-              "displayName" : "SyncShot Pro Yearly",
+              "description" : "All ScreenMint Pro features, billed yearly.",
+              "displayName" : "ScreenMint Pro Yearly",
               "locale" : "en_US"
             }
           ],
-          "productID" : "com.screenshotapp.mac.pro.yearly",
+          "productID" : "com.screenmint.mac.pro.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro Yearly",
           "subscriptionGroupID" : "21500001",

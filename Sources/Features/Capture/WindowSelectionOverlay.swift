@@ -7,6 +7,8 @@ public final class WindowSelectionOverlayController: NSObject {
     public static let shared = WindowSelectionOverlayController()
 
     private var overlayWindows: [NSWindow] = []
+    private var hoverViews: [WindowHoverSelectionView] = []
+    private var pointerMonitor: Any?
     private var isCursorPushed = false
     private var onWindowSelected: ((CGWindowID) -> Void)?
     private var onCancel: (() -> Void)?
@@ -38,6 +40,7 @@ public final class WindowSelectionOverlayController: NSObject {
 
             window.contentView = view
             overlayWindows.append(window)
+            hoverViews.append(view)
             if screen == keyScreen {
                 window.makeKeyAndOrderFront(nil)
             } else {
@@ -48,9 +51,29 @@ public final class WindowSelectionOverlayController: NSObject {
         }
         NSCursor.pointingHand.push()
         isCursorPushed = true
+
+        // Mouse-moved only reaches the display under the pointer; refresh every display so the
+        // highlight follows the pointer across monitors and the screen under it takes key focus
+        pointerMonitor = NSEvent.addLocalMonitorForEvents(matching: [.mouseMoved]) { [weak self] event in
+            self?.refreshAllDisplays()
+            return event
+        }
+    }
+
+    private func refreshAllDisplays() {
+        hoverViews.forEach { $0.refreshHover() }
+        let location = NSEvent.mouseLocation
+        if let window = overlayWindows.first(where: { NSMouseInRect(location, $0.frame, false) }), !window.isKeyWindow {
+            window.makeKeyAndOrderFront(nil)
+        }
     }
 
     public func dismiss() {
+        if let pointerMonitor {
+            NSEvent.removeMonitor(pointerMonitor)
+            self.pointerMonitor = nil
+        }
+        hoverViews.removeAll()
         if isCursorPushed {
             NSCursor.pop()
             isCursorPushed = false
@@ -104,6 +127,9 @@ final class WindowHoverSelectionView: NSView {
     }
 
     override var acceptsFirstResponder: Bool { true }
+
+    // Overlays on other displays aren't key; take the first click instead of just activating the window
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseMoved(with event: NSEvent) {
         refreshHover()

@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 /// The region overlay hosts the same canvas/toolbar/undo stack as the editor. Verifies the session wiring,
 /// the y-down document space, shared shortcuts, and capture actions.

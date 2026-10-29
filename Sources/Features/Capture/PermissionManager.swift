@@ -99,10 +99,10 @@ public final class PermissionManager: ObservableObject {
         let alert = NSAlert()
         alert.messageText = "Screen Recording Permission Required"
         alert.informativeText = """
-        SyncShot needs permission to capture your screen, windows, and selected areas.
+        \(AppBranding.appName) needs permission to capture your screen, windows, and selected areas.
 
         If permission is ALREADY enabled in System Settings:
-        1. macOS requires SyncShot to be quit and reopened for permissions to take effect. Click "Relaunch App" below.
+        1. macOS requires \(AppBranding.appName) to be quit and reopened for permissions to take effect. Click "Relaunch App" below.
         2. If it still asks after relaunching, the entry in System Settings is stale. Click "Reset Permission" to clear the stale entry, then turn the toggle back on.
         """
         alert.alertStyle = .warning
@@ -130,7 +130,7 @@ public final class PermissionManager: ObservableObject {
     /// This fixes the common macOS issue where an entry in System Settings is marked enabled,
     /// but macOS rejected it due to a binary signature update during development.
     public func resetScreenCapturePermission() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.screenshotapp.mac"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.screenmint.mac"
         AppLogger.shared.app.info("Resetting TCC ScreenCapture permission for \(bundleID, privacy: .public)")
 
         let process = Process()
@@ -147,7 +147,7 @@ public final class PermissionManager: ObservableObject {
     /// Programmatically relaunches the application so macOS TCC updates take effect.
     public func relaunchApp() {
         let bundleURL = Bundle.main.bundleURL
-        AppLogger.shared.app.info("Relaunching SyncShot from \(bundleURL.path, privacy: .public)")
+        AppLogger.shared.app.info("Relaunching \(AppBranding.appName) from \(bundleURL.path, privacy: .public)")
 
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
@@ -157,10 +157,10 @@ public final class PermissionManager: ObservableObject {
             try process.run()
             NSApp.terminate(nil)
         } catch {
-            AppLogger.shared.app.error("Failed to relaunch ScreenshotApp: \(error.localizedDescription, privacy: .public)")
+            AppLogger.shared.app.error("Failed to relaunch \(AppBranding.appName): \(error.localizedDescription, privacy: .public)")
             let fallbackAlert = NSAlert()
-            fallbackAlert.messageText = "Please Restart SyncShot"
-            fallbackAlert.informativeText = "Please quit and reopen SyncShot manually from your Applications or build folder to apply permissions."
+            fallbackAlert.messageText = "Please Restart \(AppBranding.appName)"
+            fallbackAlert.informativeText = "Please quit and reopen \(AppBranding.appName) manually from your Applications or build folder to apply permissions."
             fallbackAlert.addButton(withTitle: "Quit")
             fallbackAlert.runModal()
             NSApp.terminate(nil)

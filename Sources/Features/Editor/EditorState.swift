@@ -16,6 +16,8 @@ public final class EditorState: ObservableObject {
     /// Whether on-device text recognition results are displayed over the canvas
     @Published public var isShowingRecognition = false
     @Published public var isRecognizing = false
+    /// Sensitive-info detection is running (drives the toolbar spinner)
+    @Published public var isAutoRedacting = false
 
     public init(tool: EditorTool = .arrow) {
         self.tool = tool

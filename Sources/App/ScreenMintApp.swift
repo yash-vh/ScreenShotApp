@@ -1,8 +1,8 @@
 import SwiftUI
 
-/// Main application entry point for ScreenshotApp
+/// Main application entry point for ScreenMint
 @main
-struct ScreenshotApp: App {
+struct ScreenMintApp: App {
     @NSApplicationDelegateAdaptor(AppDelegate.self) var appDelegate
     @StateObject private var config = AppConfiguration.shared
     @StateObject private var coordinator = AppCoordinator.shared

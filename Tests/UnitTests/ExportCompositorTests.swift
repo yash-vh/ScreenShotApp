@@ -1,6 +1,6 @@
 import XCTest
 import CoreGraphics
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ExportCompositorTests: XCTestCase {
     private func createBaseImage(width: Int = 400, height: Int = 300) -> CGImage? {

@@ -1,6 +1,6 @@
-name: ScreenshotApp
+name: ScreenMint
 options:
-  bundleIdPrefix: com.screenshotapp
+  bundleIdPrefix: com.screenmint
   createIntermediateGroups: true
   xcodeVersion: "15.0"
   deploymentTarget:
@@ -17,17 +17,18 @@ fileGroups:
   - Configuration
   - Branding
   - Scripts
+  - Casks
 
 targets:
-  ScreenshotApp:
+  ScreenMint:
     type: application
     platform: macOS
     deploymentTarget: "14.0"
     scheme:
       testTargets:
-        - ScreenshotAppTests
-      # Local StoreKit testing for the SyncShot Pro subscription (Run action only)
-      storeKitConfiguration: Configuration/SyncShot.storekit
+        - ScreenMintTests
+      # Local StoreKit testing for the ScreenMint Pro subscription (Run action only)
+      storeKitConfiguration: Configuration/ScreenMint.storekit
     sources:
       - path: Sources
         excludes:
@@ -40,20 +41,20 @@ targets:
             destination: wrapper
             subpath: Contents/Library/LaunchAgents
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac
-      PRODUCT_NAME: SyncShot
-      PRODUCT_MODULE_NAME: ScreenshotApp
+      PRODUCT_BUNDLE_IDENTIFIER: com.screenmint.mac
+      PRODUCT_NAME: ScreenMint
+      PRODUCT_MODULE_NAME: ScreenMint
       INFOPLIST_FILE: Sources/Resources/Info.plist
-      CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenshotApp.entitlements
+      CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenMint.entitlements
       ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
       GENERATE_INFOPLIST_FILE: NO
       CODE_SIGN_IDENTITY: "-"
       # Stable designated requirement so Screen Recording (TCC) permission survives rebuilds.
       # Xcode's CodeSign step applies it (and the entitlements) as the last build step; a post-build
       # re-sign script would run before that step and be overwritten.
-      OTHER_CODE_SIGN_FLAGS: "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\""
+      OTHER_CODE_SIGN_FLAGS: "-r=\"designated => identifier \\\"com.screenmint.mac\\\"\""
 
-  ScreenshotAppTests:
+  ScreenMintTests:
     type: bundle.unit-test
     platform: macOS
     deploymentTarget: "14.0"
@@ -62,9 +63,9 @@ targets:
         excludes:
           - "**/*.md"
     dependencies:
-      - target: ScreenshotApp
+      - target: ScreenMint
     settings:
-      PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac.tests
-      PRODUCT_NAME: ScreenshotAppTests
-      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SyncShot.app/Contents/MacOS/SyncShot"
+      PRODUCT_BUNDLE_IDENTIFIER: com.screenmint.mac.tests
+      PRODUCT_NAME: ScreenMintTests
+      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ScreenMint.app/Contents/MacOS/ScreenMint"
       GENERATE_INFOPLIST_FILE: YES

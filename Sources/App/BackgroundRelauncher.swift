@@ -1,10 +1,10 @@
 import AppKit
 import ServiceManagement
 
-/// Keeps SyncShot reachable after a force quit or crash.
+/// Keeps ScreenMint reachable after a force quit or crash.
 ///
 /// macOS can't keep a process alive once it is killed, so this registers a launchd agent
-/// (`Contents/Library/LaunchAgents/com.screenshotapp.mac.relauncher.plist`) whose
+/// (`Contents/Library/LaunchAgents/com.screenmint.mac.relauncher.plist`) whose
 /// `KeepAlive.SuccessfulExit = false` makes launchd relaunch the app whenever it exits abnormally
 /// (Force Quit, `kill`, crash). Quit from the menu is a clean exit and is respected.
 ///
@@ -12,9 +12,10 @@ import ServiceManagement
 /// from Finder, the Dock or the login item hands off to it and exits.
 @MainActor
 public enum BackgroundRelauncher {
-    static let label = "com.screenshotapp.mac.relauncher"
-    static let openSettingsNotification = Notification.Name("com.screenshotapp.mac.openSettings")
-    private static let pendingOpenSettingsKey = "com.screenshotapp.pendingOpenSettings"
+    static let label = "com.screenmint.mac.relauncher"
+    static let openSettingsNotification = Notification.Name("com.screenmint.mac.openSettings")
+    private static let pendingOpenSettingsKey = "com.screenmint.pendingOpenSettings"
+    private static let defaultAppliedKey = "com.screenmint.relaunchDefaultApplied"
 
     private static var service: SMAppService { .agent(plistName: "\(label).plist") }
 
@@ -47,7 +48,7 @@ public enum BackgroundRelauncher {
         }
         switch service.status {
         case .requiresApproval:
-            return "Approve SyncShot in System Settings › General › Login Items."
+            return "Approve \(AppBranding.appName) in System Settings › General › Login Items."
         case .enabled where !isLaunchedByAgent:
             // launchd has just started the managed instance; let it take over
             NSApp.terminate(nil)
@@ -70,10 +71,10 @@ public enum BackgroundRelauncher {
             // The managed instance was quit cleanly, so launchd won't restart it on its own
             requestOpenSettingsInManagedInstance()
             guard kickstartAgent(), waitForManagedInstance(timeout: 5) else {
-                // launchd accepted the request but couldn't start SyncShot (e.g. the registration points at
+                // launchd accepted the request but couldn't start the app (e.g. the registration points at
                 // an older build whose signature no longer matches). Keep this copy running instead of leaving
                 // nothing open, and remove the broken agent so launchd stops retrying.
-                AppLogger.shared.app.error("Relaunch agent failed to start SyncShot; turning background relaunch off.")
+                AppLogger.shared.app.error("Relaunch agent failed to start \(AppBranding.appName); turning background relaunch off.")
                 _ = consumePendingOpenSettings()
                 try? service.unregister()
                 AppConfiguration.shared.relaunchAfterUnexpectedQuit = false
@@ -83,6 +84,25 @@ public enum BackgroundRelauncher {
         AppLogger.shared.app.info("Handing off to the relaunch agent instance.")
         NSApp.terminate(nil)
         return true
+    }
+
+    /// First launch: registers the agent the setting defaults to, so shortcuts come back after a force quit
+    /// without visiting Settings. Runs once; a later choice in Settings or Login Items is respected.
+    /// Returns true when this copy handed off to the newly started managed instance and is exiting.
+    public static func applyDefaultIfNeeded() -> Bool {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: defaultAppliedKey) else { return false }
+        defaults.set(true, forKey: defaultAppliedKey)
+        guard AppConfiguration.shared.relaunchAfterUnexpectedQuit, !isAgentEnabled, !isLaunchedByAgent else { return false }
+
+        AppLogger.shared.app.info("Registering the relaunch agent (on by default).")
+        let problem = setEnabled(true)
+        if problem != nil, !isAgentEnabled {
+            AppConfiguration.shared.relaunchAfterUnexpectedQuit = false
+            return false
+        }
+        // setEnabled has asked this copy to terminate once launchd started the managed instance
+        return isAgentEnabled
     }
 
     /// Whether this launch should show Settings (cleared once read)

@@ -14,7 +14,7 @@ public struct SettingsView: View {
         case storage = "Storage & Cloud"
         case privacy = "Privacy"
         case diagnostics = "Diagnostics"
-        case subscription = "SyncShot Pro"
+        case subscription = "ScreenMint Pro"
         case about = "About"
 
         public var id: String { rawValue }
@@ -166,20 +166,26 @@ struct GeneralSettingsTab: View {
                     get: { config.launchAtLogin },
                     set: { loginProblem = config.setLaunchAtLogin($0) }
                 )) {
-                    SettingsRowLabel(title: "Launch at login", subtitle: "Start SyncShot when you log in to your Mac.")
+                    SettingsRowLabel(title: "Launch at login", subtitle: "Start \(AppBranding.appName) when you log in to your Mac.")
                 }
                 if let loginProblem {
                     SettingsWarning(loginProblem)
                 }
                 Toggle(isOn: $config.showDockIcon) {
-                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, SyncShot runs from the menu bar only.")
+                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, \(AppBranding.appName) runs from the menu bar only.")
                 }
                 Toggle(isOn: $config.showMenuBarIcon) {
                     SettingsRowLabel(
                         title: "Show in menu bar",
                         subtitle: config.showMenuBarIcon
                             ? "Quick access to captures, recording and the Library."
-                            : "Hidden. Shortcuts still work; open SyncShot from Finder or Spotlight for Settings."
+                            : "Hidden. Shortcuts still work; open \(AppBranding.appName) from Finder or Spotlight for Settings."
+                    )
+                }
+                Toggle(isOn: $config.indexInSpotlight) {
+                    SettingsRowLabel(
+                        title: "Show captures in Spotlight",
+                        subtitle: "Find screenshots by name, date or the text inside them. Indexed on this Mac only."
                     )
                 }
             } header: {
@@ -208,7 +214,7 @@ struct GeneralSettingsTab: View {
             } header: {
                 Text("Background")
             } footer: {
-                Text("Turning this on restarts SyncShot once and also starts it at login.")
+                Text("Turning this on restarts \(AppBranding.appName) once and also starts it at login.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -499,40 +505,46 @@ struct ShortcutsSettingsTab: View {
                     label: "Capture Selected Region",
                     icon: "crop",
                     binding: $config.captureSettings.shortcutRegion,
-                    defaultBinding: ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultRegion
                 )
 
                 ShortcutRecorderRow(
                     label: "Capture Full Screen",
                     icon: "macwindow",
                     binding: $config.captureSettings.shortcutFullScreen,
-                    defaultBinding: ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultFullScreen
+                )
+
+                ShortcutRecorderRow(
+                    label: "Capture All Screens",
+                    icon: "rectangle.on.rectangle",
+                    binding: $config.captureSettings.shortcutAllScreens,
+                    defaultBinding: .defaultAllScreens
                 )
 
                 ShortcutRecorderRow(
                     label: "Capture Window",
                     icon: "macwindow.on.rectangle",
                     binding: $config.captureSettings.shortcutWindow,
-                    defaultBinding: ShortcutBinding(key: "5", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultWindow
                 )
 
                 ShortcutRecorderRow(
                     label: "Record Screen",
                     icon: "record.circle",
                     binding: $config.captureSettings.shortcutRecording,
-                    defaultBinding: ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultRecording
                 )
 
                 ShortcutRecorderRow(
                     label: "OCR Text from Screen",
                     icon: "text.viewfinder",
                     binding: $config.captureSettings.shortcutQuickOcr,
-                    defaultBinding: ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+                    defaultBinding: .defaultQuickOcr
                 )
 
                 VStack(alignment: .leading, spacing: 4) {
-                    Label("⌥⌘3 / ⌥⌘4 / ⌥⌘5 / ⌥⌘6 / ⌥⌘7 always work as backups.", systemImage: "info.circle")
-                    Text("macOS reserves ⇧⌘3, ⇧⌘4 and ⇧⌘5 for its own screenshot tool. To use them here, turn them off in System Settings › Keyboard › Keyboard Shortcuts › Screenshots.")
+                    Label("macOS's own screenshot keys (⇧⌘3, ⇧⌘4, ⇧⌘5, ⇧⌘6) are left to macOS, so both tools work side by side.", systemImage: "info.circle")
                         .foregroundColor(.secondary)
                     if !hotKeys.failedBindings.isEmpty {
                         Label("Unavailable (in use by another app): \(hotKeys.failedBindings.joined(separator: ", "))", systemImage: "exclamationmark.triangle.fill")
@@ -590,6 +602,7 @@ struct ShortcutRecorderRow: View {
 
     @State private var isRecording = false
     @State private var monitor: Any?
+    @State private var rejection: String?
 
     var body: some View {
         HStack(spacing: 10) {
@@ -664,6 +677,15 @@ struct ShortcutRecorderRow: View {
                 .help("Delete custom shortcut")
             }
         }
+        .overlay(alignment: .bottomTrailing) {
+            if let rejection, isRecording {
+                Text(rejection)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .offset(y: 16)
+            }
+        }
+        .padding(.bottom, rejection != nil && isRecording ? 14 : 0)
         .onDisappear {
             stopRecording()
         }
@@ -699,8 +721,15 @@ struct ShortcutRecorderRow: View {
                     return nil
                 }
 
+                let candidate = ShortcutBinding(key: key, modifiers: mods)
                 DispatchQueue.main.async {
-                    self.binding = ShortcutBinding(key: key, modifiers: mods)
+                    if candidate.isMacOSScreenshotShortcut {
+                        // Keep listening so the user can try another combination
+                        self.rejection = "\(candidate.displayString) belongs to macOS Screenshot. Try ⌥⌘ or ⌃⌥ with a key."
+                        return
+                    }
+                    self.rejection = nil
+                    self.binding = candidate
                     self.stopRecording()
                 }
                 return nil
@@ -719,6 +748,7 @@ struct ShortcutRecorderRow: View {
             HotKeyManager.shared.resume()
         }
         isRecording = false
+        rejection = nil
     }
 }
 
@@ -740,7 +770,8 @@ struct AddShortcutSheet: View {
         "Capture Full Screen",
         "Capture Window",
         "Record Screen",
-        "OCR Text from Screen"
+        "OCR Text from Screen",
+        "Capture All Screens"
     ]
 
     var body: some View {
@@ -1059,7 +1090,7 @@ struct PrivacySettingsTab: View {
                     SettingsRowLabel(
                         title: "Screen Recording",
                         subtitle: permissionManager.isAuthorized
-                            ? "SyncShot can capture your screen."
+                            ? "\(AppBranding.appName) can capture your screen."
                             : "Required to take screenshots and recordings."
                     )
                 }
@@ -1068,12 +1099,12 @@ struct PrivacySettingsTab: View {
                     LabeledContent {
                         HStack(spacing: 8) {
                             Button("Reset") { permissionManager.resetScreenCapturePermission() }
-                            Button("Relaunch SyncShot") { permissionManager.relaunchApp() }
+                            Button("Relaunch \(AppBranding.appName)") { permissionManager.relaunchApp() }
                         }
                     } label: {
                         SettingsRowLabel(
                             title: "Already allowed it?",
-                            subtitle: "macOS applies the change after SyncShot restarts. Reset if the toggle looks on but captures still fail."
+                            subtitle: "macOS applies the change after \(AppBranding.appName) restarts. Reset if the toggle looks on but captures still fail."
                         )
                     }
                 }
@@ -1261,7 +1292,7 @@ struct AboutSettingsTab: View {
                 .interpolation(.high)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 96, height: 96)
-                .accessibilityLabel("SyncShot logo")
+                .accessibilityLabel("\(AppBranding.appName) logo")
 
             Text(AppBranding.appName)
                 .font(.title)
@@ -1276,13 +1307,25 @@ struct AboutSettingsTab: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
 
+            // Developer contact card
+            VStack(spacing: 0) {
+                AboutContactRow(symbol: "person.crop.circle", title: "Developer", value: AppBranding.developerName)
+                Divider().padding(.leading, 40)
+                AboutContactRow(symbol: "envelope", title: "Email", value: AppBranding.supportEmail) {
+                    AppBranding.contactSupport()
+                }
+            }
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+            .frame(maxWidth: 340)
+
             Button {
                 AppBranding.contactSupport()
             } label: {
                 Label("Contact Support", systemImage: "questionmark.bubble")
             }
             .controlSize(.large)
-            .help(AppBranding.supportURL.absoluteString)
+            .help("Email \(AppBranding.developerName) at \(AppBranding.supportEmail)")
 
             Spacer()
 
@@ -1292,8 +1335,42 @@ struct AboutSettingsTab: View {
                 Link("Terms of Use", destination: AppBranding.termsOfUseURL)
             }
             .font(.callout)
-            .padding(.bottom, 20)
+
+            Text("© \(Calendar.current.component(.year, from: Date())) \(AppBranding.developerName)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One line of the About contact card; tappable when it has an action
+private struct AboutContactRow: View {
+    let symbol: String
+    let title: String
+    let value: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18)
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            if let action {
+                Button(value, action: action)
+                    .buttonStyle(.link)
+            } else {
+                Text(value)
+                    .textSelection(.enabled)
+            }
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }

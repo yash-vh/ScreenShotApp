@@ -4,12 +4,12 @@
 <dict>
     <!-- Registered by BackgroundRelauncher via SMAppService.agent(plistName:) -->
     <key>Label</key>
-    <string>com.screenshotapp.mac.relauncher</string>
+    <string>com.screenmint.mac.relauncher</string>
     <key>BundleProgram</key>
-    <string>Contents/MacOS/SyncShot</string>
+    <string>Contents/MacOS/ScreenMint</string>
     <key>AssociatedBundleIdentifiers</key>
     <array>
-        <string>com.screenshotapp.mac</string>
+        <string>com.screenmint.mac</string>
     </array>
     <!-- Relaunch only after an abnormal exit (force quit, kill, crash); Quit from the menu exits cleanly -->
     <key>KeepAlive</key>

@@ -1,14 +1,14 @@
 import AppKit
 import StoreKit
 
-/// Tracks the SyncShot Pro auto-renewable subscription with StoreKit 2.
-/// Product IDs must match App Store Connect; `Configuration/SyncShot.storekit` mirrors them for local testing.
+/// Tracks the ScreenMint Pro auto-renewable subscription with StoreKit 2.
+/// Product IDs must match App Store Connect; `Configuration/ScreenMint.storekit` mirrors them for local testing.
 @MainActor
 public final class SubscriptionManager: ObservableObject {
     public static let shared = SubscriptionManager()
 
     // PLACEHOLDER: replace with the product IDs created in App Store Connect.
-    public static let productIDs = ["com.screenshotapp.mac.pro.monthly", "com.screenshotapp.mac.pro.yearly"]
+    public static let productIDs = ["com.screenmint.mac.pro.monthly", "com.screenmint.mac.pro.yearly"]
 
     public static let manageSubscriptionsURL = URL(string: "https://apps.apple.com/account/subscriptions")!
 

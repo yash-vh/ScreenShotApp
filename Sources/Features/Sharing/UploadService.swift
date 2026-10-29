@@ -65,7 +65,7 @@ public final class UploadService: ObservableObject {
             let publicBase = publicBaseString.isEmpty ? nil : URL(string: publicBaseString.contains("://") ? publicBaseString : "https://" + publicBaseString)
             return S3Provider(endpoint: endpoint, bucket: bucket, region: region, accessKeyID: keyID.trimmingCharacters(in: .whitespaces), secretAccessKey: secret, publicBaseURL: publicBase)
         case .legacy:
-            throw AppError.invalidConfiguration(key: type.displayName, reason: "SyncShot now uploads to ImgBB or Amazon S3 only.")
+            throw AppError.invalidConfiguration(key: type.displayName, reason: "\(AppBranding.appName) now uploads to ImgBB or Amazon S3 only.")
         }
     }
 
@@ -275,7 +275,7 @@ public final class UploadService: ObservableObject {
                 }
             }
         }
-        monitor.start(queue: DispatchQueue(label: "com.screenshotapp.upload-network"))
+        monitor.start(queue: DispatchQueue(label: "com.screenmint.upload-network"))
         pathMonitor = monitor
     }
 

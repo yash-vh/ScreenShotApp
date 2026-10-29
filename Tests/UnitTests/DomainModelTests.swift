@@ -1,5 +1,5 @@
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class DomainModelTests: XCTestCase {
     func testNormalizedGeometryClamping() {

@@ -1,5 +1,5 @@
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ConfigurationTests: XCTestCase {
     func testDefaultCaptureSettings() {
@@ -8,7 +8,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(settings.copyToClipboard)
         XCTAssertTrue(settings.saveToDisk)
         XCTAssertTrue(settings.runOcrAutomatically)
-        XCTAssertEqual(settings.shortcutRegion.displayString, "⇧⌘4")
+        XCTAssertEqual(settings.shortcutRegion.displayString, "⌥⌘4")
         XCTAssertEqual(settings.shortcutCopy.displayString, "⌘C")
         XCTAssertEqual(settings.shortcutUpload.displayString, "⌘U")
         XCTAssertEqual(settings.shortcutCancel.displayString, "Esc")
@@ -73,9 +73,58 @@ final class ConfigurationTests: XCTestCase {
         let suite = "Relaunch-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
-        AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = true
         XCTAssertTrue(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+        AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = false
+        XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+    }
+
+    func testDefaultsAvoidMacOSScreenshotShortcuts() {
+        let settings = CaptureSettings.default
+        for binding in [settings.shortcutRegion, settings.shortcutFullScreen, settings.shortcutWindow, settings.shortcutRecording, settings.shortcutQuickOcr] {
+            XCTAssertFalse(binding.isMacOSScreenshotShortcut, binding.displayString)
+            XCTAssertTrue(binding.isValidGlobalHotKey, binding.displayString)
+        }
+        XCTAssertTrue(ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"]).isMacOSScreenshotShortcut)
+        XCTAssertTrue(ShortcutBinding(key: "3", modifiers: ["⌃", "⇧", "⌘"]).isMacOSScreenshotShortcut)
+        XCTAssertFalse(ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"]).isMacOSScreenshotShortcut)
+    }
+
+    func testStoredSystemShortcutsMigrateButCustomOnesStay() throws {
+        var legacy = CaptureSettings.default
+        legacy.shortcutRegion = ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"])
+        legacy.shortcutQuickOcr = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        legacy.shortcutWindow = ShortcutBinding(key: "W", modifiers: ["⌃", "⌥"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+        XCTAssertEqual(decoded.shortcutQuickOcr, .defaultQuickOcr)
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⌃⌥W")
+    }
+
+    func testLegacyShiftedSymbolShortcuts() throws {
+        var legacy = CaptureSettings.default
+        // Old builds stored ⇧⌘4 as "$" (a macOS screenshot key → migrated) and ⇧⌘0 as ")" (a valid custom key → kept)
+        legacy.shortcutRegion = ShortcutBinding(key: "$", modifiers: ["⇧", "⌘"])
+        legacy.shortcutWindow = ShortcutBinding(key: ")", modifiers: ["⇧", "⌘"])
+        legacy.shortcutRecording = ShortcutBinding(key: "NoSuchKey", modifiers: ["⌘"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⇧⌘0")
+        XCTAssertEqual(decoded.shortcutRecording, .defaultRecording, "Unregistrable keys fall back to the default")
+    }
+
+    @MainActor
+    func testMigratedShortcutsArePersisted() throws {
+        let suite = "ShortcutMigration-\(UUID().uuidString)"
+        let defaults = UserDefaults(suiteName: suite)!
+        defer { defaults.removePersistentDomain(forName: suite) }
+        var legacy = CaptureSettings.default
+        legacy.shortcutFullScreen = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
+        defaults.set(try JSONEncoder().encode(legacy), forKey: "com.screenmint.captureSettings")
+
+        _ = AppConfiguration(defaults: defaults)
+
+        let stored = try JSONDecoder().decode(CaptureSettings.self, from: XCTUnwrap(defaults.data(forKey: "com.screenmint.captureSettings")))
+        XCTAssertEqual(stored.shortcutFullScreen, .defaultFullScreen)
     }
 
     func testCaptureSettingsDecodeIgnoresRemovedEditorFlag() throws {

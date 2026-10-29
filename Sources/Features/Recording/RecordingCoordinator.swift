@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Combine
+import ScreenCaptureKit
 
 /// Drives screen recording: picks the target, checks microphone permission and disk space,
 /// runs the session with pause / resume, and saves the result (MP4 or GIF) into the history.
@@ -53,6 +54,16 @@ public final class RecordingCoordinator: ObservableObject {
 
     public func start(_ kind: TargetKind) {
         guard state == .idle else { return }
+        guard PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission() else {
+            Task { @MainActor in
+                if await PermissionManager.shared.verifyScreenRecordingPermission() {
+                    self.start(kind)
+                } else {
+                    PermissionManager.shared.showScreenRecordingPermissionDialog()
+                }
+            }
+            return
+        }
         settings = AppConfiguration.shared.recordingSettings
 
         let outputDirectory = outputDirectory()
@@ -60,7 +71,7 @@ public final class RecordingCoordinator: ObservableObject {
            !DiskSpaceGuard.canStart(available: available, minimumFreeMB: settings.minimumFreeSpaceMB) {
             CaptureHUD.shared.show(
                 title: "Not enough disk space to record",
-                detail: "\(ByteCountFormatter.string(fromByteCount: available, countStyle: .file)) free. Free up space or lower the limit in Settings › Capture.",
+                detail: "\(ByteCountFormatter.string(fromByteCount: available, countStyle: .file)) free. Free up space or lower the limit in Settings › Recording.",
                 symbol: "externaldrive.badge.exclamationmark"
             )
             return
@@ -144,7 +155,7 @@ public final class RecordingCoordinator: ObservableObject {
     private func askToContinueWithoutMicrophone() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Microphone access is off"
-        alert.informativeText = "Allow SyncShot in System Settings › Privacy & Security › Microphone to record voiceover. You can still record without sound."
+        alert.informativeText = "Allow \(AppBranding.appName) in System Settings › Privacy & Security › Microphone to record voiceover. You can still record without sound."
         alert.addButton(withTitle: "Record Without Microphone")
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")
@@ -168,8 +179,16 @@ public final class RecordingCoordinator: ObservableObject {
         case .region:
             RegionSelectionOverlayController.shared.present(
                 mode: .quickSelect,
-                onComplete: { [weak self] rect, screen, _, _ in
+                onComplete: { [weak self] rect, pointerScreen, _, _ in
                     guard let self else { return }
+                    // One stream records one display: an area dragged across monitors is recorded on the
+                    // display holding most of it, clipped to that display
+                    let screen = Self.dominantScreen(for: rect) ?? pointerScreen
+                    let rect = rect.intersection(screen.frame)
+                    guard rect.width >= 2, rect.height >= 2 else {
+                        self.state = .idle
+                        return
+                    }
                     let displayID = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? CGMainDisplayID()
                     let local = CGRect(x: rect.minX - screen.frame.minX, y: screen.frame.maxY - rect.maxY, width: rect.width, height: rect.height)
                     self.begin(.region(displayID, rect: local), frame: rect, title: "Region Recording")
@@ -191,6 +210,14 @@ public final class RecordingCoordinator: ObservableObject {
     }
 
     private var title = "Screen Recording"
+
+    /// The display covering the largest part of `rect` (global AppKit points)
+    static func dominantScreen(for rect: CGRect) -> NSScreen? {
+        NSScreen.screens.max { a, b in
+            let ia = a.frame.intersection(rect), ib = b.frame.intersection(rect)
+            return (ia.isNull ? 0 : ia.width * ia.height) < (ib.isNull ? 0 : ib.width * ib.height)
+        }
+    }
 
     private func begin(_ target: RecordingTarget, frame: CGRect?, title: String) {
         state = .preparing
@@ -227,10 +254,20 @@ public final class RecordingCoordinator: ObservableObject {
                 AppLogger.shared.recording.info("Recording started at \(Int(session.pixelSize.width))x\(Int(session.pixelSize.height))")
             } catch {
                 AppLogger.shared.recording.error("Could not start recording: \(error.localizedDescription, privacy: .public)")
-                CaptureHUD.shared.show(title: "Couldn't start recording", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
                 self.reset()
+                if Self.isPermissionError(error) {
+                    PermissionManager.shared.showScreenRecordingPermissionDialog()
+                    return
+                }
+                CaptureHUD.shared.show(title: "Couldn't start recording", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
             }
         }
+    }
+
+    /// ScreenCaptureKit refuses to start a stream when Screen Recording access is missing
+    private static func isPermissionError(_ error: Error) -> Bool {
+        if let scError = error as? SCStreamError, scError.code == .userDeclined { return true }
+        return !CGPreflightScreenCaptureAccess()
     }
 
     private func tick() {

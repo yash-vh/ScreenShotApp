@@ -1,8 +1,8 @@
-# ScreenshotApp Architecture Specification
+# ScreenMint Architecture Specification
 
 ## Overview
 
-ScreenshotApp is a native macOS menu-bar-first application designed for capture, layered annotation, pixel-level redaction, on-device OCR, screen recording, and dual-mode cloud sharing (Managed Cloud vs User-Owned S3/Storage).
+ScreenMint is a native macOS menu-bar-first application designed for capture, layered annotation, pixel-level redaction, on-device OCR, screen recording, and dual-mode cloud sharing (Managed Cloud vs User-Owned S3/Storage).
 
 ---
 

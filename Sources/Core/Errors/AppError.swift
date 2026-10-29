@@ -1,6 +1,6 @@
 import Foundation
 
-/// Core error domains for SyncShot.
+/// Core error domains for ScreenMint.
 /// Conforms to `LocalizedError`, `CustomNSError`, and `Sendable`.
 public enum AppError: LocalizedError, CustomNSError, Sendable, Equatable {
     // Capture errors
@@ -45,7 +45,7 @@ public enum AppError: LocalizedError, CustomNSError, Sendable, Equatable {
     case invalidConfiguration(key: String, reason: String)
 
     public static var errorDomain: String {
-        return "com.screenshotapp.error"
+        return "com.screenmint.error"
     }
 
     public var errorCode: Int {
@@ -92,7 +92,7 @@ public enum AppError: LocalizedError, CustomNSError, Sendable, Equatable {
         case .screenCapturePermissionDenied:
             return "Screen Recording permission was denied. Please allow access in macOS System Settings."
         case .screenCaptureNotAuthorized:
-            return "SyncShot is not authorized to record or capture the screen."
+            return "\(AppBranding.appName) is not authorized to record or capture the screen."
         case .captureFailed(let reason):
             return "Screen capture failed: \(reason)"
         case .windowNotFound(let id):
@@ -158,7 +158,7 @@ public enum AppError: LocalizedError, CustomNSError, Sendable, Equatable {
     public var recoverySuggestion: String? {
         switch self {
         case .screenCapturePermissionDenied, .screenCaptureNotAuthorized:
-            return "Open System Settings > Privacy & Security > Screen Recording, and enable SyncShot."
+            return "Open System Settings > Privacy & Security > Screen Recording, and enable \(AppBranding.appName)."
         case .cloudProviderNotConfigured:
             return "Visit Settings > Storage & Cloud to set up Managed Cloud or your own S3 provider."
         case .networkUnavailable:

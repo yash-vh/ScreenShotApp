@@ -9,20 +9,21 @@ public final class AppConfiguration: ObservableObject {
     public static let shared = AppConfiguration()
 
     private enum Keys {
-        static let storageMode = "com.screenshotapp.storageMode"
-        static let captureSettings = "com.screenshotapp.captureSettings"
-        static let launchAtLogin = "com.screenshotapp.launchAtLogin"
-        static let showDockIcon = "com.screenshotapp.showDockIcon"
-        static let showMenuBarIcon = "com.screenshotapp.showMenuBarIcon"
-        static let relaunchAfterUnexpectedQuit = "com.screenshotapp.relaunchAfterUnexpectedQuit"
-        static let s3Endpoint = "com.screenshotapp.s3Endpoint"
-        static let s3Bucket = "com.screenshotapp.s3Bucket"
-        static let s3Region = "com.screenshotapp.s3Region"
-        static let s3PublicBaseURL = "com.screenshotapp.s3PublicBaseURL"
-        static let uploadExpiry = "com.screenshotapp.uploadExpiry"
-        static let linkShortener = "com.screenshotapp.linkShortener"
-        static let cacheQuotaMB = "com.screenshotapp.cacheQuotaMB"
-        static let recordingSettings = "com.screenshotapp.recordingSettings"
+        static let storageMode = "com.screenmint.storageMode"
+        static let captureSettings = "com.screenmint.captureSettings"
+        static let launchAtLogin = "com.screenmint.launchAtLogin"
+        static let showDockIcon = "com.screenmint.showDockIcon"
+        static let showMenuBarIcon = "com.screenmint.showMenuBarIcon"
+        static let relaunchAfterUnexpectedQuit = "com.screenmint.relaunchAfterUnexpectedQuit"
+        static let indexInSpotlight = "com.screenmint.indexInSpotlight"
+        static let s3Endpoint = "com.screenmint.s3Endpoint"
+        static let s3Bucket = "com.screenmint.s3Bucket"
+        static let s3Region = "com.screenmint.s3Region"
+        static let s3PublicBaseURL = "com.screenmint.s3PublicBaseURL"
+        static let uploadExpiry = "com.screenmint.uploadExpiry"
+        static let linkShortener = "com.screenmint.linkShortener"
+        static let cacheQuotaMB = "com.screenmint.cacheQuotaMB"
+        static let recordingSettings = "com.screenmint.recordingSettings"
     }
 
     private let defaults: UserDefaults
@@ -45,7 +46,7 @@ public final class AppConfiguration: ObservableObject {
     /// Mirrors the system login-item state; change it with `setLaunchAtLogin(_:)`
     @Published public private(set) var launchAtLogin: Bool
 
-    /// Registers or removes SyncShot as a login item. Returns an error message when macOS refuses.
+    /// Registers or removes ScreenMint as a login item. Returns an error message when macOS refuses.
     @discardableResult
     public func setLaunchAtLogin(_ enabled: Bool) -> String? {
         var problem: String?
@@ -63,7 +64,7 @@ public final class AppConfiguration: ObservableObject {
         launchAtLogin = status == .enabled || status == .requiresApproval
         defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
         if status == .requiresApproval {
-            problem = "Approve SyncShot in System Settings › General › Login Items."
+            problem = "Approve \(AppBranding.appName) in System Settings › General › Login Items."
         }
         return problem
     }
@@ -74,17 +75,24 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    /// Whether the menu bar menu (status item) is shown; when hidden, reopen SyncShot from Finder or Spotlight to reach Settings
+    /// Whether the menu bar menu (status item) is shown; when hidden, reopen ScreenMint from Finder or Spotlight to reach Settings
     @Published public var showMenuBarIcon: Bool {
         didSet {
             defaults.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon)
         }
     }
 
-    /// Whether launchd should relaunch SyncShot after a force quit or crash (see `BackgroundRelauncher`)
+    /// Whether launchd should relaunch ScreenMint after a force quit or crash (see `BackgroundRelauncher`)
     @Published public var relaunchAfterUnexpectedQuit: Bool {
         didSet {
             defaults.set(relaunchAfterUnexpectedQuit, forKey: Keys.relaunchAfterUnexpectedQuit)
+        }
+    }
+
+    /// Whether captures are searchable in Spotlight by title, date and recognized text (see `SpotlightIndexer`)
+    @Published public var indexInSpotlight: Bool {
+        didSet {
+            defaults.set(indexInSpotlight, forKey: Keys.indexInSpotlight)
         }
     }
 
@@ -179,6 +187,10 @@ public final class AppConfiguration: ObservableObject {
         if let data = defaults.data(forKey: Keys.captureSettings),
            let settings = try? JSONDecoder().decode(CaptureSettings.self, from: data) {
             self.captureSettings = settings
+            // Persist decode-time migrations (e.g. shortcuts moved off macOS's screenshot keys)
+            if let migrated = try? JSONEncoder().encode(settings), migrated != data {
+                defaults.set(migrated, forKey: Keys.captureSettings)
+            }
         } else {
             self.captureSettings = CaptureSettings.default
         }
@@ -188,7 +200,9 @@ public final class AppConfiguration: ObservableObject {
         self.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
         self.showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) != nil ? defaults.bool(forKey: Keys.showMenuBarIcon) : true
-        self.relaunchAfterUnexpectedQuit = defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit)
+        // On by default so a force-quit app keeps its shortcuts; the agent is registered on first launch
+        self.relaunchAfterUnexpectedQuit = defaults.object(forKey: Keys.relaunchAfterUnexpectedQuit) != nil ? defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit) : true
+        self.indexInSpotlight = defaults.object(forKey: Keys.indexInSpotlight) != nil ? defaults.bool(forKey: Keys.indexInSpotlight) : true
 
         self.s3Endpoint = defaults.string(forKey: Keys.s3Endpoint) ?? ""
         self.s3Bucket = defaults.string(forKey: Keys.s3Bucket) ?? ""
@@ -252,13 +266,13 @@ public final class AppConfiguration: ObservableObject {
                 return "Couldn't create \(url.path): \(error.localizedDescription)"
             }
         }
-        return fm.isWritableFile(atPath: url.path) ? nil : "SyncShot can't write to \(url.path)."
+        return fm.isWritableFile(atPath: url.path) ? nil : "\(AppBranding.appName) can't write to \(url.path)."
     }
 
     /// Directory for Application Support metadata and temporary working buffers
     public func appSupportDirectory() -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("com.screenshotapp.mac", isDirectory: true)
+        let appDir = appSupport.appendingPathComponent("com.screenmint.mac", isDirectory: true)
 
         if !FileManager.default.fileExists(atPath: appDir.path) {
             try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)
