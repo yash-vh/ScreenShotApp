@@ -130,7 +130,7 @@ public final class PermissionManager: ObservableObject {
     /// This fixes the common macOS issue where an entry in System Settings is marked enabled,
     /// but macOS rejected it due to a binary signature update during development.
     public func resetScreenCapturePermission() {
-        let bundleID = Bundle.main.bundleIdentifier ?? "com.screenshotapp.mac"
+        let bundleID = Bundle.main.bundleIdentifier ?? "com.screenmint.mac"
         AppLogger.shared.app.info("Resetting TCC ScreenCapture permission for \(bundleID, privacy: .public)")
 
         let process = Process()

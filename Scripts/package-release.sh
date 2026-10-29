@@ -26,8 +26,8 @@ if [[ -z "$app_path" ]]; then
     app_path="$candidate_alt"
   else
     echo "==> Building ScreenMint (Release configuration)..."
-    xcodebuild -project "$repo_root/ScreenshotApp.xcodeproj" \
-               -scheme ScreenshotApp \
+    xcodebuild -project "$repo_root/ScreenMint.xcodeproj" \
+               -scheme ScreenMint \
                -configuration Release \
                -derivedDataPath "$repo_root/build/DerivedData" \
                -quiet \
@@ -86,15 +86,15 @@ cask "screenmint" do
 
   app "ScreenMint.app"
 
-  uninstall quit: "com.screenshotapp.mac"
+  uninstall quit: "com.screenmint.mac"
 
   zap trash: [
-    "~/Library/Application Support/com.screenshotapp.mac",
-    "~/Library/Caches/com.screenshotapp.mac",
-    "~/Library/HTTPStorages/com.screenshotapp.mac",
-    "~/Library/LaunchAgents/com.screenshotapp.mac.relauncher.plist",
-    "~/Library/Preferences/com.screenshotapp.mac.plist",
-    "~/Library/Saved Application State/com.screenshotapp.mac.savedState",
+    "~/Library/Application Support/com.screenmint.mac",
+    "~/Library/Caches/com.screenmint.mac",
+    "~/Library/HTTPStorages/com.screenmint.mac",
+    "~/Library/LaunchAgents/com.screenmint.mac.relauncher.plist",
+    "~/Library/Preferences/com.screenmint.mac.plist",
+    "~/Library/Saved Application State/com.screenmint.mac.savedState",
   ]
 end
 EOF

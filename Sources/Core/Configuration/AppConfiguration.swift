@@ -9,21 +9,21 @@ public final class AppConfiguration: ObservableObject {
     public static let shared = AppConfiguration()
 
     private enum Keys {
-        static let storageMode = "com.screenshotapp.storageMode"
-        static let captureSettings = "com.screenshotapp.captureSettings"
-        static let launchAtLogin = "com.screenshotapp.launchAtLogin"
-        static let showDockIcon = "com.screenshotapp.showDockIcon"
-        static let showMenuBarIcon = "com.screenshotapp.showMenuBarIcon"
-        static let relaunchAfterUnexpectedQuit = "com.screenshotapp.relaunchAfterUnexpectedQuit"
-        static let indexInSpotlight = "com.screenshotapp.indexInSpotlight"
-        static let s3Endpoint = "com.screenshotapp.s3Endpoint"
-        static let s3Bucket = "com.screenshotapp.s3Bucket"
-        static let s3Region = "com.screenshotapp.s3Region"
-        static let s3PublicBaseURL = "com.screenshotapp.s3PublicBaseURL"
-        static let uploadExpiry = "com.screenshotapp.uploadExpiry"
-        static let linkShortener = "com.screenshotapp.linkShortener"
-        static let cacheQuotaMB = "com.screenshotapp.cacheQuotaMB"
-        static let recordingSettings = "com.screenshotapp.recordingSettings"
+        static let storageMode = "com.screenmint.storageMode"
+        static let captureSettings = "com.screenmint.captureSettings"
+        static let launchAtLogin = "com.screenmint.launchAtLogin"
+        static let showDockIcon = "com.screenmint.showDockIcon"
+        static let showMenuBarIcon = "com.screenmint.showMenuBarIcon"
+        static let relaunchAfterUnexpectedQuit = "com.screenmint.relaunchAfterUnexpectedQuit"
+        static let indexInSpotlight = "com.screenmint.indexInSpotlight"
+        static let s3Endpoint = "com.screenmint.s3Endpoint"
+        static let s3Bucket = "com.screenmint.s3Bucket"
+        static let s3Region = "com.screenmint.s3Region"
+        static let s3PublicBaseURL = "com.screenmint.s3PublicBaseURL"
+        static let uploadExpiry = "com.screenmint.uploadExpiry"
+        static let linkShortener = "com.screenmint.linkShortener"
+        static let cacheQuotaMB = "com.screenmint.cacheQuotaMB"
+        static let recordingSettings = "com.screenmint.recordingSettings"
     }
 
     private let defaults: UserDefaults
@@ -271,7 +271,7 @@ public final class AppConfiguration: ObservableObject {
     /// Directory for Application Support metadata and temporary working buffers
     public func appSupportDirectory() -> URL {
         let appSupport = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask).first!
-        let appDir = appSupport.appendingPathComponent("com.screenshotapp.mac", isDirectory: true)
+        let appDir = appSupport.appendingPathComponent("com.screenmint.mac", isDirectory: true)
 
         if !FileManager.default.fileExists(atPath: appDir.path) {
             try? FileManager.default.createDirectory(at: appDir, withIntermediateDirectories: true)

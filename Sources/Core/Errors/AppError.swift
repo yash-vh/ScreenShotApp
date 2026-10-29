@@ -45,7 +45,7 @@ public enum AppError: LocalizedError, CustomNSError, Sendable, Equatable {
     case invalidConfiguration(key: String, reason: String)
 
     public static var errorDomain: String {
-        return "com.screenshotapp.error"
+        return "com.screenmint.error"
     }
 
     public var errorCode: Int {

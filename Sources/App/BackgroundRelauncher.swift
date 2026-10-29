@@ -4,7 +4,7 @@ import ServiceManagement
 /// Keeps ScreenMint reachable after a force quit or crash.
 ///
 /// macOS can't keep a process alive once it is killed, so this registers a launchd agent
-/// (`Contents/Library/LaunchAgents/com.screenshotapp.mac.relauncher.plist`) whose
+/// (`Contents/Library/LaunchAgents/com.screenmint.mac.relauncher.plist`) whose
 /// `KeepAlive.SuccessfulExit = false` makes launchd relaunch the app whenever it exits abnormally
 /// (Force Quit, `kill`, crash). Quit from the menu is a clean exit and is respected.
 ///
@@ -12,9 +12,9 @@ import ServiceManagement
 /// from Finder, the Dock or the login item hands off to it and exits.
 @MainActor
 public enum BackgroundRelauncher {
-    static let label = "com.screenshotapp.mac.relauncher"
-    static let openSettingsNotification = Notification.Name("com.screenshotapp.mac.openSettings")
-    private static let pendingOpenSettingsKey = "com.screenshotapp.pendingOpenSettings"
+    static let label = "com.screenmint.mac.relauncher"
+    static let openSettingsNotification = Notification.Name("com.screenmint.mac.openSettings")
+    private static let pendingOpenSettingsKey = "com.screenmint.pendingOpenSettings"
 
     private static var service: SMAppService { .agent(plistName: "\(label).plist") }
 

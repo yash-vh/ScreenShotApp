@@ -16,9 +16,9 @@ To generate or regenerate the Xcode project from `project.yml`:
 xcodegen generate
 ```
 
-This creates `ScreenshotApp.xcodeproj` with configured targets:
-- `ScreenshotApp` (macOS Native Application)
-- `ScreenshotAppTests` (XCTest Suite)
+This creates `ScreenMint.xcodeproj` with configured targets:
+- `ScreenMint` (macOS Native Application)
+- `ScreenMintTests` (XCTest Suite)
 
 ---
 
@@ -26,16 +26,16 @@ This creates `ScreenshotApp.xcodeproj` with configured targets:
 
 ### Debug Build
 ```bash
-xcodebuild -project ScreenshotApp.xcodeproj \
-           -scheme ScreenshotApp \
+xcodebuild -project ScreenMint.xcodeproj \
+           -scheme ScreenMint \
            -destination 'platform=macOS' \
            build
 ```
 
 ### Release Build
 ```bash
-xcodebuild -project ScreenshotApp.xcodeproj \
-           -scheme ScreenshotApp \
+xcodebuild -project ScreenMint.xcodeproj \
+           -scheme ScreenMint \
            -configuration Release \
            -destination 'platform=macOS' \
            build
@@ -47,8 +47,8 @@ xcodebuild -project ScreenshotApp.xcodeproj \
 
 ```bash
 xcodebuild test \
-           -project ScreenshotApp.xcodeproj \
-           -scheme ScreenshotApp \
+           -project ScreenMint.xcodeproj \
+           -scheme ScreenMint \
            -destination 'platform=macOS'
 ```
 
@@ -58,6 +58,6 @@ xcodebuild test \
 
 You can open the project directly:
 ```bash
-open ScreenshotApp.xcodeproj
+open ScreenMint.xcodeproj
 ```
-Select the **ScreenshotApp** scheme and press `Cmd + R` to run.
+Select the **ScreenMint** scheme and press `Cmd + R` to run.

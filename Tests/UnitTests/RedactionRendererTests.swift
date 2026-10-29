@@ -1,6 +1,6 @@
 import XCTest
 import CoreGraphics
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class RedactionRendererTests: XCTestCase {
     private func createPatternImage(width: Int = 100, height: Int = 100) -> CGImage? {

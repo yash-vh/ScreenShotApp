@@ -18,7 +18,7 @@ brew install --cask https://raw.githubusercontent.com/yash-vh/ScreenShotApp/main
 #### Via GitHub Tap
 Tap this repository and install the cask:
 ```bash
-brew tap yash-vh/screenshotapp https://github.com/yash-vh/ScreenShotApp
+brew tap yash-vh/screenmint https://github.com/yash-vh/ScreenShotApp
 brew install --cask screenmint
 ```
 
@@ -87,15 +87,15 @@ brew upgrade --cask screenmint
 3. Build Debug or Release:
    ```bash
    # Debug Build
-   xcodebuild -project ScreenshotApp.xcodeproj -scheme ScreenshotApp build
+   xcodebuild -project ScreenMint.xcodeproj -scheme ScreenMint build
 
    # Release Build
-   xcodebuild -project ScreenshotApp.xcodeproj -scheme ScreenshotApp -configuration Release build
+   xcodebuild -project ScreenMint.xcodeproj -scheme ScreenMint -configuration Release build
    ```
 
 4. Run Unit Tests:
    ```bash
-   xcodebuild test -project ScreenshotApp.xcodeproj -scheme ScreenshotApp -destination 'platform=macOS'
+   xcodebuild test -project ScreenMint.xcodeproj -scheme ScreenMint -destination 'platform=macOS'
    ```
 
 ---

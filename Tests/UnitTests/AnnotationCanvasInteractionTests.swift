@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 /// Drives the editor canvas with synthetic mouse / key events to verify drawing, moving, resizing,
 /// undo granularity, and keyboard shortcuts end to end.

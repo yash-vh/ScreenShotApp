@@ -8,7 +8,7 @@ public final class SubscriptionManager: ObservableObject {
     public static let shared = SubscriptionManager()
 
     // PLACEHOLDER: replace with the product IDs created in App Store Connect.
-    public static let productIDs = ["com.screenshotapp.mac.pro.monthly", "com.screenshotapp.mac.pro.yearly"]
+    public static let productIDs = ["com.screenmint.mac.pro.monthly", "com.screenmint.mac.pro.yearly"]
 
     public static let manageSubscriptionsURL = URL(string: "https://apps.apple.com/account/subscriptions")!
 

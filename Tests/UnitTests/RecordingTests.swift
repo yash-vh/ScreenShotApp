@@ -2,7 +2,7 @@ import AVFoundation
 import CoreMedia
 import ImageIO
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class PauseClockTests: XCTestCase {
     private func t(_ seconds: Double) -> CMTime { CMTime(seconds: seconds, preferredTimescale: 600) }

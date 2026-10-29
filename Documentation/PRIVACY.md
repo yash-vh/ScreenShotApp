@@ -1,10 +1,10 @@
 # Privacy and Data Protection Policy
 
 ## 1. Local-First Architecture
-ScreenshotApp is built on a local-first paradigm. All screen capture, vector annotation, styling, on-device OCR, and asset indexing happen entirely on your Mac. No network request is initiated without explicit user consent.
+ScreenMint is built on a local-first paradigm. All screen capture, vector annotation, styling, on-device OCR, and asset indexing happen entirely on your Mac. No network request is initiated without explicit user consent.
 
 ## 2. Irreversible Redaction Guarantee
-Hiding sensitive text or images behind an overlay shape is not true redaction. In ScreenshotApp:
+Hiding sensitive text or images behind an overlay shape is not true redaction. In ScreenMint:
 - Blur (Gaussian filter) and pixelation (mosaic) are permanently rasterized directly into image pixels upon export.
 - The flattened export file does not include vector layers, original unblurred image buffers, or hidden alpha channels that could reconstruct sensitive data.
 

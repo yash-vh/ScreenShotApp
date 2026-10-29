@@ -2,12 +2,12 @@ import Foundation
 import os
 import OSLog
 
-/// Unified logging facility for ScreenshotApp.
+/// Unified logging facility for ScreenMint.
 /// Wraps `os.Logger` with domain categories, sensitive data redaction, and in-memory log auditing.
 public final class AppLogger: @unchecked Sendable {
     public static let shared = AppLogger()
 
-    private let subsystem = "com.screenshotapp.mac"
+    private let subsystem = "com.screenmint.mac"
 
     // Unified OS Loggers
     public let app: Logger

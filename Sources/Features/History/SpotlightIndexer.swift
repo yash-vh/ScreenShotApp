@@ -9,7 +9,7 @@ import UniformTypeIdentifiers
 public final class SpotlightIndexer {
     public static let shared = SpotlightIndexer()
 
-    nonisolated static let domain = "com.screenshotapp.mac.captures"
+    nonisolated static let domain = "com.screenmint.mac.captures"
 
     private let index = CSSearchableIndex(name: "ScreenMintCaptures")
     private var indexed: [UUID: Date] = [:]

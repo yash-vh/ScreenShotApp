@@ -110,7 +110,7 @@
 - **Scope:**
   - [x] SwiftData schema for persistent asset indexing and search.
   - [x] Full-text search across titles, tags, and recognized OCR text.
-  - [x] Media file lifecycle management in `~/Library/Application Support/com.screenshotapp.mac`.
+  - [x] Media file lifecycle management in `~/Library/Application Support/com.screenmint.mac`.
   - [x] History browser UI with thumbnail grid, date filters, and type filtering.
   - [x] Local storage quota visualizer and one-click cache cleanup.
   - [x] Missing file recovery and stale database record pruning.

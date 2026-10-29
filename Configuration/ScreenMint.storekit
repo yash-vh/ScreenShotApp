@@ -44,7 +44,7 @@
               "locale" : "en_US"
             }
           ],
-          "productID" : "com.screenshotapp.mac.pro.monthly",
+          "productID" : "com.screenmint.mac.pro.monthly",
           "recurringSubscriptionPeriod" : "P1M",
           "referenceName" : "Pro Monthly",
           "subscriptionGroupID" : "21500001",
@@ -76,7 +76,7 @@
               "locale" : "en_US"
             }
           ],
-          "productID" : "com.screenshotapp.mac.pro.yearly",
+          "productID" : "com.screenmint.mac.pro.yearly",
           "recurringSubscriptionPeriod" : "P1Y",
           "referenceName" : "Pro Yearly",
           "subscriptionGroupID" : "21500001",

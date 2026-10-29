@@ -15,7 +15,7 @@ brew install --cask https://raw.githubusercontent.com/yash-vh/ScreenShotApp/main
 ### Method B: Tapping this Repository
 Users can tap this repository directly and install:
 ```bash
-brew tap yash-vh/screenshotapp https://github.com/yash-vh/ScreenShotApp
+brew tap yash-vh/screenmint https://github.com/yash-vh/ScreenShotApp
 brew install --cask screenmint
 ```
 

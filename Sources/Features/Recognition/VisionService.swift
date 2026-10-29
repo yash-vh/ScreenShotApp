@@ -72,7 +72,7 @@ public final class VisionService: @unchecked Sendable {
 
     private let lock = NSLock()
     private var accurateState: AccurateState = .unknown
-    private let queue = DispatchQueue(label: "com.screenshotapp.vision", qos: .userInitiated, attributes: .concurrent)
+    private let queue = DispatchQueue(label: "com.screenmint.vision", qos: .userInitiated, attributes: .concurrent)
 
     /// Maximum time to wait for the accurate recognizer before falling back to the fast one
     public var accurateTimeout: TimeInterval = 8

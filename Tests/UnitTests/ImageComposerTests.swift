@@ -1,6 +1,6 @@
 import XCTest
 import CoreGraphics
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ImageComposerTests: XCTestCase {
     private func solidImage(width: Int, height: Int, gray: CGFloat = 0.5) -> CGImage {

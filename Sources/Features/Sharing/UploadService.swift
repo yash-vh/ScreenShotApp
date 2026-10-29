@@ -275,7 +275,7 @@ public final class UploadService: ObservableObject {
                 }
             }
         }
-        monitor.start(queue: DispatchQueue(label: "com.screenshotapp.upload-network"))
+        monitor.start(queue: DispatchQueue(label: "com.screenmint.upload-network"))
         pathMonitor = monitor
     }
 

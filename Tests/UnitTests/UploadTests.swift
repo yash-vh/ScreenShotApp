@@ -1,6 +1,6 @@
 import CoreGraphics
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 /// Records requests and replies with queued canned responses
 final class MockTransport: HTTPTransport, @unchecked Sendable {

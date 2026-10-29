@@ -21,7 +21,7 @@ public struct KeychainStore: SecretStore {
 
     private let service: String
 
-    public init(service: String = "com.screenshotapp.mac.credentials") {
+    public init(service: String = "com.screenmint.mac.credentials") {
         self.service = service
     }
 

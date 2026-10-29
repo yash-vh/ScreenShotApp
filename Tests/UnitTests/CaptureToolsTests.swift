@@ -1,7 +1,7 @@
 import XCTest
 import CoreGraphics
 import CoreSpotlight
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 /// Auto-blur detection, text-snapping highlights, step numbering and Spotlight items
 final class CaptureToolsTests: XCTestCase {

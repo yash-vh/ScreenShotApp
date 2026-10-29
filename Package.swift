@@ -9,24 +9,24 @@ let package = Package(
     products: [
         .executable(
             name: "ScreenMint",
-            targets: ["ScreenshotApp"]
+            targets: ["ScreenMint"]
         )
     ],
     dependencies: [],
     targets: [
         .executableTarget(
-            name: "ScreenshotApp",
+            name: "ScreenMint",
             path: "Sources",
             exclude: [
                 "Resources/Info.plist",
-                "Resources/ScreenshotApp.entitlements",
+                "Resources/ScreenMint.entitlements",
                 "Resources/Assets.xcassets",
                 "Resources/LaunchAgents"
             ]
         ),
         .testTarget(
-            name: "ScreenshotAppTests",
-            dependencies: ["ScreenshotApp"],
+            name: "ScreenMintTests",
+            dependencies: ["ScreenMint"],
             path: "Tests"
         )
     ]

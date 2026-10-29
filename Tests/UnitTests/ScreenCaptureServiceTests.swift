@@ -1,6 +1,6 @@
 import XCTest
 import CoreGraphics
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ScreenCaptureServiceTests: XCTestCase {
     private func createTestCGImage(width: Int = 200, height: Int = 100) -> CGImage? {

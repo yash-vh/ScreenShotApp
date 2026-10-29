@@ -1,7 +1,7 @@
 import XCTest
 import AppKit
 import Carbon.HIToolbox
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ShortcutBindingTests: XCTestCase {
     private func keyEvent(keyCode: UInt16, characters: String, modifiers: NSEvent.ModifierFlags) -> NSEvent {

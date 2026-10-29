@@ -1,10 +1,10 @@
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class AppErrorTests: XCTestCase {
     func testErrorDomainAndCodes() {
         let permError = AppError.screenCapturePermissionDenied
-        XCTAssertEqual(AppError.errorDomain, "com.screenshotapp.error")
+        XCTAssertEqual(AppError.errorDomain, "com.screenmint.error")
         XCTAssertEqual(permError.errorCode, 1001)
         XCTAssertNotNil(permError.errorDescription)
         XCTAssertNotNil(permError.recoverySuggestion)

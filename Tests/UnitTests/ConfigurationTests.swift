@@ -1,5 +1,5 @@
 import XCTest
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class ConfigurationTests: XCTestCase {
     func testDefaultCaptureSettings() {
@@ -119,11 +119,11 @@ final class ConfigurationTests: XCTestCase {
         defer { defaults.removePersistentDomain(forName: suite) }
         var legacy = CaptureSettings.default
         legacy.shortcutFullScreen = ShortcutBinding(key: "3", modifiers: ["⇧", "⌘"])
-        defaults.set(try JSONEncoder().encode(legacy), forKey: "com.screenshotapp.captureSettings")
+        defaults.set(try JSONEncoder().encode(legacy), forKey: "com.screenmint.captureSettings")
 
         _ = AppConfiguration(defaults: defaults)
 
-        let stored = try JSONDecoder().decode(CaptureSettings.self, from: XCTUnwrap(defaults.data(forKey: "com.screenshotapp.captureSettings")))
+        let stored = try JSONDecoder().decode(CaptureSettings.self, from: XCTUnwrap(defaults.data(forKey: "com.screenmint.captureSettings")))
         XCTAssertEqual(stored.shortcutFullScreen, .defaultFullScreen)
     }
 

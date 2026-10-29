@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>CFBundleIdentifier</key>
-    <string>com.screenshotapp.mac</string>
+    <string>com.screenmint.mac</string>
     <key>CFBundleName</key>
     <string>ScreenMint</string>
     <key>CFBundleDisplayName</key>

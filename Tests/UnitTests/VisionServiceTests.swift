@@ -1,6 +1,6 @@
 import XCTest
 import AppKit
-@testable import ScreenshotApp
+@testable import ScreenMint
 
 final class VisionServiceTests: XCTestCase {
     func testVisionBoundingBoxIsFlippedToTopLeftSpace() {
