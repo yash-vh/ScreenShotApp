@@ -172,4 +172,24 @@ final class AnnotationCanvasInteractionTests: XCTestCase {
         drag(from: CGPoint(x: 224, y: 224), to: CGPoint(x: 324, y: 324))
         XCTAssertEqual(manager.document.items.count, 2, "Clicking inside an outlined shape with a drawing tool draws, not moves")
     }
+
+    func testStepToolPlacesNumberedMarkers() throws {
+        canvas.keyDown(with: key("n", code: 45))
+        XCTAssertEqual(state.tool, .step)
+
+        for p in [CGPoint(x: 200, y: 200), CGPoint(x: 400, y: 300), CGPoint(x: 600, y: 400)] {
+            canvas.mouseDown(with: mouse(.leftMouseDown, p))
+            canvas.mouseUp(with: mouse(.leftMouseUp, p))
+        }
+        XCTAssertEqual(manager.document.items.map(\.type), [.step, .step, .step])
+        XCTAssertEqual(manager.document.items.map(\.textContent), ["1", "2", "3"])
+
+        // Markers are round: equal width and height in view points
+        let rect = manager.document.items[0].bounds
+        XCTAssertEqual(rect.width * canvas.imageRect.width, rect.height * canvas.imageRect.height, accuracy: 0.5)
+
+        manager.undo()
+        canvas.mouseDown(with: mouse(.leftMouseDown, CGPoint(x: 300, y: 500)))
+        XCTAssertEqual(manager.document.items.last?.textContent, "3", "Numbering continues from the highest marker left")
+    }
 }

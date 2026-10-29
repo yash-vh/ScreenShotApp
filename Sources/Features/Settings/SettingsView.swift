@@ -14,7 +14,7 @@ public struct SettingsView: View {
         case storage = "Storage & Cloud"
         case privacy = "Privacy"
         case diagnostics = "Diagnostics"
-        case subscription = "SyncShot Pro"
+        case subscription = "YnShot Pro"
         case about = "About"
 
         public var id: String { rawValue }
@@ -166,20 +166,26 @@ struct GeneralSettingsTab: View {
                     get: { config.launchAtLogin },
                     set: { loginProblem = config.setLaunchAtLogin($0) }
                 )) {
-                    SettingsRowLabel(title: "Launch at login", subtitle: "Start SyncShot when you log in to your Mac.")
+                    SettingsRowLabel(title: "Launch at login", subtitle: "Start YnShot when you log in to your Mac.")
                 }
                 if let loginProblem {
                     SettingsWarning(loginProblem)
                 }
                 Toggle(isOn: $config.showDockIcon) {
-                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, SyncShot runs from the menu bar only.")
+                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, YnShot runs from the menu bar only.")
                 }
                 Toggle(isOn: $config.showMenuBarIcon) {
                     SettingsRowLabel(
                         title: "Show in menu bar",
                         subtitle: config.showMenuBarIcon
                             ? "Quick access to captures, recording and the Library."
-                            : "Hidden. Shortcuts still work; open SyncShot from Finder or Spotlight for Settings."
+                            : "Hidden. Shortcuts still work; open YnShot from Finder or Spotlight for Settings."
+                    )
+                }
+                Toggle(isOn: $config.indexInSpotlight) {
+                    SettingsRowLabel(
+                        title: "Show captures in Spotlight",
+                        subtitle: "Find screenshots by name, date or the text inside them. Indexed on this Mac only."
                     )
                 }
             } header: {
@@ -208,7 +214,7 @@ struct GeneralSettingsTab: View {
             } header: {
                 Text("Background")
             } footer: {
-                Text("Turning this on restarts SyncShot once and also starts it at login.")
+                Text("Turning this on restarts YnShot once and also starts it at login.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -756,6 +762,7 @@ struct AddShortcutSheet: View {
         "Capture Selected Region",
         "Capture Full Screen",
         "Capture Window",
+        "Scrolling Capture",
         "Record Screen",
         "OCR Text from Screen"
     ]
@@ -1076,7 +1083,7 @@ struct PrivacySettingsTab: View {
                     SettingsRowLabel(
                         title: "Screen Recording",
                         subtitle: permissionManager.isAuthorized
-                            ? "SyncShot can capture your screen."
+                            ? "YnShot can capture your screen."
                             : "Required to take screenshots and recordings."
                     )
                 }
@@ -1085,12 +1092,12 @@ struct PrivacySettingsTab: View {
                     LabeledContent {
                         HStack(spacing: 8) {
                             Button("Reset") { permissionManager.resetScreenCapturePermission() }
-                            Button("Relaunch SyncShot") { permissionManager.relaunchApp() }
+                            Button("Relaunch YnShot") { permissionManager.relaunchApp() }
                         }
                     } label: {
                         SettingsRowLabel(
                             title: "Already allowed it?",
-                            subtitle: "macOS applies the change after SyncShot restarts. Reset if the toggle looks on but captures still fail."
+                            subtitle: "macOS applies the change after YnShot restarts. Reset if the toggle looks on but captures still fail."
                         )
                     }
                 }
@@ -1278,7 +1285,7 @@ struct AboutSettingsTab: View {
                 .interpolation(.high)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 96, height: 96)
-                .accessibilityLabel("SyncShot logo")
+                .accessibilityLabel("YnShot logo")
 
             Text(AppBranding.appName)
                 .font(.title)
@@ -1293,13 +1300,25 @@ struct AboutSettingsTab: View {
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 40)
 
+            // Developer contact card
+            VStack(spacing: 0) {
+                AboutContactRow(symbol: "person.crop.circle", title: "Developer", value: AppBranding.developerName)
+                Divider().padding(.leading, 40)
+                AboutContactRow(symbol: "envelope", title: "Email", value: AppBranding.supportEmail) {
+                    AppBranding.contactSupport()
+                }
+            }
+            .background(Color.primary.opacity(0.04), in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.primary.opacity(0.08)))
+            .frame(maxWidth: 340)
+
             Button {
                 AppBranding.contactSupport()
             } label: {
                 Label("Contact Support", systemImage: "questionmark.bubble")
             }
             .controlSize(.large)
-            .help(AppBranding.supportURL.absoluteString)
+            .help("Email \(AppBranding.developerName) at \(AppBranding.supportEmail)")
 
             Spacer()
 
@@ -1309,8 +1328,42 @@ struct AboutSettingsTab: View {
                 Link("Terms of Use", destination: AppBranding.termsOfUseURL)
             }
             .font(.callout)
-            .padding(.bottom, 20)
+
+            Text("© \(Calendar.current.component(.year, from: Date())) \(AppBranding.developerName)")
+                .font(.caption)
+                .foregroundStyle(.tertiary)
+                .padding(.bottom, 20)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+}
+
+/// One line of the About contact card; tappable when it has an action
+private struct AboutContactRow: View {
+    let symbol: String
+    let title: String
+    let value: String
+    var action: (() -> Void)?
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol)
+                .font(.system(size: 14, weight: .medium))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 18)
+            Text(title)
+                .foregroundStyle(.secondary)
+            Spacer(minLength: 12)
+            if let action {
+                Button(value, action: action)
+                    .buttonStyle(.link)
+            } else {
+                Text(value)
+                    .textSelection(.enabled)
+            }
+        }
+        .font(.system(size: 13))
+        .padding(.horizontal, 12)
+        .padding(.vertical, 9)
     }
 }

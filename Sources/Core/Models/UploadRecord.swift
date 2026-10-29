@@ -4,7 +4,7 @@ import Foundation
 public enum CloudProviderType: String, Codable, Sendable, CaseIterable {
     case s3Compatible = "s3_compatible"
     case imgbb = "imgbb"
-    /// Upload history from a provider SyncShot no longer supports; links stay viewable but can't be managed
+    /// Upload history from a provider YnShot no longer supports; links stay viewable but can't be managed
     case legacy = "legacy"
 
     public init(from decoder: Decoder) throws {

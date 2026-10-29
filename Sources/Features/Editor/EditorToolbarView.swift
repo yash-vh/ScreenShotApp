@@ -31,6 +31,7 @@ public struct EditorToolbarView: View {
     var onRedo: () -> Void
     var onDelete: () -> Void
     var onCopyToClipboard: () -> Void
+    var onAutoRedact: (() -> Void)?
     var secondaryActions: [EditorToolbarAction]
     var closeTitle: String
     var closeHelp: String
@@ -51,7 +52,7 @@ public struct EditorToolbarView: View {
 
     private static let toolOrder: [(EditorTool, String)] = [
         (.select, "V"), (.arrow, "A"), (.rectangle, "R"), (.ellipse, "O"), (.freehand, "P"),
-        (.highlight, "H"), (.text, "T"), (.blur, "B"), (.pixelate, "X")
+        (.highlight, "H"), (.text, "T"), (.step, "N"), (.blur, "B"), (.pixelate, "X")
     ]
 
     public init(
@@ -62,6 +63,7 @@ public struct EditorToolbarView: View {
         onRedo: @escaping () -> Void,
         onDelete: @escaping () -> Void,
         onCopyToClipboard: @escaping () -> Void,
+        onAutoRedact: (() -> Void)? = nil,
         secondaryActions: [EditorToolbarAction],
         closeTitle: String = "Done",
         closeHelp: String = "Close Editor (Esc)",
@@ -74,6 +76,7 @@ public struct EditorToolbarView: View {
         self.onRedo = onRedo
         self.onDelete = onDelete
         self.onCopyToClipboard = onCopyToClipboard
+        self.onAutoRedact = onAutoRedact
         self.secondaryActions = secondaryActions
         self.closeTitle = closeTitle
         self.closeHelp = closeHelp
@@ -81,7 +84,7 @@ public struct EditorToolbarView: View {
     }
 
     public var body: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             // MARK: - 1. Tools Group
             ToolbarGroup {
                 ForEach(Self.toolOrder, id: \.0) { tool, shortcut in
@@ -104,7 +107,7 @@ public struct EditorToolbarView: View {
             ToolbarSeparator()
 
             // MARK: - 3. History & Layer Actions
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 iconButton("arrow.uturn.backward", help: "Undo (⌘Z)", enabled: undoRedoManager.canUndo, action: onUndo)
                 iconButton("arrow.uturn.forward", help: "Redo (⇧⌘Z)", enabled: undoRedoManager.canRedo, action: onRedo)
                 iconButton("trash", help: "Delete Selection (⌫)", enabled: state.hasSelection, action: onDelete)
@@ -113,7 +116,7 @@ public struct EditorToolbarView: View {
             ToolbarSeparator()
 
             // MARK: - 4. Styling & Recognition
-            HStack(spacing: 2) {
+            HStack(spacing: 4) {
                 Button {
                     isShowingStyle.toggle()
                 } label: {
@@ -136,6 +139,19 @@ public struct EditorToolbarView: View {
                 }
                 .buttonStyle(ToolbarIconButtonStyle(isActive: state.isShowingRecognition))
                 .help("Recognize Text & QR Codes (⇧⌘T)")
+
+                if let onAutoRedact {
+                    Button(action: onAutoRedact) {
+                        if state.isAutoRedacting {
+                            ProgressView().controlSize(.small)
+                        } else {
+                            Image(systemName: "eye.slash")
+                        }
+                    }
+                    .buttonStyle(ToolbarIconButtonStyle(isActive: state.isAutoRedacting))
+                    .disabled(state.isAutoRedacting)
+                    .help("Auto-Blur Sensitive Info: emails, phone numbers, cards, keys")
+                }
             }
 
             if placement == .docked {
@@ -145,13 +161,13 @@ public struct EditorToolbarView: View {
             }
 
             // MARK: - 5. Direct Actions
-            HStack(spacing: 6) {
+            HStack(spacing: 8) {
                 Button(action: onCopyToClipboard) {
                     Label("Copy", systemImage: "doc.on.doc.fill")
                         .labelStyle(.titleAndIcon)
                         .font(.system(size: 12.5, weight: .semibold))
-                        .padding(.horizontal, 14)
-                        .frame(height: 30)
+                        .padding(.horizontal, 16)
+                        .frame(height: 32)
                         .foregroundStyle(.white)
                         .background(Color.accentColor, in: Capsule())
                         .contentShape(Capsule())
@@ -176,8 +192,8 @@ public struct EditorToolbarView: View {
                 .help(closeHelp)
             }
         }
-        .padding(.horizontal, placement == .floating ? 8 : 12)
-        .padding(.vertical, 7)
+        .padding(.horizontal, placement == .floating ? 12 : 14)
+        .padding(.vertical, 10)
         .fixedSize(horizontal: placement == .floating, vertical: false)
         .background(toolbarBackground)
         .animation(.snappy(duration: 0.18), value: state.tool)
@@ -192,7 +208,7 @@ public struct EditorToolbarView: View {
         case .floating:
             // Liquid Glass on macOS 26+, vibrancy before; one soft shadow lifts it off the screenshot
             Color.clear
-                .hudGlass(cornerRadius: 22)
+                .hudGlass(cornerRadius: 26)
                 .shadow(color: .black.opacity(0.25), radius: 16, y: 6)
         }
     }
@@ -200,6 +216,8 @@ public struct EditorToolbarView: View {
     // MARK: - Ink (color, stroke, size, intensity)
 
     private var usesIntensity: Bool { state.tool == .blur || state.tool == .pixelate }
+    /// Text and step markers are sized by font size rather than stroke
+    private var usesFontSize: Bool { state.tool == .text || state.tool == .step }
 
     private var currentColor: Color {
         Color(red: state.color.red, green: state.color.green, blue: state.color.blue)
@@ -207,6 +225,7 @@ public struct EditorToolbarView: View {
 
     private var inkHelp: String {
         if usesIntensity { return "Intensity" }
+        if state.tool == .step { return "Color & Step Size" }
         return state.tool == .text ? "Color & Text Size" : "Color & Stroke"
     }
 
@@ -226,7 +245,7 @@ public struct EditorToolbarView: View {
                     .overlay(Circle().strokeBorder(Color.primary.opacity(0.25), lineWidth: 0.5))
                     .padding(2)
                     .overlay(Circle().strokeBorder(Color.primary.opacity(0.35), lineWidth: 1.5))
-                if state.tool == .text {
+                if usesFontSize {
                     Text("\(Int(state.fontSize))")
                         .font(.system(size: 11.5, weight: .medium).monospacedDigit())
                 } else if state.tool != .highlight {
@@ -251,8 +270,8 @@ public struct EditorToolbarView: View {
                     panelHeading("Color")
                     HStack(spacing: 8) { colorChips }
                 }
-                if state.tool == .text {
-                    panelSlider("Size", value: $state.fontSize, range: 12...72, unit: "pt")
+                if usesFontSize {
+                    panelSlider("Size", value: $state.fontSize, range: state.tool == .step ? 14...48 : 12...72, unit: "pt")
                 } else if state.tool != .highlight {
                     VStack(alignment: .leading, spacing: 8) {
                         panelHeading("Stroke")
@@ -338,15 +357,15 @@ private struct ToolbarGroup<Content: View>: View {
     @ViewBuilder var content: Content
 
     var body: some View {
-        HStack(spacing: 2) { content }
-            .padding(3)
-            .frame(minHeight: 36)
-            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 11, style: .continuous))
+        HStack(spacing: 4) { content }
+            .padding(4)
+            .frame(minHeight: 40)
+            .background(Color.primary.opacity(0.06), in: RoundedRectangle(cornerRadius: 13, style: .continuous))
     }
 }
 
 private struct ToolbarSeparator: View {
-    var height: CGFloat = 22
+    var height: CGFloat = 24
 
     var body: some View {
         Rectangle()
@@ -363,7 +382,7 @@ private struct ToolbarIconButtonStyle: ButtonStyle {
     var activeStyle: ActiveStyle = .filled
     var filled = false
     var fixedWidth = true
-    var size: CGFloat = 30
+    var size: CGFloat = 32
 
     func makeBody(configuration: Configuration) -> some View {
         StyledLabel(configuration: configuration, style: self)
@@ -376,7 +395,7 @@ private struct ToolbarIconButtonStyle: ButtonStyle {
         @Environment(\.isEnabled) private var isEnabled
 
         var body: some View {
-            let shape = RoundedRectangle(cornerRadius: 8, style: .continuous)
+            let shape = RoundedRectangle(cornerRadius: 9, style: .continuous)
             configuration.label
                 .font(.system(size: 13, weight: style.isActive ? .semibold : .medium))
                 .frame(width: style.fixedWidth ? style.size : nil, height: style.size)

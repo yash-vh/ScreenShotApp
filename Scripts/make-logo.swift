@@ -1,9 +1,9 @@
-// Draws the SyncShot logo: a viewfinder framing two "sync" arrows on a blue–violet macOS squircle.
+// Draws the YnShot logo: a viewfinder framing a "Y" monogram on a blue–violet macOS squircle.
 //
-//   swift Scripts/make-logo.swift icon  Branding/SyncShot-logo.png        # 1024×1024 app icon source
-//   swift Scripts/make-logo.swift glyph Branding/SyncShot-menubar.png 36  # monochrome menu bar template
+//   swift Scripts/make-logo.swift icon  Branding/YnShot-logo.png        # 1024×1024 app icon source
+//   swift Scripts/make-logo.swift glyph Branding/YnShot-menubar.png 36  # monochrome menu bar template
 //
-// Then run Scripts/generate-app-icon.sh Branding/SyncShot-logo.png to refresh the asset catalog.
+// Then run Scripts/generate-app-icon.sh Branding/YnShot-logo.png to refresh the asset catalog.
 import CoreGraphics
 import Foundation
 import ImageIO
@@ -30,7 +30,7 @@ func rgb(_ hex: UInt32, _ alpha: CGFloat = 1) -> CGColor {
     CGColor(srgbRed: CGFloat((hex >> 16) & 0xFF) / 255, green: CGFloat((hex >> 8) & 0xFF) / 255, blue: CGFloat(hex & 0xFF) / 255, alpha: alpha)
 }
 
-/// Viewfinder corners + two sync arrows inside `rect`, stroked with the current stroke color
+/// Viewfinder corners + "Y" monogram inside `rect`, stroked with the current stroke color
 func drawMark(in rect: CGRect, lineWidth: CGFloat) {
     context.setLineWidth(lineWidth)
     context.setLineCap(.round)
@@ -55,29 +55,17 @@ func drawMark(in rect: CGRect, lineWidth: CGFloat) {
     }
     context.strokePath()
 
-    // Two sync arcs, each ending in an arrowhead
-    let center = CGPoint(x: rect.midX, y: rect.midY)
-    let radius = rect.width * 0.2
-    let head = lineWidth * 1.25
-    for start in [CGFloat.pi * 0.2, CGFloat.pi * 1.2] {
-        let end = start + .pi * 0.62
-        let arc = CGMutablePath()
-        arc.addArc(center: center, radius: radius, startAngle: start, endAngle: end, clockwise: false)
-        context.addPath(arc)
-        context.strokePath()
-
-        // Arrowhead whose base sits on the arc end, pointing along the arc
-        let base = CGPoint(x: center.x + radius * cos(end), y: center.y + radius * sin(end))
-        let tangent = CGPoint(x: -sin(end), y: cos(end))
-        let normal = CGPoint(x: cos(end), y: sin(end))
-        let arrow = CGMutablePath()
-        arrow.move(to: CGPoint(x: base.x + tangent.x * head * 1.15, y: base.y + tangent.y * head * 1.15))
-        arrow.addLine(to: CGPoint(x: base.x + normal.x * head, y: base.y + normal.y * head))
-        arrow.addLine(to: CGPoint(x: base.x - normal.x * head, y: base.y - normal.y * head))
-        arrow.closeSubpath()
-        context.addPath(arrow)
-        context.fillPath()
-    }
+    // "Y" monogram for YnShot: two arms meeting just above center, one stem down
+    let center = CGPoint(x: rect.midX, y: rect.midY + rect.height * 0.02)
+    let reach = rect.width * 0.2
+    let y = CGMutablePath()
+    y.move(to: CGPoint(x: center.x - reach * 0.82, y: center.y + reach))
+    y.addLine(to: center)
+    y.addLine(to: CGPoint(x: center.x + reach * 0.82, y: center.y + reach))
+    y.move(to: center)
+    y.addLine(to: CGPoint(x: center.x, y: center.y - reach * 1.05))
+    context.addPath(y)
+    context.strokePath()
 }
 
 if mode == "icon" {

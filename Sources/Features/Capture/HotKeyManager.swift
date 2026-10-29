@@ -32,7 +32,7 @@ private func carbonHotKeyEventHandler(
 /// Hotkeys are registered from the user's bindings in `CaptureSettings` (including custom capture
 /// shortcuts) and re-registered whenever those settings change. Works from any application without
 /// Accessibility permission. macOS's own screenshot shortcuts (⇧⌘3/4/5/6) are never registered,
-/// so the built-in screenshot tool keeps working alongside SyncShot.
+/// so the built-in screenshot tool keeps working alongside YnShot.
 @MainActor
 public final class HotKeyManager: ObservableObject {
     public static let shared = HotKeyManager()
@@ -174,6 +174,7 @@ extension CaptureActionType {
         case "Capture Selected Region": self = .region
         case "Capture Full Screen": self = .fullScreen
         case "Capture Window": self = .window
+        case "Scrolling Capture": self = .scrolling
         case "Record Screen": self = .recording
         case "OCR Text from Screen": self = .ocr
         default: return nil

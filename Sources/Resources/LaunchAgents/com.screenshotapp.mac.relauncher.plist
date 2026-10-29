@@ -6,7 +6,7 @@
     <key>Label</key>
     <string>com.screenshotapp.mac.relauncher</string>
     <key>BundleProgram</key>
-    <string>Contents/MacOS/SyncShot</string>
+    <string>Contents/MacOS/YnShot</string>
     <key>AssociatedBundleIdentifiers</key>
     <array>
         <string>com.screenshotapp.mac</string>

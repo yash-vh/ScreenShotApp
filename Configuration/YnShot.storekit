@@ -23,7 +23,7 @@
       "localizations" : [
 
       ],
-      "name" : "SyncShot Pro",
+      "name" : "YnShot Pro",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -39,8 +39,8 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "All SyncShot Pro features, billed monthly.",
-              "displayName" : "SyncShot Pro Monthly",
+              "description" : "All YnShot Pro features, billed monthly.",
+              "displayName" : "YnShot Pro Monthly",
               "locale" : "en_US"
             }
           ],
@@ -71,8 +71,8 @@
           },
           "localizations" : [
             {
-              "description" : "All SyncShot Pro features, billed yearly.",
-              "displayName" : "SyncShot Pro Yearly",
+              "description" : "All YnShot Pro features, billed yearly.",
+              "displayName" : "YnShot Pro Yearly",
               "locale" : "en_US"
             }
           ],

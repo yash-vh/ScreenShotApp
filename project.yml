@@ -26,8 +26,8 @@ targets:
     scheme:
       testTargets:
         - ScreenshotAppTests
-      # Local StoreKit testing for the SyncShot Pro subscription (Run action only)
-      storeKitConfiguration: Configuration/SyncShot.storekit
+      # Local StoreKit testing for the YnShot Pro subscription (Run action only)
+      storeKitConfiguration: Configuration/YnShot.storekit
     sources:
       - path: Sources
         excludes:
@@ -41,7 +41,7 @@ targets:
             subpath: Contents/Library/LaunchAgents
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac
-      PRODUCT_NAME: SyncShot
+      PRODUCT_NAME: YnShot
       PRODUCT_MODULE_NAME: ScreenshotApp
       INFOPLIST_FILE: Sources/Resources/Info.plist
       CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenshotApp.entitlements
@@ -66,5 +66,5 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac.tests
       PRODUCT_NAME: ScreenshotAppTests
-      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/SyncShot.app/Contents/MacOS/SyncShot"
+      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/YnShot.app/Contents/MacOS/YnShot"
       GENERATE_INFOPLIST_FILE: YES

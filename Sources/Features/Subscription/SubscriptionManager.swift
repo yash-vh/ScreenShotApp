@@ -1,8 +1,8 @@
 import AppKit
 import StoreKit
 
-/// Tracks the SyncShot Pro auto-renewable subscription with StoreKit 2.
-/// Product IDs must match App Store Connect; `Configuration/SyncShot.storekit` mirrors them for local testing.
+/// Tracks the YnShot Pro auto-renewable subscription with StoreKit 2.
+/// Product IDs must match App Store Connect; `Configuration/YnShot.storekit` mirrors them for local testing.
 @MainActor
 public final class SubscriptionManager: ObservableObject {
     public static let shared = SubscriptionManager()

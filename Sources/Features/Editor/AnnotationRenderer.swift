@@ -98,8 +98,13 @@ public struct AnnotationRenderer {
             Self.drawArrow(from: start, to: end, color: strokeCG, lineWidth: lineWidth, in: context)
 
         case .highlight:
-            context.setFillColor(strokeCG.copy(alpha: 0.35) ?? strokeCG)
-            context.fill(rect)
+            // Translucent marker with softly rounded ends; stays readable on light and dark content
+            context.setFillColor(strokeCG.copy(alpha: 0.4) ?? strokeCG)
+            context.addPath(CGPath(roundedRect: rect, cornerWidth: min(rect.height * 0.18, 3 * scale), cornerHeight: min(rect.height * 0.18, 3 * scale), transform: nil))
+            context.fillPath()
+
+        case .step:
+            Self.drawStepMarker(item.textContent ?? "1", in: rect, color: color, scale: scale, context: context)
 
         case .freehand:
             guard let pts = item.points, pts.count > 1 else { return }
@@ -121,6 +126,36 @@ public struct AnnotationRenderer {
         case .blur, .pixelation:
             break
         }
+    }
+
+    /// Filled numbered badge with a white ring; the number turns dark on light colors
+    public static func drawStepMarker(_ label: String, in rect: CGRect, color: AnnotationColor, scale: CGFloat, context: CGContext) {
+        let diameter = min(rect.width, rect.height)
+        guard diameter > 1 else { return }
+        let circle = CGRect(x: rect.midX - diameter / 2, y: rect.midY - diameter / 2, width: diameter, height: diameter)
+
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: diameter * 0.04), blur: diameter * 0.16, color: CGColor(gray: 0, alpha: 0.35))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fillEllipse(in: circle)
+        context.restoreGState()
+
+        let ring = max(diameter * 0.08, 1)
+        context.setFillColor(CGColor(red: color.red, green: color.green, blue: color.blue, alpha: 1))
+        context.fillEllipse(in: circle.insetBy(dx: ring, dy: ring))
+
+        let luminance = 0.2126 * color.red + 0.7152 * color.green + 0.0722 * color.blue
+        let textColor: NSColor = luminance > 0.7 ? .black : .white
+        let fontSize = diameter * (label.count > 2 ? 0.36 : label.count > 1 ? 0.44 : 0.52)
+        let attrs: [NSAttributedString.Key: Any] = [
+            .font: NSFont.systemFont(ofSize: fontSize, weight: .bold).withRoundedDesign,
+            .foregroundColor: textColor
+        ]
+        let size = (label as NSString).size(withAttributes: attrs)
+        NSGraphicsContext.saveGraphicsState()
+        NSGraphicsContext.current = NSGraphicsContext(cgContext: context, flipped: true)
+        (label as NSString).draw(at: CGPoint(x: circle.midX - size.width / 2, y: circle.midY - size.height / 2), withAttributes: attrs)
+        NSGraphicsContext.restoreGraphicsState()
     }
 
     public static func drawArrow(from start: CGPoint, to end: CGPoint, color: CGColor, lineWidth: CGFloat, in context: CGContext) {
@@ -160,5 +195,13 @@ public struct AnnotationRenderer {
             context.addQuadCurve(to: mid, control: points[i])
         }
         context.addLine(to: points[points.count - 1])
+    }
+}
+
+private extension NSFont {
+    /// SF Pro Rounded variant of the font, when available
+    var withRoundedDesign: NSFont {
+        guard let descriptor = fontDescriptor.withDesign(.rounded) else { return self }
+        return NSFont(descriptor: descriptor, size: pointSize) ?? self
     }
 }

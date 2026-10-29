@@ -9,6 +9,7 @@ public enum EditorTool: String, CaseIterable, Identifiable {
     case freehand = "Pen"
     case highlight = "Highlight"
     case text = "Text"
+    case step = "Step"
     case blur = "Blur Redact"
     case pixelate = "Pixelate"
 
@@ -23,6 +24,7 @@ public enum EditorTool: String, CaseIterable, Identifiable {
         case .freehand: return "pencil.line"
         case .highlight: return "highlighter"
         case .text: return "textformat"
+        case .step: return "1.circle"
         case .blur: return "drop.fill"
         case .pixelate: return "checkerboard.rectangle"
         }

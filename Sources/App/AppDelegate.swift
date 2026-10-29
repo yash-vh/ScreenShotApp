@@ -9,7 +9,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        AppLogger.shared.app.info("SyncShot launched successfully.")
+        AppLogger.shared.app.info("YnShot launched successfully.")
 
         // With the relaunch agent on, only the launchd-managed instance runs; other copies hand off and exit
         if BackgroundRelauncher.handOffIfNeeded() { return }
@@ -34,7 +34,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // Show Settings on launch, except when launchd silently restores SyncShot in the background
+        // Show Settings on launch, except when launchd silently restores YnShot in the background
         let restoreRequestedSettings = BackgroundRelauncher.consumePendingOpenSettings()
         if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
             AppCoordinator.shared.openSettings()
@@ -62,6 +62,14 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Detect on-device OCR model availability ahead of the first recognition request
         VisionService.shared.prewarm()
+
+        // Mirror the capture history into Spotlight
+        SpotlightIndexer.shared.start()
+    }
+
+    /// Spotlight result picked: open that capture
+    public func application(_ application: NSApplication, continue userActivity: NSUserActivity, restorationHandler: @escaping ([any NSUserActivityRestoring]) -> Void) -> Bool {
+        SpotlightIndexer.open(userActivity)
     }
 
     public func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -82,6 +90,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         HotKeyManager.shared.stopMonitoring()
-        AppLogger.shared.app.info("SyncShot terminating.")
+        AppLogger.shared.app.info("YnShot terminating.")
     }
 }

@@ -15,6 +15,7 @@ public final class AppConfiguration: ObservableObject {
         static let showDockIcon = "com.screenshotapp.showDockIcon"
         static let showMenuBarIcon = "com.screenshotapp.showMenuBarIcon"
         static let relaunchAfterUnexpectedQuit = "com.screenshotapp.relaunchAfterUnexpectedQuit"
+        static let indexInSpotlight = "com.screenshotapp.indexInSpotlight"
         static let s3Endpoint = "com.screenshotapp.s3Endpoint"
         static let s3Bucket = "com.screenshotapp.s3Bucket"
         static let s3Region = "com.screenshotapp.s3Region"
@@ -45,7 +46,7 @@ public final class AppConfiguration: ObservableObject {
     /// Mirrors the system login-item state; change it with `setLaunchAtLogin(_:)`
     @Published public private(set) var launchAtLogin: Bool
 
-    /// Registers or removes SyncShot as a login item. Returns an error message when macOS refuses.
+    /// Registers or removes YnShot as a login item. Returns an error message when macOS refuses.
     @discardableResult
     public func setLaunchAtLogin(_ enabled: Bool) -> String? {
         var problem: String?
@@ -63,7 +64,7 @@ public final class AppConfiguration: ObservableObject {
         launchAtLogin = status == .enabled || status == .requiresApproval
         defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
         if status == .requiresApproval {
-            problem = "Approve SyncShot in System Settings › General › Login Items."
+            problem = "Approve YnShot in System Settings › General › Login Items."
         }
         return problem
     }
@@ -74,17 +75,24 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    /// Whether the menu bar menu (status item) is shown; when hidden, reopen SyncShot from Finder or Spotlight to reach Settings
+    /// Whether the menu bar menu (status item) is shown; when hidden, reopen YnShot from Finder or Spotlight to reach Settings
     @Published public var showMenuBarIcon: Bool {
         didSet {
             defaults.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon)
         }
     }
 
-    /// Whether launchd should relaunch SyncShot after a force quit or crash (see `BackgroundRelauncher`)
+    /// Whether launchd should relaunch YnShot after a force quit or crash (see `BackgroundRelauncher`)
     @Published public var relaunchAfterUnexpectedQuit: Bool {
         didSet {
             defaults.set(relaunchAfterUnexpectedQuit, forKey: Keys.relaunchAfterUnexpectedQuit)
+        }
+    }
+
+    /// Whether captures are searchable in Spotlight by title, date and recognized text (see `SpotlightIndexer`)
+    @Published public var indexInSpotlight: Bool {
+        didSet {
+            defaults.set(indexInSpotlight, forKey: Keys.indexInSpotlight)
         }
     }
 
@@ -193,6 +201,7 @@ public final class AppConfiguration: ObservableObject {
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
         self.showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) != nil ? defaults.bool(forKey: Keys.showMenuBarIcon) : true
         self.relaunchAfterUnexpectedQuit = defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit)
+        self.indexInSpotlight = defaults.object(forKey: Keys.indexInSpotlight) != nil ? defaults.bool(forKey: Keys.indexInSpotlight) : true
 
         self.s3Endpoint = defaults.string(forKey: Keys.s3Endpoint) ?? ""
         self.s3Bucket = defaults.string(forKey: Keys.s3Bucket) ?? ""
@@ -256,7 +265,7 @@ public final class AppConfiguration: ObservableObject {
                 return "Couldn't create \(url.path): \(error.localizedDescription)"
             }
         }
-        return fm.isWritableFile(atPath: url.path) ? nil : "SyncShot can't write to \(url.path)."
+        return fm.isWritableFile(atPath: url.path) ? nil : "YnShot can't write to \(url.path)."
     }
 
     /// Directory for Application Support metadata and temporary working buffers

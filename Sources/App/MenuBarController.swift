@@ -119,12 +119,12 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         menu.addItem(headerItem())
         menu.addItem(NSMenuItem.separator())
 
-        // 1. Capture Actions
-        let regionItem = actionItem("Capture Selected Area", symbol: "crop", action: #selector(didSelectCaptureRegion))
+        // 1. Capture
+        let regionItem = actionItem("Capture Area", symbol: "crop", action: #selector(didSelectCaptureRegion))
         applyShortcut(settings.shortcutRegion, to: regionItem)
         menu.addItem(regionItem)
 
-        let fullScreenItem = actionItem("Capture Full Screen", symbol: "macwindow", action: #selector(didSelectCaptureFullScreen))
+        let fullScreenItem = actionItem("Capture Screen", symbol: "macwindow", action: #selector(didSelectCaptureFullScreen))
         applyShortcut(settings.shortcutFullScreen, to: fullScreenItem)
         menu.addItem(fullScreenItem)
 
@@ -132,36 +132,35 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         applyShortcut(settings.shortcutWindow, to: windowItem)
         menu.addItem(windowItem)
 
-        menu.addItem(NSMenuItem.separator())
+        menu.addItem(actionItem("Scrolling Capture", symbol: CaptureActionType.scrolling.systemIcon, action: #selector(didSelectScrollingCapture)))
 
-        // 2. Screen Recording & OCR
+        let ocrItem = actionItem("Capture Text", symbol: "text.viewfinder", action: #selector(didSelectOcr))
+        applyShortcut(settings.shortcutQuickOcr, to: ocrItem)
+        menu.addItem(ocrItem)
+
+        // 2. Recording
         if recorder.isActive {
-            let stopItem = actionItem("Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", symbol: "stop.circle.fill", action: #selector(didSelectToggleRecording))
+            let stopItem = actionItem("Stop Recording (\(RecordingCoordinator.format(recorder.elapsed)))", symbol: "stop.fill", action: #selector(didSelectToggleRecording), tint: .systemRed)
             applyShortcut(settings.shortcutRecording, to: stopItem)
-            stopItem.image = stopItem.image?.withSymbolConfiguration(NSImage.SymbolConfiguration(paletteColors: [.systemRed]))
             menu.addItem(stopItem)
 
             let isPaused = recorder.state == .paused
-            menu.addItem(actionItem(isPaused ? "Resume Recording" : "Pause Recording", symbol: isPaused ? "play.circle" : "pause.circle", action: #selector(didSelectPauseRecording)))
+            menu.addItem(actionItem(isPaused ? "Resume Recording" : "Pause Recording", symbol: isPaused ? "play.fill" : "pause.fill", action: #selector(didSelectPauseRecording)))
             menu.addItem(actionItem("Discard Recording", symbol: "trash", action: #selector(didSelectDiscardRecording)))
         } else {
             let recordMenu = NSMenu()
-            let recordRegion = actionItem("Selected Area", symbol: "crop", action: #selector(didSelectRecordRegion))
+            let recordRegion = actionItem("Area", symbol: "crop", action: #selector(didSelectRecordRegion))
             applyShortcut(settings.shortcutRecording, to: recordRegion)
             let recordWindow = actionItem("Window", symbol: "macwindow.on.rectangle", action: #selector(didSelectRecordWindow))
-            let recordScreen = actionItem("Full Screen", symbol: "macwindow", action: #selector(didSelectRecordFullScreen))
+            let recordScreen = actionItem("Screen", symbol: "macwindow", action: #selector(didSelectRecordFullScreen))
             for item in [recordRegion, recordWindow, recordScreen] {
                 item.isEnabled = recorder.state == .idle
                 recordMenu.addItem(item)
             }
-            let recordingItem = actionItem("Record Screen", symbol: "record.circle", action: nil)
+            let recordingItem = actionItem("Record Screen", symbol: "record.circle", action: nil, tint: .systemRed)
             recordingItem.submenu = recordMenu
             menu.addItem(recordingItem)
         }
-
-        let ocrItem = actionItem("OCR Text from Screen", symbol: "text.viewfinder", action: #selector(didSelectOcr))
-        applyShortcut(settings.shortcutQuickOcr, to: ocrItem)
-        menu.addItem(ocrItem)
 
         menu.addItem(NSMenuItem.separator())
 
@@ -185,33 +184,25 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         recentSubmenuItem.submenu = recentMenu
         menu.addItem(recentSubmenuItem)
 
-        menu.addItem(actionItem("Open Library…", symbol: "photo.stack", action: #selector(didSelectLibrary)))
+        let libraryItem = actionItem("Open Library…", symbol: "photo.on.rectangle.angled", action: #selector(didSelectLibrary))
+        libraryItem.keyEquivalent = "l"
+        libraryItem.keyEquivalentModifierMask = [.command, .shift]
+        menu.addItem(libraryItem)
 
         menu.addItem(NSMenuItem.separator())
 
-        // 4. Settings, Support & App Management
-        let settingsItem = actionItem("Settings…", symbol: "gearshape", action: #selector(didSelectSettings))
-        settingsItem.keyEquivalent = ","
-        settingsItem.keyEquivalentModifierMask = [.command]
-        menu.addItem(settingsItem)
+        // 4. Footer bar: Settings · Pro · Support · Quit in one row instead of four
+        menu.addItem(footerItem(for: menu))
 
-        let proTitle = SubscriptionManager.shared.isPro ? "SyncShot Pro" : "Upgrade to Pro…"
-        menu.addItem(actionItem(proTitle, symbol: "crown", action: #selector(didSelectPro)))
-
-        let helpMenu = NSMenu()
-        helpMenu.addItem(actionItem("Contact Support…", symbol: "questionmark.bubble", action: #selector(didSelectSupport)))
-        helpMenu.addItem(actionItem("Privacy Policy", symbol: "hand.raised", action: #selector(didSelectPrivacyPolicy)))
-        helpMenu.addItem(actionItem("Terms of Use", symbol: "doc.text", action: #selector(didSelectTerms)))
-        let helpItem = actionItem("Help & Support", symbol: "questionmark.circle", action: nil)
-        helpItem.submenu = helpMenu
-        menu.addItem(helpItem)
-
-        menu.addItem(NSMenuItem.separator())
-
-        let quitItem = actionItem("Quit SyncShot", symbol: "power", action: #selector(didSelectQuit))
-        quitItem.keyEquivalent = "q"
-        quitItem.keyEquivalentModifierMask = [.command]
-        menu.addItem(quitItem)
+        // Keep ⌘, and ⌘Q working while the footer replaces their rows
+        for (title, key, action) in [("Settings…", ",", #selector(didSelectSettings)), ("Quit \(AppBranding.appName)", "q", #selector(didSelectQuit))] {
+            let hidden = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            hidden.keyEquivalentModifierMask = [.command]
+            hidden.target = self
+            hidden.isHidden = true
+            hidden.allowsKeyEquivalentWhenHidden = true
+            menu.addItem(hidden)
+        }
 
         currentMenu = menu
         attachMenuForCurrentState()
@@ -219,32 +210,79 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     // MARK: - Menu Building Helpers
 
-    private static let menuWidth: CGFloat = 236
+    private static let menuWidth: CGFloat = 260
     private static let relativeDate: RelativeDateTimeFormatter = {
         let formatter = RelativeDateTimeFormatter()
         formatter.unitsStyle = .short
         return formatter
     }()
 
-    /// Standard row: consistent symbol size and weight so every item lines up
-    private func actionItem(_ title: String, symbol: String, action: Selector?) -> NSMenuItem {
+    /// Standard row: the symbol sits on a soft rounded tile with even padding, so every row lines up
+    private func actionItem(_ title: String, symbol: String, action: Selector?, tint: NSColor? = nil) -> NSMenuItem {
         let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
-        item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
-            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 13, weight: .regular))
+        item.image = Self.tileImage(symbol: symbol, tint: tint)
         item.target = action == nil ? nil : self
         return item
+    }
+
+    /// 20 pt tile with a 12 pt symbol; drawn lazily so it follows light / dark appearance
+    private static func tileImage(symbol: String, tint: NSColor?) -> NSImage? {
+        guard let glyph = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)?
+            .withSymbolConfiguration(NSImage.SymbolConfiguration(pointSize: 11.5, weight: .medium)) else { return nil }
+        let size = NSSize(width: 20, height: 20)
+        return NSImage(size: size, flipped: false) { rect in
+            let tile = NSBezierPath(roundedRect: rect.insetBy(dx: 0.5, dy: 0.5), xRadius: 5.5, yRadius: 5.5)
+            (tint?.withAlphaComponent(0.16) ?? NSColor.labelColor.withAlphaComponent(0.08)).setFill()
+            tile.fill()
+
+            // Tint the template symbol by filling through it
+            let symbolColor = tint ?? NSColor.labelColor.withAlphaComponent(0.85)
+            let glyphSize = glyph.size
+            let glyphRect = NSRect(
+                x: rect.midX - glyphSize.width / 2, y: rect.midY - glyphSize.height / 2,
+                width: glyphSize.width, height: glyphSize.height
+            )
+            let tinted = NSImage(size: glyphSize, flipped: false) { inner in
+                glyph.draw(in: inner)
+                symbolColor.set()
+                inner.fill(using: .sourceAtop)
+                return true
+            }
+            tinted.draw(in: glyphRect)
+            return true
+        }
     }
 
     private func headerItem() -> NSMenuItem {
         let header = MenuHeaderView(
             destination: config.storageMode == .localOnly ? "Local" : config.storageMode.title,
-            destinationSymbol: config.storageMode.iconName
+            destinationSymbol: config.storageMode.iconName,
+            isPro: SubscriptionManager.shared.isPro
         )
-        let host = NSHostingView(rootView: header)
+        return hostedItem(header)
+    }
+
+    private func footerItem(for menu: NSMenu) -> NSMenuItem {
+        let perform: (Selector) -> Void = { [weak self, weak menu] selector in
+            menu?.cancelTracking()
+            // Run after the menu has closed so windows can come to the front
+            DispatchQueue.main.async { _ = self?.perform(selector) }
+        }
+        let footer = MenuFooterView(
+            isPro: SubscriptionManager.shared.isPro,
+            onSettings: { perform(#selector(MenuBarController.didSelectSettings)) },
+            onPro: { perform(#selector(MenuBarController.didSelectPro)) },
+            onSupport: { perform(#selector(MenuBarController.didSelectSupport)) },
+            onQuit: { perform(#selector(MenuBarController.didSelectQuit)) }
+        )
+        return hostedItem(footer)
+    }
+
+    private func hostedItem<Content: View>(_ view: Content) -> NSMenuItem {
+        let host = NSHostingView(rootView: view)
         host.frame = NSRect(x: 0, y: 0, width: Self.menuWidth, height: host.fittingSize.height)
         let item = NSMenuItem()
         item.view = host
-        item.isEnabled = false
         return item
     }
 
@@ -299,6 +337,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         coordinator.startRecording(.fullScreen)
     }
 
+    @objc private func didSelectScrollingCapture() {
+        coordinator.triggerCapture(type: .scrolling)
+    }
+
     @objc private func didSelectOcr() {
         coordinator.triggerCapture(type: .ocr)
     }
@@ -328,14 +370,6 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         coordinator.openSettings(tab: .subscription)
     }
 
-    @objc private func didSelectPrivacyPolicy() {
-        AppBranding.openPrivacyPolicy()
-    }
-
-    @objc private func didSelectTerms() {
-        AppBranding.openTermsOfUse()
-    }
-
     @objc private func didSelectQuit() {
         NSApplication.shared.terminate(nil)
     }
@@ -354,27 +388,98 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 private struct MenuHeaderView: View {
     let destination: String
     let destinationSymbol: String
+    let isPro: Bool
 
     var body: some View {
-        HStack(spacing: 8) {
-            Image(nsImage: AppBranding.logo(size: 22))
+        HStack(spacing: 10) {
+            Image(nsImage: AppBranding.logo(size: 26))
                 .resizable()
                 .interpolation(.high)
-                .frame(width: 22, height: 22)
-            Text(AppBranding.appName)
-                .font(.system(size: 13, weight: .semibold))
+                .frame(width: 26, height: 26)
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 5) {
+                    Text(AppBranding.appName)
+                        .font(.system(size: 13, weight: .semibold))
+                    if isPro {
+                        Text("PRO")
+                            .font(.system(size: 8.5, weight: .heavy))
+                            .padding(.horizontal, 4)
+                            .padding(.vertical, 1.5)
+                            .foregroundStyle(.white)
+                            .background(Color.orange.gradient, in: Capsule())
+                    }
+                }
+                Text("by \(AppBranding.developerName)")
+                    .font(.system(size: 10.5))
+                    .foregroundStyle(.secondary)
+            }
             Spacer(minLength: 8)
             Label(destination, systemImage: destinationSymbol)
                 .labelStyle(.titleAndIcon)
-                .font(.system(size: 11, weight: .medium))
+                .font(.system(size: 10.5, weight: .medium))
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 3)
                 .background(Color.primary.opacity(0.07), in: Capsule())
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 5)
+        .padding(.horizontal, 14)
+        .padding(.vertical, 6)
         .accessibilityElement(children: .combine)
+    }
+}
+
+// MARK: - Footer
+
+/// One row of equal-width icon buttons replacing the Settings / Pro / Support / Quit rows
+private struct MenuFooterView: View {
+    let isPro: Bool
+    let onSettings: () -> Void
+    let onPro: () -> Void
+    let onSupport: () -> Void
+    let onQuit: () -> Void
+
+    var body: some View {
+        HStack(spacing: 6) {
+            MenuFooterButton(symbol: "gearshape", title: "Settings", help: "Settings (⌘,)", action: onSettings)
+            MenuFooterButton(symbol: "crown", title: isPro ? "Pro" : "Upgrade", help: isPro ? "\(AppBranding.appName) Pro" : "Upgrade to Pro", tint: .orange, action: onPro)
+            MenuFooterButton(symbol: "envelope", title: "Support", help: "Email \(AppBranding.developerName)", action: onSupport)
+            MenuFooterButton(symbol: "power", title: "Quit", help: "Quit \(AppBranding.appName) (⌘Q)", action: onQuit)
+        }
+        .padding(.horizontal, 10)
+        .padding(.top, 2)
+        .padding(.bottom, 4)
+    }
+}
+
+private struct MenuFooterButton: View {
+    let symbol: String
+    let title: String
+    let help: String
+    var tint: Color?
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            VStack(spacing: 3) {
+                Image(systemName: symbol)
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(tint ?? .primary)
+                    .frame(width: 30, height: 24)
+                    .background((tint ?? .primary).opacity(isHovered ? 0.18 : 0.08), in: RoundedRectangle(cornerRadius: 7, style: .continuous))
+                Text(title)
+                    .font(.system(size: 10, weight: .medium))
+                    .foregroundStyle(.secondary)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+        .help(help)
+        .accessibilityLabel(help)
     }
 }

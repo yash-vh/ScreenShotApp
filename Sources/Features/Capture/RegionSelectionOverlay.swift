@@ -278,6 +278,7 @@ final class RegionSelectionView: NSView {
             onRedo: { [weak canvas] in canvas?.redo(nil) },
             onDelete: { [weak canvas] in canvas?.delete(nil) },
             onCopyToClipboard: { [weak self] in self?.finish(.copy) },
+            onAutoRedact: { [weak canvas] in canvas?.autoRedactSensitiveInfo() },
             secondaryActions: [
                 EditorToolbarAction(id: "upload", symbol: "icloud.and.arrow.up", help: "Upload & Copy Link (⌘U)") { [weak self] in self?.finish(.upload) },
                 EditorToolbarAction(id: "save", symbol: "square.and.arrow.down", help: "Save to File (⌘S)") { [weak self] in self?.finish(.save) }

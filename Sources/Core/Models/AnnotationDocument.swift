@@ -61,6 +61,8 @@ public enum AnnotationType: String, Codable, Sendable, CaseIterable {
     case freehand = "freehand"
     case blur = "blur"
     case pixelation = "pixelation"
+    /// Numbered step marker (1, 2, 3…); the number is stored in `textContent`
+    case step = "step"
 }
 
 /// An individual annotation layer/element
@@ -164,6 +166,11 @@ public struct AnnotationDocument: Identifiable, Codable, Sendable, Equatable {
         self.padding = try container.decodeIfPresent(Double.self, forKey: .padding) ?? 0.0
         self.cornerRadius = try container.decodeIfPresent(Double.self, forKey: .cornerRadius) ?? 0.0
         self.shadowRadius = try container.decodeIfPresent(Double.self, forKey: .shadowRadius) ?? 0.0
+    }
+
+    /// Number for the next step marker: one past the highest placed so far
+    public var nextStepNumber: Int {
+        (items.compactMap { $0.type == .step ? Int($0.textContent ?? "") : nil }.max() ?? 0) + 1
     }
 
     /// Whether any presentation styling (backdrop, padding, rounding, shadow) is applied

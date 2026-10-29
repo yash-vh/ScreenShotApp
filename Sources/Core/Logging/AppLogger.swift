@@ -120,7 +120,7 @@ public final class AppLogger: @unchecked Sendable {
     /// Entries before this are hidden from `loadRecentLogs` (the system log itself can't be erased)
     private var clearedAt: Date?
 
-    /// This process's SyncShot entries from the unified system log, oldest first, redacted.
+    /// This process's YnShot entries from the unified system log, oldest first, redacted.
     /// Covers every `Logger` category (app, capture, sharing, …), not just the in-memory buffer.
     public func loadRecentLogs(within interval: TimeInterval = 3600, limit: Int = 500) async -> [LogEntry] {
         let since = max(Date().addingTimeInterval(-interval), lock.withLock { clearedAt } ?? .distantPast)

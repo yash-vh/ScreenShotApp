@@ -77,7 +77,7 @@
       <CommandLineArguments>
       </CommandLineArguments>
       <StoreKitConfigurationFileReference
-         identifier = "../../Configuration/SyncShot.storekit">
+         identifier = "../../Configuration/YnShot.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction

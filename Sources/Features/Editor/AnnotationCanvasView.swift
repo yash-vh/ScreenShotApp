@@ -28,6 +28,10 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     public var baseCGImage: CGImage? {
         didSet {
             rebuildPreviewBase()
+            textLineTask?.cancel()
+            textLineTask = nil
+            textLineBoxes = nil
+            if state.tool == .highlight { loadTextLinesIfNeeded() }
             needsDisplay = true
         }
     }
@@ -79,6 +83,11 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     private var previewBaseImage: CGImage?
     private var previewImage: CGImage?
     private var previewRedactionItems: [AnnotationItem] = []
+
+    // Recognized text lines the highlighter snaps to (loaded when the highlighter is picked)
+    private var textLineBoxes: [NormalizedRect]?
+    private var textLineTask: Task<Void, Never>?
+    private var autoRedactTask: Task<Void, Never>?
 
     // Floating Toast Notification
     private var toastMessage: String?
@@ -245,6 +254,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     private func toolDidChange(to tool: EditorTool) {
         commitInlineTextEditor()
+        if tool == .highlight { loadTextLinesIfNeeded() }
         if tool != .select {
             selectedItemId = nil
         }
@@ -268,7 +278,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         if Self.strokedTypes.contains(item.type) && state.strokeWidth != item.strokeWidth {
             state.strokeWidth = item.strokeWidth
         }
-        if item.type == .text, let size = item.fontSize, state.fontSize != size {
+        if item.type == .text || item.type == .step, let size = item.fontSize, state.fontSize != size {
             state.fontSize = size
         }
         if let radius = item.blurRadius, item.type == .blur || item.type == .pixelation, state.blurRadius != radius {
@@ -285,6 +295,17 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
     }
 
     private func applyFontSize(_ size: Double) {
+        if selectedItem?.type == .step {
+            applyToSelection(key: "font", where: { $0.type == .step }) { updated in
+                let center = renderer.point(for: NormalizedPoint(
+                    x: updated.bounds.origin.x + updated.bounds.width / 2,
+                    y: updated.bounds.origin.y + updated.bounds.height / 2
+                ))
+                updated.fontSize = size
+                updated.bounds = stepBounds(centeredAt: center, size: size)
+            }
+            return
+        }
         let origin = selectedItem.map { renderer.point(for: $0.bounds.origin) } ?? .zero
         applyToSelection(key: "font", where: { $0.type == .text }) { updated in
             updated.fontSize = size
@@ -401,7 +422,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     public static let toolShortcuts: [String: EditorTool] = [
         "v": .select, "a": .arrow, "r": .rectangle, "o": .ellipse, "p": .freehand,
-        "h": .highlight, "t": .text, "b": .blur, "x": .pixelate
+        "h": .highlight, "t": .text, "n": .step, "b": .blur, "x": .pixelate
     ]
 
     public override func cancelOperation(_ sender: Any?) {
@@ -628,6 +649,11 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         if currentTool == .text {
             selectedItemId = nil
             startNewInlineTextEditor(at: loc)
+            return
+        }
+
+        if currentTool == .step {
+            placeStep(at: loc)
             return
         }
 
@@ -860,7 +886,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
                 if Self.ellipseHit(point, in: rect, tolerance: tolerance, filled: forSelectTool) {
                     return item
                 }
-            case .text, .highlight, .blur, .pixelation:
+            case .text, .highlight, .blur, .pixelation, .step:
                 if rect.insetBy(dx: -4, dy: -4).contains(point) {
                     return item
                 }
@@ -993,6 +1019,17 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
             guard hypot(end.x - start.x, end.y - start.y) >= minDragPoints * 2 else { return }
             itemType = .arrow
             points = [normStart, normEnd]
+        case .highlight where abs(end.x - start.x) >= minDragPoints:
+            // Snap to the text lines under the stroke; a drag over no text falls back to a plain box
+            let snapped = TextHighlightSnapper.snap(drag: bounds, lines: textLineBoxes ?? [])
+            if !snapped.isEmpty {
+                let items = snapped.map { AnnotationItem(type: .highlight, bounds: $0, strokeColor: state.color, strokeWidth: state.strokeWidth) }
+                undoRedoManager.updateDocument { $0.items.append(contentsOf: items) }
+                selectedItemId = items.count == 1 ? items[0].id : nil
+                return
+            }
+            guard abs(end.y - start.y) >= minDragPoints else { return }
+            itemType = .highlight
         default:
             guard abs(end.x - start.x) >= minDragPoints, abs(end.y - start.y) >= minDragPoints else { return }
             switch currentTool {
@@ -1016,6 +1053,74 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
         )
         undoRedoManager.addItem(item)
         selectedItemId = item.id
+    }
+
+    // MARK: - Step Markers
+
+    /// Diameter of a step badge for the given size setting, in annotation points
+    private static func stepDiameter(for size: Double) -> CGFloat { CGFloat(size) * 1.35 }
+
+    private func stepBounds(centeredAt center: CGPoint, size: Double) -> NormalizedRect {
+        let iRect = imageRect
+        let d = Self.stepDiameter(for: size) * renderer.scale
+        let x = min(max(center.x - d / 2, iRect.minX), iRect.maxX - d)
+        let y = min(max(center.y - d / 2, iRect.minY), iRect.maxY - d)
+        let origin = normalize(point: CGPoint(x: x, y: y))
+        let corner = normalize(point: CGPoint(x: x + d, y: y + d))
+        return NormalizedRect(x: origin.x, y: origin.y, width: corner.x - origin.x, height: corner.y - origin.y)
+    }
+
+    /// Drops the next numbered step (1, 2, 3…) centered on the click
+    private func placeStep(at loc: CGPoint) {
+        let item = AnnotationItem(
+            type: .step,
+            bounds: stepBounds(centeredAt: loc, size: state.fontSize),
+            strokeColor: state.color,
+            textContent: String(document.nextStepNumber),
+            fontSize: state.fontSize
+        )
+        undoRedoManager.addItem(item)
+        selectedItemId = item.id
+    }
+
+    // MARK: - Text-Aware Highlighting & Auto Redaction
+
+    /// Recognizes text lines once per image so highlighter strokes can snap to them
+    private func loadTextLinesIfNeeded() {
+        guard textLineBoxes == nil, textLineTask == nil, let image = baseCGImage else { return }
+        textLineTask = Task { @MainActor [weak self] in
+            let result = try? await VisionService.shared.recognize(in: image, recognitionLevel: .fast)
+            guard let self, !Task.isCancelled else { return }
+            self.textLineBoxes = result?.textBlocks.map(\.boundingBox) ?? []
+            self.textLineTask = nil
+        }
+    }
+
+    /// Finds emails, phone numbers, card numbers, keys and similar text in the image and covers each with a redaction
+    public func autoRedactSensitiveInfo() {
+        guard autoRedactTask == nil, let image = baseCGImage else { return }
+        commitInlineTextEditor()
+        state.isAutoRedacting = true
+        let style: AnnotationType = AppConfiguration.shared.captureSettings.defaultRedactionStyle == .pixelate ? .pixelation : .blur
+        autoRedactTask = Task { @MainActor [weak self] in
+            let regions = (try? await SensitiveInfoDetector.detectRegions(in: image)) ?? []
+            guard let self else { return }
+            self.autoRedactTask = nil
+            self.state.isAutoRedacting = false
+            guard !Task.isCancelled else { return }
+
+            // Skip areas that are already covered by an earlier redaction
+            let existing = self.document.items.filter { $0.type == .blur || $0.type == .pixelation }.map(\.bounds)
+            let fresh = regions.filter { region in !existing.contains { $0 == region } }
+            guard !fresh.isEmpty else {
+                self.showToast("No sensitive info found")
+                return
+            }
+            let items = fresh.map { AnnotationItem(type: style, bounds: $0, strokeColor: .black, blurRadius: self.state.blurRadius) }
+            self.undoRedoManager.updateDocument { $0.items.append(contentsOf: items) }
+            self.selectedItemId = nil
+            self.showToast("Blurred \(items.count) sensitive item\(items.count == 1 ? "" : "s")")
+        }
     }
 
     // MARK: - In-Place Text Editor

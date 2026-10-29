@@ -1,7 +1,7 @@
 import AppKit
 import ServiceManagement
 
-/// Keeps SyncShot reachable after a force quit or crash.
+/// Keeps YnShot reachable after a force quit or crash.
 ///
 /// macOS can't keep a process alive once it is killed, so this registers a launchd agent
 /// (`Contents/Library/LaunchAgents/com.screenshotapp.mac.relauncher.plist`) whose
@@ -47,7 +47,7 @@ public enum BackgroundRelauncher {
         }
         switch service.status {
         case .requiresApproval:
-            return "Approve SyncShot in System Settings › General › Login Items."
+            return "Approve YnShot in System Settings › General › Login Items."
         case .enabled where !isLaunchedByAgent:
             // launchd has just started the managed instance; let it take over
             NSApp.terminate(nil)
@@ -70,10 +70,10 @@ public enum BackgroundRelauncher {
             // The managed instance was quit cleanly, so launchd won't restart it on its own
             requestOpenSettingsInManagedInstance()
             guard kickstartAgent(), waitForManagedInstance(timeout: 5) else {
-                // launchd accepted the request but couldn't start SyncShot (e.g. the registration points at
+                // launchd accepted the request but couldn't start YnShot (e.g. the registration points at
                 // an older build whose signature no longer matches). Keep this copy running instead of leaving
                 // nothing open, and remove the broken agent so launchd stops retrying.
-                AppLogger.shared.app.error("Relaunch agent failed to start SyncShot; turning background relaunch off.")
+                AppLogger.shared.app.error("Relaunch agent failed to start YnShot; turning background relaunch off.")
                 _ = consumePendingOpenSettings()
                 try? service.unregister()
                 AppConfiguration.shared.relaunchAfterUnexpectedQuit = false

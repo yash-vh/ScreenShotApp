@@ -1,7 +1,7 @@
 import Foundation
 
 /// Where the Upload button sends captures; maps onto `StorageMode`.
-/// SyncShot supports exactly two upload backends: ImgBB and Amazon S3 (or an S3-compatible bucket).
+/// YnShot supports exactly two upload backends: ImgBB and Amazon S3 (or an S3-compatible bucket).
 public enum UploadDestination: String, CaseIterable, Identifiable, Sendable {
     case off
     case imgbb
