@@ -1,6 +1,6 @@
 cask "screenmint" do
   version "1.0.0"
-  sha256 "f06cd1154fd8631f7dec14283dfff049b70ef886b5f9a46de279d60433e77f95"
+  sha256 "025b4024d7bd94a584b1e65796ad8dd30a06fffee60ce78d49aecff97918ef94"
 
   url "https://github.com/yash-vh/ScreenShotApp/releases/download/v#{version}/ScreenMint-#{version}.dmg"
   name "ScreenMint"

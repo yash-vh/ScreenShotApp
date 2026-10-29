@@ -28,6 +28,21 @@ public enum DefaultRedactionStyle: String, Codable, Sendable, CaseIterable {
     }
 }
 
+/// Image quality/scale for screen captures
+public enum ImageResolution: String, Codable, Sendable, CaseIterable, Identifiable {
+    case retina = "retina"
+    case standard = "standard"
+
+    public var id: String { rawValue }
+
+    public var displayName: String {
+        switch self {
+        case .retina: return "Retina (2x) - Full Quality"
+        case .standard: return "Standard (1x) - Compact Size"
+        }
+    }
+}
+
 /// Where captures and recordings are saved
 public enum SaveLocation: String, Codable, Sendable, CaseIterable, Identifiable {
     case desktop
@@ -181,6 +196,7 @@ public struct CustomShortcutItem: Identifiable, Codable, Sendable, Equatable {
 public struct CaptureSettings: Codable, Sendable, Equatable {
     public var defaultFormat: ExportFormat
     public var jpegQuality: Double
+    public var imageResolution: ImageResolution
     public var copyToClipboard: Bool
     public var saveToDisk: Bool
     public var playCaptureSound: Bool
@@ -208,6 +224,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public init(
         defaultFormat: ExportFormat = .png,
         jpegQuality: Double = 0.85,
+        imageResolution: ImageResolution = .retina,
         copyToClipboard: Bool = true,
         saveToDisk: Bool = true,
         playCaptureSound: Bool = true,
@@ -229,6 +246,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     ) {
         self.defaultFormat = defaultFormat
         self.jpegQuality = jpegQuality
+        self.imageResolution = imageResolution
         self.copyToClipboard = copyToClipboard
         self.saveToDisk = saveToDisk
         self.playCaptureSound = playCaptureSound
@@ -253,6 +271,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         let container = try decoder.container(keyedBy: CodingKeys.self)
         self.defaultFormat = try container.decodeIfPresent(ExportFormat.self, forKey: .defaultFormat) ?? .png
         self.jpegQuality = try container.decodeIfPresent(Double.self, forKey: .jpegQuality) ?? 0.85
+        self.imageResolution = try container.decodeIfPresent(ImageResolution.self, forKey: .imageResolution) ?? .retina
         self.copyToClipboard = try container.decodeIfPresent(Bool.self, forKey: .copyToClipboard) ?? true
         self.saveToDisk = try container.decodeIfPresent(Bool.self, forKey: .saveToDisk) ?? true
         self.playCaptureSound = try container.decodeIfPresent(Bool.self, forKey: .playCaptureSound) ?? true

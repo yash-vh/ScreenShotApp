@@ -84,6 +84,7 @@ public final class AppCoordinator: ObservableObject {
     }
 
     private func proceedWithCapture(type: CaptureActionType) {
+        hideAuxiliaryWindows()
         switch type {
         case .region:
             startRegionCapture()
@@ -98,6 +99,12 @@ public final class AppCoordinator: ObservableObject {
         case .ocr:
             startOcrCapture()
         }
+    }
+
+    /// Orders out any auxiliary windows (Settings, Library, Permissions) so they don't obstruct capture or pop up
+    public func hideAuxiliaryWindows() {
+        settingsWindowController?.window?.orderOut(nil)
+        PermissionsWindowController.shared.close()
     }
 
     public func openSettings(tab: SettingsView.Tab? = nil) {

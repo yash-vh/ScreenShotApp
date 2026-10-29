@@ -23,8 +23,7 @@ final class OverlayWindow: NSWindow {
     /// the cursor; without this the app underneath keeps showing its own (I-beam over text, hand over links).
     @MainActor
     static func activateApp() {
-        NSApp.activate()
-        NSRunningApplication.current.activate(options: [.activateAllWindows])
+        NSApp.activate(ignoringOtherApps: true)
     }
 
     /// The overlay screen currently containing the mouse pointer

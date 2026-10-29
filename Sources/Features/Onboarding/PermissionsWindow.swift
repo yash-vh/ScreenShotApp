@@ -1,5 +1,6 @@
 import AppKit
 import AVFoundation
+import Combine
 import SwiftUI
 
 /// Welcome window that asks for Screen Recording (and optionally Microphone) access before the first capture,

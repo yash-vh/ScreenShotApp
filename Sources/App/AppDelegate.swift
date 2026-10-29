@@ -86,7 +86,8 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
-        if !flag {
+        guard !CaptureCoordinator.shared.isCapturing else { return true }
+        if !flag && AppConfiguration.shared.showDockIcon {
             AppCoordinator.shared.openSettings()
         }
         return true

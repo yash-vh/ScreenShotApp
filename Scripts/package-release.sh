@@ -16,24 +16,15 @@ release_dir="$repo_root/release"
 mkdir -p "$release_dir"
 
 if [[ -z "$app_path" ]]; then
-  # Look for existing build or build it
   candidate_build="$repo_root/build/DerivedData/Build/Products/Release/ScreenMint.app"
-  candidate_alt="/tmp/DerivedData/Build/Products/Release/ScreenMint.app"
-  
-  if [[ -d "$candidate_build" ]]; then
-    app_path="$candidate_build"
-  elif [[ -d "$candidate_alt" ]]; then
-    app_path="$candidate_alt"
-  else
-    echo "==> Building ScreenMint (Release configuration)..."
-    xcodebuild -project "$repo_root/ScreenMint.xcodeproj" \
-               -scheme ScreenMint \
-               -configuration Release \
-               -derivedDataPath "$repo_root/build/DerivedData" \
-               -quiet \
-               build
-    app_path="$candidate_build"
-  fi
+  echo "==> Building ScreenMint (Release configuration)..."
+  xcodebuild -project "$repo_root/ScreenMint.xcodeproj" \
+             -scheme ScreenMint \
+             -configuration Release \
+             -derivedDataPath "$repo_root/build/DerivedData" \
+             -quiet \
+             build
+  app_path="$candidate_build"
 fi
 
 if [[ ! -d "$app_path" ]]; then

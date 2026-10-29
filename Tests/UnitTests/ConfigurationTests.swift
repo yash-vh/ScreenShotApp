@@ -222,4 +222,18 @@ final class ConfigurationTests: XCTestCase {
         config.captureSettings.customSaveDirectory = nil
         XCTAssertNotNil(config.saveDirectoryProblem(), "custom with no folder chosen is reported")
     }
+
+    func testImageResolutionAndFeedbackSettings() {
+        let settings = CaptureSettings.default
+        XCTAssertEqual(settings.imageResolution, .retina)
+        XCTAssertTrue(settings.playCaptureSound)
+        XCTAssertEqual(ImageResolution.retina.displayName, "Retina (2x) - Full Quality")
+        XCTAssertEqual(ImageResolution.standard.displayName, "Standard (1x) - Compact Size")
+    }
+
+    @MainActor
+    func testSoundManagerExecutionDoesNotThrow() {
+        // Verify invoking playShutterSound executes safely
+        SoundManager.playShutterSound()
+    }
 }

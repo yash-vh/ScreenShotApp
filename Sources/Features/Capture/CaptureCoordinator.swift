@@ -25,6 +25,7 @@ public final class CaptureCoordinator: ObservableObject {
             return
         }
 
+        AppCoordinator.shared.hideAuxiliaryWindows()
         isCapturing = true
         RegionSelectionOverlayController.shared.present(
             onComplete: { [weak self] rect, screen, action, frozenImage in
@@ -73,6 +74,7 @@ public final class CaptureCoordinator: ObservableObject {
             return
         }
 
+        AppCoordinator.shared.hideAuxiliaryWindows()
         isCapturing = true
         // Capture the display the pointer is on, not always the primary one
         let screen = OverlayWindow.screenUnderMouse
@@ -280,6 +282,7 @@ public final class CaptureCoordinator: ObservableObject {
             return
         }
 
+        AppCoordinator.shared.hideAuxiliaryWindows()
         isCapturing = true
         RegionSelectionOverlayController.shared.present(
             mode: .quickSelect,
@@ -389,14 +392,16 @@ public final class CaptureCoordinator: ObservableObject {
     public func processCapturedImage(_ cgImage: CGImage, title: String, scaleFactor: Double = 2.0) {
         let settings = AppConfiguration.shared.captureSettings
 
+        let (processedImage, effectiveScale) = applyResolutionScaling(cgImage, scaleFactor: scaleFactor)
+
         if settings.playCaptureSound {
             playShutterSound()
         }
 
-        let asset = persistCapture(cgImage, title: title, scaleFactor: scaleFactor)
+        let asset = persistCapture(processedImage, title: title, scaleFactor: effectiveScale)
 
         if settings.copyToClipboard {
-            copyImageToPasteboard(cgImage: cgImage)
+            copyImageToPasteboard(cgImage: processedImage, scaleFactor: effectiveScale)
         }
 
         AppLogger.shared.capture.info("Successfully processed capture asset: \(asset.dimensionsString, privacy: .public)")
@@ -412,7 +417,7 @@ public final class CaptureCoordinator: ObservableObject {
         let settings = AppConfiguration.shared.captureSettings
 
         // 1. Composite in-place annotations if any were drawn directly on the overlay
-        let finalImage: CGImage
+        let compositedImage: CGImage
         let forceSave: Bool
         let overlayDocument: AnnotationDocument
         switch action {
@@ -420,20 +425,22 @@ public final class CaptureCoordinator: ObservableObject {
             overlayDocument = doc
         }
         let hasAnnotations = !overlayDocument.items.isEmpty || overlayDocument.hasStyling
-        finalImage = hasAnnotations ? ExportCompositor.shared.composite(baseImage: cgImage, document: overlayDocument) : cgImage
+        compositedImage = hasAnnotations ? ExportCompositor.shared.composite(baseImage: cgImage, document: overlayDocument) : cgImage
         if case .save = action { forceSave = true } else { forceSave = false }
+
+        let (finalImage, effectiveScale) = applyResolutionScaling(compositedImage, scaleFactor: scaleFactor)
 
         if settings.playCaptureSound {
             playShutterSound()
         }
 
-        let asset = persistCapture(finalImage, title: title, scaleFactor: scaleFactor, forceSaveToDisk: forceSave)
+        let asset = persistCapture(finalImage, title: title, scaleFactor: effectiveScale, forceSaveToDisk: forceSave)
         let fileURL = asset.originalFileURL
         AppLogger.shared.capture.info("Successfully processed in-place region capture: \(asset.dimensionsString, privacy: .public)")
 
         switch action {
         case .copy:
-            copyImageToPasteboard(cgImage: finalImage)
+            copyImageToPasteboard(cgImage: finalImage, scaleFactor: effectiveScale)
             CaptureHUD.shared.show(title: "Copied to Clipboard", symbol: "doc.on.clipboard.fill", duration: 1.4)
             AppLogger.shared.capture.info("Region captured and copied directly to clipboard.")
 
@@ -442,26 +449,66 @@ public final class CaptureCoordinator: ObservableObject {
 
         case .save:
             if settings.copyToClipboard {
-                copyImageToPasteboard(cgImage: finalImage)
+                copyImageToPasteboard(cgImage: finalImage, scaleFactor: effectiveScale)
             }
             CaptureHUD.shared.show(title: "Saved Screenshot", detail: fileURL.lastPathComponent, symbol: "square.and.arrow.down.fill", duration: 1.8)
             AppLogger.shared.capture.info("Region captured and saved to disk: \(fileURL.lastPathComponent, privacy: .public)")
 
         case .defaultAction:
             if settings.copyToClipboard {
-                copyImageToPasteboard(cgImage: finalImage)
+                copyImageToPasteboard(cgImage: finalImage, scaleFactor: effectiveScale)
             }
         }
     }
 
-    private func copyImageToPasteboard(cgImage: CGImage) {
+    /// Downscales image to 1x logical resolution if user selected Standard resolution in settings
+    private func applyResolutionScaling(_ image: CGImage, scaleFactor: Double) -> (CGImage, Double) {
+        let settings = AppConfiguration.shared.captureSettings
+        guard settings.imageResolution == .standard, scaleFactor > 1.0 else {
+            return (image, scaleFactor)
+        }
+
+        let targetWidth = Int(round(Double(image.width) / scaleFactor))
+        let targetHeight = Int(round(Double(image.height) / scaleFactor))
+        guard targetWidth > 0, targetHeight > 0 else { return (image, scaleFactor) }
+
+        guard let colorSpace = image.colorSpace ?? CGColorSpace(name: CGColorSpace.sRGB),
+              let context = CGContext(
+                data: nil,
+                width: targetWidth,
+                height: targetHeight,
+                bitsPerComponent: 8,
+                bytesPerRow: 0,
+                space: colorSpace,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+              ) else {
+            return (image, scaleFactor)
+        }
+
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+
+        if let scaled = context.makeImage() {
+            return (scaled, 1.0)
+        }
+        return (image, scaleFactor)
+    }
+
+    private func copyImageToPasteboard(cgImage: CGImage, scaleFactor: Double = 2.0) {
         let pasteboard = NSPasteboard.general
         pasteboard.clearContents()
 
-        let size = NSSize(width: cgImage.width, height: cgImage.height)
+        let scale = max(1.0, CGFloat(scaleFactor))
+        let size = NSSize(width: CGFloat(cgImage.width) / scale, height: CGFloat(cgImage.height) / scale)
         let nsImage = NSImage(cgImage: cgImage, size: size)
 
-        if let tiffData = nsImage.tiffRepresentation,
+        let settings = AppConfiguration.shared.captureSettings
+        if settings.defaultFormat == .jpeg,
+           let tiffData = nsImage.tiffRepresentation,
+           let bitmap = NSBitmapImageRep(data: tiffData),
+           let jpegData = bitmap.representation(using: .jpeg, properties: [.compressionFactor: settings.jpegQuality]) {
+            pasteboard.setData(jpegData, forType: NSPasteboard.PasteboardType(UTType.jpeg.identifier))
+        } else if let tiffData = nsImage.tiffRepresentation,
            let bitmap = NSBitmapImageRep(data: tiffData),
            let pngData = bitmap.representation(using: .png, properties: [:]) {
             pasteboard.setData(pngData, forType: .png)
@@ -470,10 +517,6 @@ public final class CaptureCoordinator: ObservableObject {
     }
 
     private func playShutterSound() {
-        if let sound = NSSound(named: "ScreenCapture") {
-            sound.play()
-        } else {
-            NSSound.beep()
-        }
+        SoundManager.playShutterSound()
     }
 }

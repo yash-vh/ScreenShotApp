@@ -220,11 +220,29 @@ struct GeneralSettingsTab: View {
             }
 
             Section {
-                Toggle(isOn: $config.captureSettings.playCaptureSound) {
-                    SettingsRowLabel(title: "Shutter sound", subtitle: "Play a sound when a capture is taken.")
+                HStack {
+                    Toggle(isOn: Binding(
+                        get: { config.captureSettings.playCaptureSound },
+                        set: { enabled in
+                            config.captureSettings.playCaptureSound = enabled
+                            if enabled {
+                                SoundManager.playShutterSound()
+                            }
+                        }
+                    )) {
+                        SettingsRowLabel(title: "Shutter sound", subtitle: "Play a camera shutter sound when a capture is taken.")
+                    }
+                    Button {
+                        SoundManager.playShutterSound()
+                    } label: {
+                        Label("Test Sound", systemImage: "speaker.wave.2.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Play sample shutter sound")
                 }
             } header: {
-                Text("Feedback")
+                Text("Audio Feedback")
             }
         }
         .formStyle(.grouped)
@@ -299,7 +317,20 @@ struct CaptureSettingsTab: View {
                 }
             }
 
-            Section(header: Text("File Format & Naming")) {
+            Section(header: Text("Image Resolution & Quality")) {
+                Picker("Resolution", selection: $config.captureSettings.imageResolution) {
+                    ForEach(ImageResolution.allCases) { res in
+                        Text(res.displayName).tag(res)
+                    }
+                }
+                .pickerStyle(.segmented)
+
+                Text(config.captureSettings.imageResolution == .retina
+                     ? "Retina captures at native 2x display pixel density for maximum clarity."
+                     : "Standard scales captures to 1x logical resolution for 50% smaller dimensions and compact file size.")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+
                 Picker("Format", selection: $config.captureSettings.defaultFormat) {
                     ForEach(ExportFormat.allCases, id: \.self) { format in
                         Text(format.displayName).tag(format)
@@ -308,21 +339,77 @@ struct CaptureSettingsTab: View {
                 .pickerStyle(.segmented)
 
                 if config.captureSettings.defaultFormat == .jpeg {
-                    LabeledContent("JPEG quality") {
-                        HStack {
-                            Slider(value: $config.captureSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
-                            Text("\(Int(config.captureSettings.jpegQuality * 100))%")
-                                .monospacedDigit()
-                                .frame(width: 40, alignment: .trailing)
+                    VStack(alignment: .leading, spacing: 8) {
+                        LabeledContent("JPEG quality") {
+                            HStack {
+                                Slider(value: $config.captureSettings.jpegQuality, in: 0.5...1.0, step: 0.05)
+                                Text("\(Int(config.captureSettings.jpegQuality * 100))%")
+                                    .monospacedDigit()
+                                    .frame(width: 45, alignment: .trailing)
+                            }
+                        }
+
+                        HStack(spacing: 8) {
+                            Text("Presets:")
+                                .font(.caption)
+                                .foregroundColor(.secondary)
+                            Button("Medium (70%)") { config.captureSettings.jpegQuality = 0.70 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            Button("High (85%)") { config.captureSettings.jpegQuality = 0.85 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                            Button("Maximum (100%)") { config.captureSettings.jpegQuality = 1.0 }
+                                .buttonStyle(.bordered)
+                                .controlSize(.mini)
+                        }
+
+                        Text(qualityDescription(config.captureSettings.jpegQuality))
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                } else {
+                    LabeledContent("Quality") {
+                        HStack(spacing: 6) {
+                            Image(systemName: "checkmark.seal.fill")
+                                .foregroundColor(.green)
+                            Text("Lossless (100% Quality)")
+                                .fontWeight(.medium)
                         }
                     }
+                    Text("PNG maintains pixel-perfect fidelity with no compression artifacts. Ideal for screenshots with UI, text, and code.")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
                 }
 
                 TextField("File name prefix", text: $config.captureSettings.fileNamePrefix, prompt: Text("Screenshot"))
-                LabeledContent("Example") {
+                LabeledContent("Example file name") {
                     Text(exampleFileName)
                         .font(.caption.monospaced())
                         .foregroundColor(.secondary)
+                }
+            }
+
+            Section(header: Text("Feedback")) {
+                HStack {
+                    Toggle("Play shutter sound on capture", isOn: Binding(
+                        get: { config.captureSettings.playCaptureSound },
+                        set: { enabled in
+                            config.captureSettings.playCaptureSound = enabled
+                            if enabled {
+                                SoundManager.playShutterSound()
+                            }
+                        }
+                    ))
+                    Spacer()
+                    Button {
+                        SoundManager.playShutterSound()
+                    } label: {
+                        Label("Test Sound", systemImage: "speaker.wave.2.fill")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                    .help("Play sample shutter sound")
                 }
             }
 
@@ -344,16 +431,33 @@ struct CaptureSettingsTab: View {
         .onChange(of: config.captureSettings.saveToDisk) { _ in refreshFolderStatus() }
     }
 
+    private func qualityDescription(_ quality: Double) -> String {
+        switch quality {
+        case 0.95...1.0:
+            return "Maximum quality: Best visual fidelity, larger file size."
+        case 0.80..<0.95:
+            return "High quality (Recommended): Excellent balance of sharpness and file size."
+        case 0.65..<0.80:
+            return "Medium quality: Good for quick sharing and smaller attachments."
+        default:
+            return "Compact quality: Smallest file size, some compression artifacts may be visible."
+        }
+    }
+
     /// Picking "Custom Folder…" without a folder yet opens the chooser straight away
     private var saveLocationBinding: Binding<SaveLocation> {
         Binding(
             get: { config.captureSettings.saveLocation },
             set: { location in
-                if location == .custom, (config.captureSettings.customSaveDirectory ?? "").isEmpty {
-                    chooseCustomFolder()
+                if location == .custom {
+                    config.captureSettings.saveLocation = .custom
+                    if (config.captureSettings.customSaveDirectory ?? "").isEmpty {
+                        chooseCustomFolder()
+                    }
                 } else {
                     config.captureSettings.saveLocation = location
                 }
+                refreshFolderStatus()
             }
         )
     }
@@ -376,23 +480,47 @@ struct CaptureSettingsTab: View {
     private func chooseCustomFolder() {
         let panel = NSOpenPanel()
         panel.title = "Choose Save Folder"
-        panel.prompt = "Use Folder"
+        panel.prompt = "Set Folder"
+        panel.message = "Choose a destination folder for ScreenMint captures and recordings"
         panel.canChooseFiles = false
         panel.canChooseDirectories = true
         panel.canCreateDirectories = true
         panel.allowsMultipleSelection = false
-        panel.directoryURL = config.configuredSaveDirectory
+
+        var initialURL = config.configuredSaveDirectory
+        if !FileManager.default.fileExists(atPath: initialURL.path) {
+            if (try? FileManager.default.createDirectory(at: initialURL, withIntermediateDirectories: true)) == nil {
+                initialURL = FileManager.default.homeDirectoryForCurrentUser
+            }
+        }
+        panel.directoryURL = initialURL
+
         NSApp.activate(ignoringOtherApps: true)
-        if panel.runModal() == .OK, let url = panel.url {
+
+        let applyURL: (URL) -> Void = { url in
             config.captureSettings.customSaveDirectory = url.path
             config.captureSettings.saveLocation = .custom
+            refreshFolderStatus()
         }
-        refreshFolderStatus()
+
+        if let window = NSApp.keyWindow ?? NSApp.windows.first(where: { $0.isVisible && !$0.isExcludedFromWindowsMenu }) {
+            panel.beginSheetModal(for: window) { response in
+                if response == .OK, let url = panel.url {
+                    applyURL(url)
+                }
+            }
+        } else {
+            panel.level = .floating
+            if panel.runModal() == .OK, let url = panel.url {
+                applyURL(url)
+            }
+        }
     }
 
     private func showInFinder() {
         let url = config.resolveLocalSaveDirectory()
-        NSWorkspace.shared.activateFileViewerSelecting([url])
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        NSWorkspace.shared.open(url)
         refreshFolderStatus()
     }
 }
