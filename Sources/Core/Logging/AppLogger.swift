@@ -125,7 +125,7 @@ public final class AppLogger: @unchecked Sendable {
     public func loadRecentLogs(within interval: TimeInterval = 3600, limit: Int = 500) async -> [LogEntry] {
         let since = max(Date().addingTimeInterval(-interval), lock.withLock { clearedAt } ?? .distantPast)
         let subsystem = self.subsystem
-        return await Task.detached(priority: .userInitiated) { () -> [LogEntry] in
+        let systemLogs = await Task.detached(priority: .userInitiated) { () -> [LogEntry] in
             guard let store = try? OSLogStore(scope: .currentProcessIdentifier),
                   let entries = try? store.getEntries(
                       at: store.position(date: since),
@@ -135,8 +135,18 @@ public final class AppLogger: @unchecked Sendable {
             for case let entry as OSLogEntryLog in entries where entry.date >= since {
                 result.append(LogEntry(timestamp: entry.date, category: entry.category, level: LogEntry.Level(entry.level), message: Self.redact(entry.composedMessage)))
             }
-            return Array(result.suffix(limit))
+            return result
         }.value
+
+        let memoryLogs = getRecentLogs().filter { $0.timestamp >= since }
+        var combined = systemLogs
+        for mem in memoryLogs {
+            if !combined.contains(where: { $0.message == mem.message }) {
+                combined.append(mem)
+            }
+        }
+        combined.sort { $0.timestamp < $1.timestamp }
+        return Array(combined.suffix(limit))
     }
 }
 

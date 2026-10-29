@@ -83,6 +83,9 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private func updateActivationPolicy(showInDock: Bool) {
         let policy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
         NSApp.setActivationPolicy(policy)
+        if showInDock {
+            NSApp.activate(ignoringOtherApps: true)
+        }
     }
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {

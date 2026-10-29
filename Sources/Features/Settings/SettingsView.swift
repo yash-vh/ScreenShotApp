@@ -174,6 +174,7 @@ struct GeneralSettingsTab: View {
                 Toggle(isOn: $config.showDockIcon) {
                     SettingsRowLabel(title: "Show in Dock", subtitle: "When off, \(AppBranding.appName) runs from the menu bar only.")
                 }
+                .disabled(!config.showMenuBarIcon && config.showDockIcon)
                 Toggle(isOn: $config.showMenuBarIcon) {
                     SettingsRowLabel(
                         title: "Show in menu bar",
@@ -182,6 +183,7 @@ struct GeneralSettingsTab: View {
                             : "Hidden. Shortcuts still work; open \(AppBranding.appName) from Finder or Spotlight for Settings."
                     )
                 }
+                .disabled(!config.showDockIcon && config.showMenuBarIcon)
                 Toggle(isOn: $config.indexInSpotlight) {
                     SettingsRowLabel(
                         title: "Show captures in Spotlight",
@@ -1053,9 +1055,13 @@ struct StorageSettingsTab: View {
         .formStyle(.grouped)
         .onAppear {
             usage = history.storageUsage()
-            s3AccessKeyID = (try? KeychainStore.shared.value(for: KeychainStore.Account.s3AccessKeyID)) ?? ""
-            s3KeysSaved = !s3AccessKeyID.isEmpty && ((try? KeychainStore.shared.value(for: KeychainStore.Account.s3SecretAccessKey)) ?? nil)?.isEmpty == false
-            imgbbKeySaved = ((try? KeychainStore.shared.value(for: KeychainStore.Account.imgbbAPIKey)) ?? nil)?.isEmpty == false
+            if let keyID = (try? KeychainStore.shared.value(for: KeychainStore.Account.s3AccessKeyID)) as? String {
+                s3AccessKeyID = keyID
+            }
+            let secret = (try? KeychainStore.shared.value(for: KeychainStore.Account.s3SecretAccessKey)) as? String
+            s3KeysSaved = !s3AccessKeyID.isEmpty && (secret?.isEmpty == false)
+            let imgbb = (try? KeychainStore.shared.value(for: KeychainStore.Account.imgbbAPIKey)) as? String
+            imgbbKeySaved = imgbb?.isEmpty == false
         }
         .onChange(of: config.cacheQuotaMB) { _ in
             history.enforceCacheQuota()

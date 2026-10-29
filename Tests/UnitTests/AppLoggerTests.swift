@@ -30,7 +30,7 @@ final class AppLoggerTests: XCTestCase {
 
     func testRecentLogsIncludeCategoryLoggerOutput() async {
         let marker = "diagnostics-marker-\(UUID().uuidString)"
-        AppLogger.shared.capture.notice("\(marker, privacy: .public) secret=hunter2")
+        AppLogger.shared.log(category: "Capture", level: .notice, message: "\(marker) secret=hunter2")
         let logs = await AppLogger.shared.loadRecentLogs(within: 60)
         let entry = logs.first { $0.message.contains(marker) }
         XCTAssertNotNil(entry, "Logger output should reach the Diagnostics viewer")

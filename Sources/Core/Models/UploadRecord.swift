@@ -52,6 +52,16 @@ public struct ProviderCapabilities: Codable, Sendable, Equatable {
         self.supportsVideo = supportsVideo
     }
 
+    public init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.supportsDelete = try container.decodeIfPresent(Bool.self, forKey: .supportsDelete) ?? true
+        self.supportsExpiringLinks = try container.decodeIfPresent(Bool.self, forKey: .supportsExpiringLinks) ?? false
+        self.supportsPasswordProtection = try container.decodeIfPresent(Bool.self, forKey: .supportsPasswordProtection) ?? false
+        self.supportsLinkRevocation = try container.decodeIfPresent(Bool.self, forKey: .supportsLinkRevocation) ?? false
+        self.supportsResumableUploads = try container.decodeIfPresent(Bool.self, forKey: .supportsResumableUploads) ?? false
+        self.supportsVideo = try container.decodeIfPresent(Bool.self, forKey: .supportsVideo) ?? false
+    }
+
     /// S3 / S3-compatible buckets support video and GIF uploads (arbitrary Content-Type via PUT)
     public static let s3Default = ProviderCapabilities(
         supportsDelete: true,

@@ -120,8 +120,8 @@ public final class AppCoordinator: ObservableObject {
             hostingController.sceneBridgingOptions = [.toolbars]
             let window = NSWindow(contentViewController: hostingController)
             window.title = "\(AppBranding.appName) Settings"
-            window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
-            window.titlebarAppearsTransparent = true
+            window.styleMask = [.titled, .closable, .miniaturizable, .resizable]
+            window.titlebarAppearsTransparent = false
             window.toolbarStyle = .unified
             window.setContentSize(NSSize(width: 880, height: 620))
             window.center()
