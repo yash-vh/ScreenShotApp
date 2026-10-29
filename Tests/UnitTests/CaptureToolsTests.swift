@@ -17,7 +17,7 @@ final class CaptureToolsTests: XCTestCase {
 
     func testDetectsCommonSensitiveInfo() {
         XCTAssertEqual(matchedText(in: "Contact: yash@example.com today"), ["yash@example.com"])
-        XCTAssertEqual(kinds(in: "Card 4242 4242 4242 4242 exp 12/30"), [.creditCard])
+        XCTAssertEqual(matchedText(in: "Card 4242 4242 4242 4242 exp 12/30"), ["4242 4242 4242 4242", "12/30"], "Number and expiry are both hidden")
         XCTAssertEqual(kinds(in: "Server at 192.168.1.20"), [.ipAddress])
         XCTAssertEqual(kinds(in: "SSN 123-45-6789"), [.socialSecurityNumber])
         XCTAssertEqual(kinds(in: "AWS AKIAIOSFODNN7EXAMPLE"), [.secret])
@@ -26,10 +26,64 @@ final class CaptureToolsTests: XCTestCase {
         XCTAssertFalse(SensitiveInfoDetector.matches(in: "Call +1 (415) 555-0132").isEmpty)
     }
 
+    func testDetectsFormFields() {
+        XCTAssertEqual(matchedText(in: "yash.nandha @gmail.com"), ["yash.nandha @gmail.com"], "OCR often adds a space before @")
+        XCTAssertEqual(kinds(in: "Mobile 98765 43210"), [.phoneNumber])
+        XCTAssertEqual(kinds(in: "+91 9876543210"), [.phoneNumber])
+        XCTAssertEqual(kinds(in: "Call +44 20 7946 0958"), [.phoneNumber])
+        XCTAssertEqual(matchedText(in: "CVV: 123"), ["123"])
+        XCTAssertEqual(matchedText(in: "Valid thru 08/27"), ["08/27"])
+        XCTAssertEqual(kinds(in: "••••••••"), [.password])
+        XCTAssertEqual(matchedText(in: "PIN: 4821"), ["4821"])
+        XCTAssertEqual(matchedText(in: "Username: yashnandha"), ["yashnandha"])
+        XCTAssertTrue(SensitiveInfoDetector.isFieldLabel("Password"))
+        XCTAssertTrue(SensitiveInfoDetector.isFieldLabel("Mobile Number:"))
+        XCTAssertFalse(SensitiveInfoDetector.isFieldLabel("Forgot your password?"))
+    }
+
+    func testDetectsDates() {
+        for text in ["12/05/2024", "2024-05-12", "12.05.24", "12 May 2024", "May 12, 2024", "3rd March 1990", "September 2025", "Expires 05/27"] {
+            XCTAssertEqual(kinds(in: text), [.date], text)
+        }
+    }
+
+    func testDetectsAddresses() {
+        for text in ["221B Baker Street", "12, MG Road, Bengaluru", "A-402 Shanti Nagar", "Flat 7, Sunrise Apartments",
+                     "Ahmedabad - 380015", "Ahmedabad, Gujarat 380015", "Springfield, IL 62704", "London SW1A 1AA"] {
+            XCTAssertEqual(kinds(in: text), [.address], text)
+        }
+        XCTAssertEqual(matchedText(in: "Address: 14 Park View, Pune"), ["14 Park View, Pune"])
+        XCTAssertTrue(SensitiveInfoDetector.isFieldLabel("Shipping Address"))
+        XCTAssertTrue(SensitiveInfoDetector.isFieldLabel("PIN Code"))
+    }
+
+    func testAddressContinuesOnLinesBelow() {
+        let first = NormalizedRect(x: 0.1, y: 0.30, width: 0.4, height: 0.03)
+        let second = NormalizedRect(x: 0.1, y: 0.335, width: 0.35, height: 0.03)
+        let third = NormalizedRect(x: 0.1, y: 0.37, width: 0.2, height: 0.03)
+        let unrelated = NormalizedRect(x: 0.5, y: 0.335, width: 0.2, height: 0.03)
+        let later = NormalizedRect(x: 0.1, y: 0.5, width: 0.3, height: 0.03)
+        XCTAssertEqual(SensitiveInfoDetector.continuationLines(below: first, among: [later, third, unrelated, second]), [second, third])
+    }
+
+    func testFieldValueBesideOrBelowLabel() {
+        let label = NormalizedRect(x: 0.1, y: 0.2, width: 0.1, height: 0.03)
+        let beside = NormalizedRect(x: 0.25, y: 0.2, width: 0.3, height: 0.03)
+        let below = NormalizedRect(x: 0.1, y: 0.24, width: 0.4, height: 0.03)
+        let far = NormalizedRect(x: 0.1, y: 0.6, width: 0.4, height: 0.03)
+        XCTAssertEqual(SensitiveInfoDetector.fieldValue(for: label, among: [below, beside, far]), beside)
+        XCTAssertEqual(SensitiveInfoDetector.fieldValue(for: label, among: [far, below]), below)
+        XCTAssertNil(SensitiveInfoDetector.fieldValue(for: label, among: [far]))
+    }
+
     func testIgnoresOrdinaryText() {
         XCTAssertTrue(SensitiveInfoDetector.matches(in: "Version 14.2 released in 2024 for $19.99").isEmpty)
         XCTAssertTrue(SensitiveInfoDetector.matches(in: "Order 1234 5678 9012 3456").isEmpty, "Fails the Luhn check, so not a card")
         XCTAssertTrue(SensitiveInfoDetector.matches(in: "The quick brown fox jumps over the lazy dog").isEmpty)
+        XCTAssertTrue(SensitiveInfoDetector.matches(in: "Meet me in May at 3 PM, page 1 of 2").isEmpty)
+        XCTAssertTrue(SensitiveInfoDetector.matches(in: "Forgot your password?").isEmpty)
+        XCTAssertTrue(SensitiveInfoDetector.matches(in: "3 people walked down the road").isEmpty)
+        XCTAssertTrue(SensitiveInfoDetector.matches(in: "Saved 12 items to Library").isEmpty)
     }
 
     func testLuhn() {
