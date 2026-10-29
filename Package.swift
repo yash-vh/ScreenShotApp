@@ -2,13 +2,13 @@
 import PackageDescription
 
 let package = Package(
-    name: "ScreenshotApp",
+    name: "ScreenMint",
     platforms: [
         .macOS(.v14)
     ],
     products: [
         .executable(
-            name: "ScreenshotApp",
+            name: "ScreenMint",
             targets: ["ScreenshotApp"]
         )
     ],

@@ -9,7 +9,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     private var cancellables = Set<AnyCancellable>()
 
     public func applicationDidFinishLaunching(_ notification: Notification) {
-        AppLogger.shared.app.info("YnShot launched successfully.")
+        AppLogger.shared.app.info("\(AppBranding.appName) launched successfully.")
 
         // With the relaunch agent on, only the launchd-managed instance runs; other copies hand off and exit
         if BackgroundRelauncher.handOffIfNeeded() { return }
@@ -34,7 +34,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             }
             .store(in: &cancellables)
 
-        // Show Settings on launch, except when launchd silently restores YnShot in the background
+        // Show Settings on launch, except when launchd silently restores ScreenMint in the background
         let restoreRequestedSettings = BackgroundRelauncher.consumePendingOpenSettings()
         if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
             AppCoordinator.shared.openSettings()
@@ -90,6 +90,6 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationWillTerminate(_ notification: Notification) {
         HotKeyManager.shared.stopMonitoring()
-        AppLogger.shared.app.info("YnShot terminating.")
+        AppLogger.shared.app.info("\(AppBranding.appName) terminating.")
     }
 }

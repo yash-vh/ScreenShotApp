@@ -17,6 +17,7 @@ fileGroups:
   - Configuration
   - Branding
   - Scripts
+  - Casks
 
 targets:
   ScreenshotApp:
@@ -26,8 +27,8 @@ targets:
     scheme:
       testTargets:
         - ScreenshotAppTests
-      # Local StoreKit testing for the YnShot Pro subscription (Run action only)
-      storeKitConfiguration: Configuration/YnShot.storekit
+      # Local StoreKit testing for the ScreenMint Pro subscription (Run action only)
+      storeKitConfiguration: Configuration/ScreenMint.storekit
     sources:
       - path: Sources
         excludes:
@@ -41,7 +42,7 @@ targets:
             subpath: Contents/Library/LaunchAgents
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac
-      PRODUCT_NAME: YnShot
+      PRODUCT_NAME: ScreenMint
       PRODUCT_MODULE_NAME: ScreenshotApp
       INFOPLIST_FILE: Sources/Resources/Info.plist
       CODE_SIGN_ENTITLEMENTS: Sources/Resources/ScreenshotApp.entitlements
@@ -66,5 +67,5 @@ targets:
     settings:
       PRODUCT_BUNDLE_IDENTIFIER: com.screenshotapp.mac.tests
       PRODUCT_NAME: ScreenshotAppTests
-      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/YnShot.app/Contents/MacOS/YnShot"
+      TEST_HOST: "$(BUILT_PRODUCTS_DIR)/ScreenMint.app/Contents/MacOS/ScreenMint"
       GENERATE_INFOPLIST_FILE: YES

@@ -112,7 +112,7 @@ public final class AppCoordinator: ObservableObject {
             let hostingController = NSHostingController(rootView: settingsView)
             hostingController.sceneBridgingOptions = [.toolbars]
             let window = NSWindow(contentViewController: hostingController)
-            window.title = "YnShot Settings"
+            window.title = "\(AppBranding.appName) Settings"
             window.styleMask = [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView]
             window.titlebarAppearsTransparent = true
             window.toolbarStyle = .unified

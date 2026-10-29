@@ -23,7 +23,7 @@
       "localizations" : [
 
       ],
-      "name" : "YnShot Pro",
+      "name" : "ScreenMint Pro",
       "subscriptions" : [
         {
           "adHocOffers" : [
@@ -39,8 +39,8 @@
           "introductoryOffer" : null,
           "localizations" : [
             {
-              "description" : "All YnShot Pro features, billed monthly.",
-              "displayName" : "YnShot Pro Monthly",
+              "description" : "All ScreenMint Pro features, billed monthly.",
+              "displayName" : "ScreenMint Pro Monthly",
               "locale" : "en_US"
             }
           ],
@@ -71,8 +71,8 @@
           },
           "localizations" : [
             {
-              "description" : "All YnShot Pro features, billed yearly.",
-              "displayName" : "YnShot Pro Yearly",
+              "description" : "All ScreenMint Pro features, billed yearly.",
+              "displayName" : "ScreenMint Pro Yearly",
               "locale" : "en_US"
             }
           ],

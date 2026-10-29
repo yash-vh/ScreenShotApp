@@ -1,17 +1,17 @@
 import SwiftUI
 
-/// Main menu bar sections (YnShot · File · Edit · Capture · View · Window · Help) shown while YnShot is the active app.
+/// Main menu bar sections (ScreenMint · File · Edit · Capture · View · Window · Help) shown while ScreenMint is the active app.
 /// Global capture shortcuts are owned by `HotKeyManager`, so they are not repeated here as key equivalents.
 struct AppCommands: Commands {
     var body: some Commands {
-        // YnShot menu: route About and Settings to the app's own Settings window
+        // ScreenMint menu: route About and Settings to the app's own Settings window
         CommandGroup(replacing: .appInfo) {
-            Button("About YnShot") { AppCoordinator.shared.openSettings(tab: .about) }
+            Button("About \(AppBranding.appName)") { AppCoordinator.shared.openSettings(tab: .about) }
         }
         CommandGroup(replacing: .appSettings) {
             Button("Settings…") { AppCoordinator.shared.openSettings() }
                 .keyboardShortcut(",", modifiers: .command)
-            Button("YnShot Pro…") { AppCoordinator.shared.openSettings(tab: .subscription) }
+            Button("\(AppBranding.appName) Pro…") { AppCoordinator.shared.openSettings(tab: .subscription) }
         }
 
         // File
