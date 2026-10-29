@@ -34,24 +34,23 @@ brew install --cask yash-vh/screenmint/screenmint
 
 ## 2. Packaging Releases for Homebrew
 
-When preparing a new release:
+When preparing a new release, you can build, package, and publish directly to GitHub in a single command:
 
-1. Build and package the release DMG:
-   ```bash
-   Scripts/package-release.sh 1.0.0
-   ```
-   This automatically:
-   - Compiles `ScreenMint.app` with Release optimizations.
-   - Creates `release/ScreenMint-1.0.0.dmg`.
-   - Computes SHA256 checksum into `release/ScreenMint-1.0.0.dmg.sha256`.
-   - Updates `Casks/screenmint.rb` with the new version and checksum.
+```bash
+Scripts/package-release.sh 1.0.0 --publish
+```
 
-2. Create a GitHub Release:
-   - Tag the release: `git tag v1.0.0 && git push origin v1.0.0`
-   - Create a Release for `v1.0.0` on GitHub:
-     `https://github.com/yash-vh/ScreenShotApp/releases/new`
-   - Upload `release/ScreenMint-1.0.0.dmg` and `release/ScreenMint-1.0.0.dmg.sha256` to the release assets.
-   - Publish the release.
+This single command automatically:
+- Compiles `ScreenMint.app` with Release optimizations.
+- Creates `release/ScreenMint-1.0.0.dmg`.
+- Computes SHA256 checksum and updates `Casks/screenmint.rb`.
+- Commits the updated Cask and creates the git tag `v1.0.0`.
+- Pushes the tag to GitHub and creates the GitHub Release with the DMG attached.
+
+If you only want to package locally without uploading, omit `--publish`:
+```bash
+Scripts/package-release.sh 1.0.0
+```
 
 ---
 

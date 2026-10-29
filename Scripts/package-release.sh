@@ -1,16 +1,43 @@
 #!/bin/zsh
 # Builds ScreenMint in Release configuration (if needed), packages it into a distributable DMG,
-# computes the SHA256 checksum, and updates Casks/screenmint.rb.
+# computes the SHA256 checksum, updates Casks/screenmint.rb, and optionally publishes to GitHub.
 #
 # Usage:
-#   Scripts/package-release.sh [version] [path/to/ScreenMint.app]
+#   Scripts/package-release.sh [version] [--publish] [path/to/ScreenMint.app]
 set -euo pipefail
 
 repo_root="$(cd "$(dirname "$0")/.." && pwd)"
 plist="$repo_root/Sources/Resources/Info.plist"
 
-version="${1:-$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || echo "1.0.0")}"
-app_path="${2:-}"
+publish=false
+version=""
+app_path=""
+
+for arg in "$@"; do
+  case "$arg" in
+    --publish|-p)
+      publish=true
+      ;;
+    *)
+      if [[ -z "$version" ]]; then
+        version="$arg"
+      elif [[ -z "$app_path" ]]; then
+        app_path="$arg"
+      fi
+      ;;
+  esac
+done
+
+if [[ -z "$version" ]]; then
+  version="$(/usr/libexec/PlistBuddy -c "Print :CFBundleShortVersionString" "$plist" 2>/dev/null || echo "1.0.0")"
+fi
+
+# Detect GitHub repo slug (e.g. yash-vh/ScreenShotApp) from git remote
+remote_url=$(git config --get remote.origin.url 2>/dev/null || echo "")
+repo_slug=$(echo "$remote_url" | sed -E 's/.*github\.com[:\/]([^\/]+\/[^\/\.]+)(\.git)?$/\1/' || echo "")
+if [[ -z "$repo_slug" ]]; then
+  repo_slug="yash-vh/ScreenShotApp"
+fi
 
 release_dir="$repo_root/release"
 mkdir -p "$release_dir"
@@ -71,10 +98,10 @@ cask "screenmint" do
   version "$version"
   sha256 "$sha"
 
-  url "https://github.com/yash-vh/ScreenShotApp/releases/download/v#{version}/ScreenMint-#{version}.dmg"
+  url "https://github.com/${repo_slug}/releases/download/v#{version}/ScreenMint-#{version}.dmg"
   name "ScreenMint"
   desc "Native macOS screenshot capture, annotation, and screen recording tool"
-  homepage "https://github.com/yash-vh/ScreenShotApp"
+  homepage "https://github.com/${repo_slug}"
 
   livecheck do
     url :url
@@ -106,4 +133,65 @@ echo "  DMG:     $dmg_path"
 echo "  SHA256:  $sha"
 echo "  Cask:    $cask_file"
 echo "=================================================="
+
+if [[ "$publish" == true ]]; then
+  echo ""
+  echo "==> Publishing release v$version directly to GitHub..."
+
+  tag="v$version"
+
+  # 1. Commit updated Casks/screenmint.rb if changed
+  if ! git -C "$repo_root" diff --quiet "$cask_file"; then
+    echo "==> Committing updated Casks/screenmint.rb..."
+    git -C "$repo_root" add "$cask_file"
+    git -C "$repo_root" commit -m "chore(release): bump cask to $version"
+  fi
+
+  # 2. Tag release
+  if git -C "$repo_root" rev-parse "$tag" >/dev/null 2>&1; then
+    echo "==> Tag $tag already exists locally."
+  else
+    echo "==> Creating git tag $tag..."
+    git -C "$repo_root" tag -a "$tag" -m "Release $version"
+  fi
+
+  # 3. Push branch and tag
+  current_branch=$(git -C "$repo_root" branch --show-current 2>/dev/null || echo "main")
+  echo "==> Pushing $current_branch and $tag to origin..."
+  git -C "$repo_root" push origin "$current_branch" || true
+  git -C "$repo_root" push origin "$tag" || true
+
+  # 4. Create or update GitHub Release with the DMG asset
+  if command -v gh >/dev/null 2>&1 && gh auth status >/dev/null 2>&1; then
+    echo "==> Uploading release to GitHub via gh CLI..."
+    if gh release view "$tag" >/dev/null 2>&1; then
+      echo "==> Release $tag already exists on GitHub. Uploading $dmg_name..."
+      gh release upload "$tag" "$dmg_path" "$sha_path" --clobber
+    else
+      echo "==> Creating new release $tag on GitHub with $dmg_name..."
+      gh release create "$tag" "$dmg_path" "$sha_path" \
+        --title "ScreenMint $version" \
+        --notes "ScreenMint $version release. Download ScreenMint-${version}.dmg below or install using Homebrew."
+    fi
+
+    release_url=$(gh release view "$tag" --json url -q .url 2>/dev/null || echo "https://github.com/${repo_slug}/releases/tag/$tag")
+    echo ""
+    echo "=================================================="
+    echo "🎉 Release published to GitHub successfully!"
+    echo "Release URL: $release_url"
+    echo ""
+    echo "Users can install via Homebrew with:"
+    echo "  brew install --cask https://raw.githubusercontent.com/${repo_slug}/main/Casks/screenmint.rb"
+    echo "=================================================="
+  else
+    echo ""
+    echo "Warning: 'gh' CLI is not authenticated or not installed." >&2
+    echo "Please upload $dmg_path manually to:" >&2
+    echo "  https://github.com/${repo_slug}/releases/new?tag=$tag" >&2
+  fi
+else
+  echo ""
+  echo "💡 Tip: To automatically tag, push, and publish to GitHub Releases in one step, run:"
+  echo "  ./Scripts/package-release.sh $version --publish"
+fi
 
