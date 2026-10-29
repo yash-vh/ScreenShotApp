@@ -90,10 +90,45 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !CaptureCoordinator.shared.isCapturing else { return true }
+        Self.restoreDockIconIfNeeded()
         if !flag && AppConfiguration.shared.showDockIcon {
             AppCoordinator.shared.openSettings()
         }
         return true
+    }
+
+    /// Dock › Quit keeps ScreenMint running in the menu bar so global shortcuts keep working.
+    /// Quit from the menu bar, logout / shutdown and scripted quits (e.g. Homebrew) still quit.
+    public func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard Self.isQuitFromDock else { return .terminateNow }
+        Self.moveToMenuBar()
+        return .terminateCancel
+    }
+
+    /// Hides the Dock icon and windows while the menu bar item and hotkeys stay active
+    public static func moveToMenuBar() {
+        AppLogger.shared.app.info("Moving \(AppBranding.appName) to the menu bar instead of quitting.")
+        for window in NSApp.windows where window.isVisible && window.styleMask.contains(.titled) && !(window is NSPanel) {
+            window.orderOut(nil)
+        }
+        NSApp.setActivationPolicy(.accessory)
+    }
+
+    /// Brings the Dock icon back after `moveToMenuBar()` when the user wants one
+    public static func restoreDockIconIfNeeded() {
+        guard AppConfiguration.shared.showDockIcon, NSApp.activationPolicy() != .regular else { return }
+        NSApp.setActivationPolicy(.regular)
+    }
+
+    /// The Dock sends a plain quit Apple Event; logout and shutdown add a quit reason
+    private static var isQuitFromDock: Bool {
+        guard let event = NSAppleEventManager.shared().currentAppleEvent,
+              event.eventClass == AEEventClass(kCoreEventClass),
+              event.eventID == AEEventID(kAEQuitApplication),
+              event.attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason)) == nil,
+              let pid = event.attributeDescriptor(forKeyword: AEKeyword(keySenderPIDAttr))?.int32Value
+        else { return false }
+        return NSRunningApplication(processIdentifier: pid)?.bundleIdentifier == "com.apple.dock"
     }
 
     public func applicationWillTerminate(_ notification: Notification) {

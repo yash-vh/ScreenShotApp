@@ -139,11 +139,13 @@ public final class AppCoordinator: ObservableObject {
                 .store(in: &cancellables)
         }
 
+        AppDelegate.restoreDockIconIfNeeded()
         settingsWindowController?.showWindow(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
     public func openLibrary() {
+        AppDelegate.restoreDockIconIfNeeded()
         LibraryWindowController.present()
     }
 

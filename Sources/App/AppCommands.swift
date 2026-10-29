@@ -14,6 +14,14 @@ struct AppCommands: Commands {
             Button("\(AppBranding.appName) Pro…") { AppCoordinator.shared.openSettings(tab: .subscription) }
         }
 
+        // ⌘Q tucks ScreenMint into the menu bar so global shortcuts keep working; ⌥⌘Q quits for real
+        CommandGroup(replacing: .appTermination) {
+            Button("Close to Menu Bar") { AppDelegate.moveToMenuBar() }
+                .keyboardShortcut("q", modifiers: .command)
+            Button("Quit \(AppBranding.appName)") { NSApp.terminate(nil) }
+                .keyboardShortcut("q", modifiers: [.command, .option])
+        }
+
         // File
         CommandGroup(replacing: .newItem) {
             Button("Open Library…") { AppCoordinator.shared.openLibrary() }
