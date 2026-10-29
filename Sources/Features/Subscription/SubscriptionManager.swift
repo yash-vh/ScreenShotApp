@@ -10,6 +10,9 @@ public final class SubscriptionManager: ObservableObject {
     // PLACEHOLDER: replace with the product IDs created in App Store Connect.
     public static let productIDs = ["com.screenmint.mac.pro.monthly", "com.screenmint.mac.pro.yearly"]
 
+    /// Off until Pro launches: Settings and the menu show "Coming Soon" instead of the plan picker
+    public nonisolated static let isStoreOpen = false
+
     public static let manageSubscriptionsURL = URL(string: "https://apps.apple.com/account/subscriptions")!
 
     /// The active Pro transaction, or nil when not subscribed

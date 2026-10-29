@@ -12,6 +12,8 @@ struct SubscriptionSettingsTab: View {
         Group {
             if subscriptions.isPro {
                 activePlan
+            } else if !SubscriptionManager.isStoreOpen {
+                comingSoon
             } else if availableProducts?.isEmpty == true {
                 unavailable
             } else {
@@ -20,8 +22,28 @@ struct SubscriptionSettingsTab: View {
         }
         .task {
             await subscriptions.refreshEntitlements()
+            guard SubscriptionManager.isStoreOpen else { return }
             availableProducts = (try? await Product.products(for: SubscriptionManager.productIDs)) ?? []
         }
+    }
+
+    // MARK: - Not launched yet
+
+    private var comingSoon: some View {
+        VStack(spacing: 18) {
+            ProMarketingHeader()
+            Text("COMING SOON")
+                .font(.system(size: 12, weight: .heavy))
+                .tracking(1.2)
+                .padding(.horizontal, 12)
+                .padding(.vertical, 5)
+                .foregroundStyle(.white)
+                .background(Color.orange.gradient, in: Capsule())
+            Text("\(AppBranding.appName) Pro is on its way. Every feature stays free until then.")
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(24)
     }
 
     // MARK: - Store unreachable

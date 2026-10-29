@@ -447,13 +447,23 @@ private struct MenuFooterView: View {
     var body: some View {
         HStack(spacing: 6) {
             MenuFooterButton(symbol: "gearshape", title: "Settings", help: "Settings (⌘,)", action: onSettings)
-            MenuFooterButton(symbol: "crown", title: isPro ? "Pro" : "Upgrade", help: isPro ? "\(AppBranding.appName) Pro" : "Upgrade to Pro", tint: .orange, action: onPro)
+            MenuFooterButton(symbol: "crown", title: proTitle, help: proHelp, tint: .orange, action: onPro)
             MenuFooterButton(symbol: "envelope", title: "Support", help: "Email \(AppBranding.developerName)", action: onSupport)
             MenuFooterButton(symbol: "power", title: "Quit", help: "Quit \(AppBranding.appName) (⌘Q)", action: onQuit)
         }
         .padding(.horizontal, 10)
         .padding(.top, 2)
         .padding(.bottom, 4)
+    }
+
+    private var proTitle: String {
+        if isPro { return "Pro" }
+        return SubscriptionManager.isStoreOpen ? "Upgrade" : "Soon"
+    }
+
+    private var proHelp: String {
+        if isPro { return "\(AppBranding.appName) Pro" }
+        return SubscriptionManager.isStoreOpen ? "Upgrade to Pro" : "\(AppBranding.appName) Pro — coming soon"
     }
 }
 

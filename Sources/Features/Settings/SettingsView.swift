@@ -67,7 +67,7 @@ public struct SettingsView: View {
             case .storage: return "Uploads to ImgBB or Amazon S3, and local cache"
             case .privacy: return "Permissions and redaction"
             case .diagnostics: return "Recent activity for troubleshooting"
-            case .subscription: return "Plans, billing and restore"
+            case .subscription: return SubscriptionManager.isStoreOpen ? "Plans, billing and restore" : "Coming soon"
             case .about: return "Version, support and legal"
             }
         }
