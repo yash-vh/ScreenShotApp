@@ -37,7 +37,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // Show Settings on launch, except when launchd silently restores ScreenMint in the background
         let restoreRequestedSettings = BackgroundRelauncher.consumePendingOpenSettings()
-        if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
+        if PermissionsWindowController.isNeeded {
+            // Ask for Screen Recording up front rather than on the first shortcut press
+            PermissionsWindowController.shared.show()
+        } else if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
             AppCoordinator.shared.openSettings()
         }
 

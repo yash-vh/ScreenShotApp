@@ -8,7 +8,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(settings.copyToClipboard)
         XCTAssertTrue(settings.saveToDisk)
         XCTAssertTrue(settings.runOcrAutomatically)
-        XCTAssertEqual(settings.shortcutRegion.displayString, "⌥⌘4")
+        XCTAssertEqual(settings.shortcutRegion.displayString, "⇧⌘6")
         XCTAssertEqual(settings.shortcutCopy.displayString, "⌘C")
         XCTAssertEqual(settings.shortcutUpload.displayString, "⌘U")
         XCTAssertEqual(settings.shortcutCancel.displayString, "Esc")
@@ -87,6 +87,7 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertTrue(ShortcutBinding(key: "4", modifiers: ["⇧", "⌘"]).isMacOSScreenshotShortcut)
         XCTAssertTrue(ShortcutBinding(key: "3", modifiers: ["⌃", "⇧", "⌘"]).isMacOSScreenshotShortcut)
         XCTAssertFalse(ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"]).isMacOSScreenshotShortcut)
+        XCTAssertFalse(ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"]).isMacOSScreenshotShortcut, "Touch Bar key is free")
     }
 
     func testStoredSystemShortcutsMigrateButCustomOnesStay() throws {
@@ -98,6 +99,44 @@ final class ConfigurationTests: XCTestCase {
         XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
         XCTAssertEqual(decoded.shortcutQuickOcr, .defaultQuickOcr)
         XCTAssertEqual(decoded.shortcutWindow.displayString, "⌃⌥W")
+    }
+
+    func testPreviousOptionCommandDefaultsMigrate() throws {
+        var legacy = CaptureSettings.default
+        legacy.shortcutRegion = ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"])
+        legacy.shortcutAllScreens = ShortcutBinding(key: "2", modifiers: ["⌘", "⌥"])
+        legacy.shortcutWindow = ShortcutBinding(key: "S", modifiers: ["⌥", "⌘"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion, .defaultRegion)
+        XCTAssertEqual(decoded.shortcutAllScreens, .defaultAllScreens)
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⌥⌘S", "A shortcut the user picked stays")
+    }
+
+    func testControlOptionAndShiftCommandDefaultsMigrate() throws {
+        var legacy = CaptureSettings.default
+        legacy.shortcutRegion = ShortcutBinding(key: "4", modifiers: ["⌃", "⌥"])
+        legacy.shortcutRecording = ShortcutBinding(key: "6", modifiers: ["⌃", "⌥"])
+        legacy.shortcutQuickOcr = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(legacy))
+        XCTAssertEqual(decoded.shortcutRegion.displayString, "⇧⌘6")
+        XCTAssertEqual(decoded.shortcutRecording.displayString, "⇧⌘9")
+        XCTAssertEqual(decoded.shortcutQuickOcr, .defaultQuickOcr)
+    }
+
+    func testDefaultsAvoidKnownAppShortcuts() throws {
+        let settings = CaptureSettings()
+        for binding in [settings.shortcutRegion, settings.shortcutFullScreen, settings.shortcutWindow,
+                        settings.shortcutRecording, settings.shortcutQuickOcr, settings.shortcutAllScreens] {
+            XCTAssertNil(binding.knownAppConflict, binding.displayString)
+        }
+        XCTAssertNotNil(ShortcutBinding(key: "8", modifiers: ["⇧", "⌘"]).knownAppConflict)
+
+        var briefDefaults = CaptureSettings.default
+        briefDefaults.shortcutWindow = ShortcutBinding(key: "8", modifiers: ["⇧", "⌘"])
+        briefDefaults.shortcutQuickOcr = ShortcutBinding(key: "0", modifiers: ["⇧", "⌘"])
+        let decoded = try JSONDecoder().decode(CaptureSettings.self, from: JSONEncoder().encode(briefDefaults))
+        XCTAssertEqual(decoded.shortcutWindow.displayString, "⌥⇧⌘8")
+        XCTAssertEqual(decoded.shortcutQuickOcr.displayString, "⌥⇧⌘0")
     }
 
     func testLegacyShiftedSymbolShortcuts() throws {

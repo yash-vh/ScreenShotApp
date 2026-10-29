@@ -46,19 +46,28 @@ dmg_name="ScreenMint-${version}.dmg"
 dmg_path="$release_dir/$dmg_name"
 sha_path="$release_dir/$dmg_name.sha256"
 
-staging_dir=$(mktemp -d /tmp/screenmint-dmg.XXXXXX)
-trap 'rm -rf "$staging_dir"' EXIT
+work_dir=$(mktemp -d /tmp/screenmint-dmg.XXXXXX)
+trap 'rm -rf "$work_dir"' EXIT
 
-cp -R "$app_path" "$staging_dir/ScreenMint.app"
-ln -s /Applications "$staging_dir/Applications"
+# Installer window: custom background with an arrow, app icon -> Applications, volume icon.
+# dmgbuild writes Finder's layout directly (no Finder scripting); it lives in a private venv.
+venv="$repo_root/build/.dmgbuild-venv"
+if [[ ! -x "$venv/bin/dmgbuild" ]]; then
+  echo "==> Installing dmgbuild into $venv..."
+  python3 -m venv "$venv"
+  "$venv/bin/pip" install -q dmgbuild
+fi
 
-echo "==> Creating compressed disk image: $dmg_path"
+echo "==> Drawing installer background..."
+swift "$repo_root/Scripts/make-dmg-background.swift" "$work_dir/background.tiff"
+
+echo "==> Creating disk image: $dmg_path"
 rm -f "$dmg_path"
-hdiutil create -volname "ScreenMint" \
-               -srcfolder "$staging_dir" \
-               -ov \
-               -format UDZO \
-               "$dmg_path" >/dev/null
+"$venv/bin/dmgbuild" -s "$repo_root/Scripts/dmg-settings.py" \
+  -D app="$app_path" \
+  -D background="$work_dir/background.tiff" \
+  -D icon="$app_path/Contents/Resources/AppIcon.icns" \
+  "ScreenMint" "$dmg_path" >/dev/null
 
 echo "==> Calculating SHA256 checksum..."
 sha=$(shasum -a 256 "$dmg_path" | awk '{print $1}')

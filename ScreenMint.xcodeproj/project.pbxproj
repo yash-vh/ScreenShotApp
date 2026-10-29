@@ -81,6 +81,7 @@
 		DB408D7EB538080BC5C95E28 /* LinkShortener.swift in Sources */ = {isa = PBXBuildFile; fileRef = 748DEC8751BAB039E89C0C5D /* LinkShortener.swift */; };
 		DC82F47CD009DB00C8FACCD9 /* AnnotationCanvasInteractionTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9C85C2FE06D89D3E4C52B700 /* AnnotationCanvasInteractionTests.swift */; };
 		DDF19EEE06B34A47BC742741 /* UploadHUD.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7D9A01E4072BE28C3E99EF66 /* UploadHUD.swift */; };
+		E0819D6348D6BCAEE950BF7F /* PermissionsWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1B4881D0ED01E274E0054FE8 /* PermissionsWindow.swift */; };
 		E6918940B393AF2953D395C3 /* ExportCompositor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EA650C98E0DD0C2A1F918167 /* ExportCompositor.swift */; };
 		EC7CACA36C8021E756579C66 /* AppConfiguration.swift in Sources */ = {isa = PBXBuildFile; fileRef = C7CE269B9B09CB41A5A3FE60 /* AppConfiguration.swift */; };
 		ED34B81F6B7DEE7BC531AB89 /* HistoryStoreTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = E25E1F70938FF4A720589A10 /* HistoryStoreTests.swift */; };
@@ -124,6 +125,7 @@
 		143A5288E07D375A34A4C2BD /* TextHighlightSnapper.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TextHighlightSnapper.swift; sourceTree = "<group>"; };
 		15AA099E3B82074C6D525972 /* MediaType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaType.swift; sourceTree = "<group>"; };
 		1702F40BB6909F2B37EF9F17 /* KeyCodeMap.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeyCodeMap.swift; sourceTree = "<group>"; };
+		1B4881D0ED01E274E0054FE8 /* PermissionsWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = PermissionsWindow.swift; sourceTree = "<group>"; };
 		1EDB9B0510DA4A00B9AA5032 /* AppError.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppError.swift; sourceTree = "<group>"; };
 		243329DF6EF7A8E856BDFF9B /* HUDGlass.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HUDGlass.swift; sourceTree = "<group>"; };
 		260C55EA807688771F498B2E /* EditorState.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorState.swift; sourceTree = "<group>"; };
@@ -132,6 +134,7 @@
 		303E5AA2808028B7C4337FFA /* VisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionService.swift; sourceTree = "<group>"; };
 		328A26F8F3B53FE3E2A452CB /* OverlayWindow.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OverlayWindow.swift; sourceTree = "<group>"; };
 		32AF9FC579E3C6ED853171AB /* HotKeyManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HotKeyManager.swift; sourceTree = "<group>"; };
+		367DD999307E650747A5A9BA /* dmg-settings.py */ = {isa = PBXFileReference; lastKnownFileType = text.script.python; path = "dmg-settings.py"; sourceTree = "<group>"; };
 		389E24FF8AD0C37835A589F5 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		39B72757936A34170BDDFA99 /* WindowSelectionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSelectionOverlay.swift; sourceTree = "<group>"; };
 		3CF9B8EC434E20379A889C12 /* ExportCompositorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportCompositorTests.swift; sourceTree = "<group>"; };
@@ -173,6 +176,7 @@
 		B11B7774FCDBB213ACE22D8E /* SubscriptionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubscriptionManager.swift; sourceTree = "<group>"; };
 		B3EBA0C1DC4BACAAFBEB48EA /* AppCommands.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppCommands.swift; sourceTree = "<group>"; };
 		B4F6B71E9964BE139E4BAE35 /* ScreenMint-menubar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "ScreenMint-menubar.png"; sourceTree = "<group>"; };
+		B5AFC3F7D1DA46DD8651F125 /* make-dmg-background.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = "make-dmg-background.swift"; sourceTree = "<group>"; };
 		B8DA5ACA8851B44AA39B595D /* RecordingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSession.swift; sourceTree = "<group>"; };
 		BA613F0E4F8166B5C4ABDDE2 /* RecordingSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSettings.swift; sourceTree = "<group>"; };
 		BDAC9AE389BF3F1A228D86AB /* S3Provider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = S3Provider.swift; sourceTree = "<group>"; };
@@ -245,6 +249,7 @@
 				E8D29160D3E9A27D1FE19DA8 /* Capture */,
 				5EA3AABFCEC70B1DA764F099 /* Editor */,
 				A3F0C004390E80A257ED6151 /* History */,
+				52BB5BBE9333E3ED011FAA11 /* Onboarding */,
 				903C220F640E1DB8C567FBCC /* Privacy */,
 				D92CDF7C857D78EDB6259B04 /* Recognition */,
 				C9F614772BB8FBA86336B30E /* Recording */,
@@ -359,6 +364,14 @@
 			path = Sharing;
 			sourceTree = "<group>";
 		};
+		52BB5BBE9333E3ED011FAA11 /* Onboarding */ = {
+			isa = PBXGroup;
+			children = (
+				1B4881D0ED01E274E0054FE8 /* PermissionsWindow.swift */,
+			);
+			path = Onboarding;
+			sourceTree = "<group>";
+		};
 		5631812AE0BE61B046DD7120 /* Storage */ = {
 			isa = PBXGroup;
 			children = (
@@ -455,7 +468,9 @@
 		A582C1B91A132FABA2A3514E /* Scripts */ = {
 			isa = PBXGroup;
 			children = (
+				367DD999307E650747A5A9BA /* dmg-settings.py */,
 				ECE0C1982B3F8E87EDE44564 /* generate-app-icon.sh */,
+				B5AFC3F7D1DA46DD8651F125 /* make-dmg-background.swift */,
 				944BBF89494CE9AD6ABA860C /* make-logo.swift */,
 				E0D46034291780589427C1EC /* package-release.sh */,
 			);
@@ -683,6 +698,7 @@
 				FCA18CB6028F318B8E58C579 /* OCRResultOverlay.swift in Sources */,
 				8F9A4F58A6D85F51D2FFEF7A /* OverlayWindow.swift in Sources */,
 				9241E807EB9FDB6DED8ED04E /* PermissionManager.swift in Sources */,
+				E0819D6348D6BCAEE950BF7F /* PermissionsWindow.swift in Sources */,
 				C33108EBD1C9E80D4354E2D7 /* RecognitionController.swift in Sources */,
 				BB7A509E3EA43C25C2AFD8A7 /* RecordingCoordinator.swift in Sources */,
 				10EEA42235F753BDC9666C97 /* RecordingSession.swift in Sources */,

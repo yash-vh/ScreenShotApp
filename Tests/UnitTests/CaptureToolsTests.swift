@@ -145,7 +145,7 @@ final class CaptureToolsTests: XCTestCase {
 
     func testAllScreensShortcutDefaultsAndAvoidsMacOSKeys() {
         let settings = CaptureSettings()
-        XCTAssertEqual(settings.shortcutAllScreens, ShortcutBinding(key: "2", modifiers: ["⌥", "⌘"]))
+        XCTAssertEqual(settings.shortcutAllScreens, ShortcutBinding(key: "7", modifiers: ["⌥", "⇧", "⌘"]))
         XCTAssertFalse(settings.shortcutAllScreens.isMacOSScreenshotShortcut)
         XCTAssertTrue(settings.shortcutAllScreens.isValidGlobalHotKey)
     }

@@ -159,7 +159,9 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
         let trackingArea = NSTrackingArea(
             rect: .zero,
-            options: [.activeInKeyWindow, .mouseMoved, .cursorUpdate, .inVisibleRect],
+            // Active always: the overlay on a second display, or one shown while another app keeps focus,
+            // isn't the key window, and the cursor would otherwise stay whatever that app last set
+            options: [.activeAlways, .mouseMoved, .cursorUpdate, .inVisibleRect],
             owner: self,
             userInfo: nil
         )
@@ -259,8 +261,7 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
             selectedItemId = nil
         }
         DispatchQueue.main.async { [weak self] in
-            guard let self = self, let window = self.window else { return }
-            self.updateCursor(at: self.convert(window.mouseLocationOutsideOfEventStream, from: nil))
+            self?.refreshCursor()
         }
         needsDisplay = true
     }
@@ -1042,8 +1043,21 @@ public final class AnnotationCanvasView: NSView, NSTextFieldDelegate, NSMenuItem
 
     // MARK: - Cursor
 
+    /// Points (canvas coordinates) where the host view owns the cursor, e.g. the selection's resize handles,
+    /// so the two views don't take turns setting it
+    var cursorIsHandledByHost: ((CGPoint) -> Bool)?
+
+    /// Shows the right cursor for wherever the pointer is now, without waiting for it to move
+    func refreshCursor() {
+        guard let window else { return }
+        let loc = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard bounds.contains(loc) else { return }
+        updateCursor(at: loc)
+    }
+
     private func updateCursor(at loc: CGPoint) {
         guard interaction == nil else { return }
+        if cursorIsHandledByHost?(loc) == true { return }
         if let item = selectedItem {
             if item.type == .arrow, arrowEndpointIndex(of: item, at: loc) != nil {
                 NSCursor.pointingHand.set(); return

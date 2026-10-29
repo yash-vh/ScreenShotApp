@@ -678,17 +678,23 @@ struct ShortcutRecorderRow: View {
             }
         }
         .overlay(alignment: .bottomTrailing) {
-            if let rejection, isRecording {
-                Text(rejection)
+            if let note = rowNote {
+                Text(note)
                     .font(.caption)
                     .foregroundStyle(.orange)
                     .offset(y: 16)
             }
         }
-        .padding(.bottom, rejection != nil && isRecording ? 14 : 0)
+        .padding(.bottom, rowNote != nil ? 14 : 0)
         .onDisappear {
             stopRecording()
         }
+    }
+
+    /// Why the key just typed was refused, or which app also uses the saved shortcut
+    private var rowNote: String? {
+        if isRecording { return rejection }
+        return binding.knownAppConflict.map { "Also used by \($0); \(AppBranding.appName) takes it while running." }
     }
 
     private func startRecording() {
@@ -725,7 +731,7 @@ struct ShortcutRecorderRow: View {
                 DispatchQueue.main.async {
                     if candidate.isMacOSScreenshotShortcut {
                         // Keep listening so the user can try another combination
-                        self.rejection = "\(candidate.displayString) belongs to macOS Screenshot. Try ⌥⌘ or ⌃⌥ with a key."
+                        self.rejection = "\(candidate.displayString) belongs to macOS Screenshot. Try ⇧⌘ with 6–0, or ⌃⌥ with a key."
                         return
                     }
                     self.rejection = nil

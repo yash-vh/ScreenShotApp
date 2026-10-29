@@ -31,7 +31,7 @@ private func carbonHotKeyEventHandler(
 ///
 /// Hotkeys are registered from the user's bindings in `CaptureSettings` (including custom capture
 /// shortcuts) and re-registered whenever those settings change. Works from any application without
-/// Accessibility permission. macOS's own screenshot shortcuts (⇧⌘3/4/5/6) are never registered,
+/// Accessibility permission. macOS's own screenshot shortcuts (⇧⌘3/4/5) are never registered,
 /// so the built-in screenshot tool keeps working alongside ScreenMint.
 @MainActor
 public final class HotKeyManager: ObservableObject {

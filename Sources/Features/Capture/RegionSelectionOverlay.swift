@@ -51,7 +51,7 @@ public final class RegionSelectionOverlayController: NSObject {
         self.onMultiScreenSelection = onMultiScreen
         self.onCancelled = onCancel
 
-        NSApp.activate(ignoringOtherApps: true)
+        OverlayWindow.activateApp()
 
         let keyScreen = OverlayWindow.screenUnderMouse
         for screen in NSScreen.screens {
@@ -168,6 +168,10 @@ public final class RegionSelectionOverlayController: NSObject {
             isCursorPushed = false
         }
         NSCursor.arrow.set()
+        // The pointer usually rests over the image when editing starts: show the tool's cursor right away
+        DispatchQueue.main.async { [weak self] in
+            self?.selectionViews.forEach { $0.refreshEditingCursor() }
+        }
     }
 
     fileprivate func selectionSessionDidEnd() {
@@ -188,7 +192,7 @@ public final class RegionSelectionOverlayController: NSObject {
         dismiss()
         self.onSelectionComplete = onComplete
         self.onCancelled = onCancel
-        NSApp.activate(ignoringOtherApps: true)
+        OverlayWindow.activateApp()
 
         let window = OverlayWindow(screen: screen)
         let local = CGRect(x: frame.minX - screen.frame.minX, y: frame.minY - screen.frame.minY, width: frame.width, height: frame.height)
@@ -458,6 +462,12 @@ final class RegionSelectionView: NSView {
         canvas.onConfirmRequested = { [weak self] in self?.finish(.copy) }
         canvas.onCloseRequested = { [weak self] in self?.cancelCapture() }
         canvas.onBackgroundDrag = { [weak self] phase, event in self?.handleBackgroundDrag(phase, event) ?? false }
+        canvas.cursorIsHandledByHost = { [weak self, weak canvas] point in
+            guard let self, let canvas, self.mode == .capture else { return false }
+            if self.activeHandle != nil { return true }
+            let handle = self.handleAt(point: self.convert(point, from: canvas))
+            return handle != nil && handle != .body
+        }
         addSubview(canvas, positioned: .below, relativeTo: nil)
         self.canvas = canvas
 
@@ -674,6 +684,16 @@ final class RegionSelectionView: NSView {
 
     override func cursorUpdate(with event: NSEvent) {
         updateSessionCursor(at: convert(event.locationInWindow, from: nil))
+    }
+
+    fileprivate func refreshEditingCursor() {
+        guard let window, NSMouseInRect(NSEvent.mouseLocation, window.frame, false) else { return }
+        let loc = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        if canvas?.frame.contains(loc) == true {
+            canvas?.refreshCursor()
+        } else {
+            updateSessionCursor(at: loc)
+        }
     }
 
     /// While editing: resize arrows on the selection handles, a normal pointer everywhere else around it

@@ -106,22 +106,39 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
         return mask
     }
 
-    /// Whether this is one of macOS's own screenshot shortcuts (⇧⌘3/4/5/6, plus the ⌃ "copy to clipboard"
-    /// variants). ScreenMint never uses these so the built-in screenshot tool keeps working.
+    /// Whether this is one of macOS's own screenshot shortcuts (⇧⌘3/4/5, plus the ⌃ "copy to clipboard"
+    /// variants). ScreenMint never uses these so the built-in screenshot tool keeps working. (⇧⌘6 only
+    /// captures the Touch Bar on Macs that have one, so it is free for ScreenMint.)
     public var isMacOSScreenshotShortcut: Bool {
         // Canonical name, so legacy shifted symbols ("$" for ⇧4) are recognised too
-        guard ["3", "4", "5", "6"].contains(KeyCodeMap.canonicalName(for: key)) else { return false }
+        guard ["3", "4", "5"].contains(KeyCodeMap.canonicalName(for: key)) else { return false }
         let set = Set(modifiers)
         return set == ["⇧", "⌘"] || set == ["⌃", "⇧", "⌘"]
     }
 
-    // Defaults use ⌥⌘ + digit: free in macOS and close to the familiar ⇧⌘ screenshot keys
-    public static let defaultRegion = ShortcutBinding(key: "4", modifiers: ["⌥", "⌘"])
-    public static let defaultFullScreen = ShortcutBinding(key: "3", modifiers: ["⌥", "⌘"])
-    public static let defaultWindow = ShortcutBinding(key: "5", modifiers: ["⌥", "⌘"])
-    public static let defaultRecording = ShortcutBinding(key: "6", modifiers: ["⌥", "⌘"])
-    public static let defaultQuickOcr = ShortcutBinding(key: "7", modifiers: ["⌥", "⌘"])
-    public static let defaultAllScreens = ShortcutBinding(key: "2", modifiers: ["⌥", "⌘"])
+    // Defaults run ⇧⌘6 → ⇧⌘0, right after macOS's own ⇧⌘3/4/5 screenshot keys. ⌥ is added where an app
+    // already uses the plain key (a global hotkey would take it away from that app): see `knownAppConflict`.
+    public static let defaultRegion = ShortcutBinding(key: "6", modifiers: ["⇧", "⌘"])
+    public static let defaultFullScreen = ShortcutBinding(key: "7", modifiers: ["⇧", "⌘"])
+    public static let defaultWindow = ShortcutBinding(key: "8", modifiers: ["⌥", "⇧", "⌘"])
+    public static let defaultRecording = ShortcutBinding(key: "9", modifiers: ["⇧", "⌘"])
+    public static let defaultQuickOcr = ShortcutBinding(key: "0", modifiers: ["⌥", "⇧", "⌘"])
+    public static let defaultAllScreens = ShortcutBinding(key: "7", modifiers: ["⌥", "⇧", "⌘"])
+
+    /// Popular apps' own shortcuts. A global hotkey wins over them, so the app loses that shortcut while
+    /// ScreenMint runs. Not exhaustive: apps can't be asked for their shortcuts without Accessibility access.
+    public var knownAppConflict: String? {
+        let key = KeyCodeMap.canonicalName(for: self.key)
+        switch (Set(modifiers), key) {
+        case (["⇧", "⌘"], "8"): return "Android Studio (Column Selection Mode)"
+        case (["⇧", "⌘"], "0"): return "Xcode (Developer Documentation)"
+        case (["⇧", "⌘"], "1"): return "Xcode (Welcome window)"
+        case (["⇧", "⌘"], "2"): return "Xcode (Devices and Simulators)"
+        case (["⌥", "⌘"], let digit) where ("1"..."9").contains(digit): return "Xcode (Inspectors)"
+        case (["⌘"], let digit) where ("1"..."9").contains(digit): return "browsers and most apps (tabs)"
+        default: return nil
+        }
+    }
 
     /// Whether this binding is usable as a system-wide hotkey (needs ⌘, ⌃ or ⌥, or a function key)
     public var isValidGlobalHotKey: Bool {
@@ -246,19 +263,20 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         let legacyCustom = !(customSaveDirectory ?? "").isEmpty
         self.saveLocation = try container.decodeIfPresent(SaveLocation.self, forKey: .saveLocation) ?? (legacyCustom ? .custom : .desktop)
         self.fileNamePrefix = try container.decodeIfPresent(String.self, forKey: .fileNamePrefix) ?? "Screenshot"
-        // Earlier versions defaulted to ⇧⌘3–7, which collide with macOS's screenshot tool, and could store
-        // shifted characters (")") that no key produces. Both fall back to the ⌥⌘ defaults.
-        func capture(_ key: CodingKeys, legacyKey: String, default fallback: ShortcutBinding) throws -> ShortcutBinding {
+        // Earlier versions defaulted to ⇧⌘3–7, then ⌥⌘2–7 and ⌃⌥2–7 (same digit per action), and could store
+        // shifted characters (")") that no key produces. All of these move to the current defaults.
+        func capture(_ key: CodingKeys, legacyKey: String, previous: [String] = [], default fallback: ShortcutBinding) throws -> ShortcutBinding {
             guard let stored = try container.decodeIfPresent(ShortcutBinding.self, forKey: key) else { return fallback }
-            let legacyDefault = ShortcutBinding(key: legacyKey, modifiers: ["⇧", "⌘"])
+            let legacyDefaults = [["⇧", "⌘"], ["⌥", "⌘"], ["⌃", "⌥"]].map { ShortcutBinding(key: legacyKey, modifiers: $0).displayString } + previous
             let unusable = !stored.isValidGlobalHotKey || stored.isMacOSScreenshotShortcut
-            return unusable || stored == legacyDefault ? fallback : stored
+            return unusable || legacyDefaults.contains(stored.displayString) ? fallback : stored
         }
         self.shortcutRegion = try capture(.shortcutRegion, legacyKey: "4", default: .defaultRegion)
         self.shortcutFullScreen = try capture(.shortcutFullScreen, legacyKey: "3", default: .defaultFullScreen)
-        self.shortcutWindow = try capture(.shortcutWindow, legacyKey: "5", default: .defaultWindow)
+        // ⇧⌘8 / ⇧⌘0 were briefly the defaults; they clash with Android Studio and Xcode
+        self.shortcutWindow = try capture(.shortcutWindow, legacyKey: "5", previous: ["⇧⌘8"], default: .defaultWindow)
         self.shortcutRecording = try capture(.shortcutRecording, legacyKey: "6", default: .defaultRecording)
-        self.shortcutQuickOcr = try capture(.shortcutQuickOcr, legacyKey: "7", default: .defaultQuickOcr)
+        self.shortcutQuickOcr = try capture(.shortcutQuickOcr, legacyKey: "7", previous: ["⇧⌘0"], default: .defaultQuickOcr)
         self.shortcutAllScreens = try capture(.shortcutAllScreens, legacyKey: "2", default: .defaultAllScreens)
         self.shortcutCopy = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCopy) ?? ShortcutBinding(key: "C", modifiers: ["⌘"])
         self.shortcutUpload = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutUpload) ?? ShortcutBinding(key: "U", modifiers: ["⌘"])
