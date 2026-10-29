@@ -110,7 +110,8 @@ public final class HotKeyManager: ObservableObject {
             (.fullScreen, settings.shortcutFullScreen),
             (.window, settings.shortcutWindow),
             (.recording, settings.shortcutRecording),
-            (.ocr, settings.shortcutQuickOcr)
+            (.ocr, settings.shortcutQuickOcr),
+            (.allScreens, settings.shortcutAllScreens)
         ]
         for custom in settings.customShortcuts {
             if let action = CaptureActionType(customActionName: custom.action) {
@@ -176,6 +177,7 @@ extension CaptureActionType {
         case "Capture Window": self = .window
         case "Record Screen": self = .recording
         case "OCR Text from Screen": self = .ocr
+        case "Capture All Screens": self = .allScreens
         default: return nil
         }
     }

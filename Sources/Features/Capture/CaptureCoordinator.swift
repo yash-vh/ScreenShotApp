@@ -47,6 +47,13 @@ public final class CaptureCoordinator: ObservableObject {
                     self.isCapturing = false
                 }
             },
+            onMultiScreen: { [weak self] image, global in
+                // An area across displays can't be edited in place; open it fitted on the display under the pointer
+                guard let self else { return }
+                let screen = OverlayWindow.screenUnderMouse ?? NSScreen.screens[0]
+                let frame = Self.fittedFrame(for: global, imageSize: CGSize(width: image.width, height: image.height), in: screen.visibleFrame)
+                self.presentEditor(image, frame: frame, on: screen, title: "Region Capture")
+            },
             onCancel: { [weak self] in
                 self?.isCapturing = false
             }
@@ -85,6 +92,78 @@ public final class CaptureCoordinator: ObservableObject {
             }
             self.isCapturing = false
         }
+    }
+
+    /// Captures every connected display and joins them into one image, laid out as in System Settings › Displays
+    public func captureAllScreens() {
+        guard PermissionManager.shared.isAuthorized || PermissionManager.shared.checkScreenRecordingPermission() else {
+            Task { @MainActor in
+                if await PermissionManager.shared.verifyScreenRecordingPermission() {
+                    self.captureAllScreens()
+                } else {
+                    PermissionManager.shared.showScreenRecordingPermissionDialog()
+                }
+            }
+            return
+        }
+        let screens = NSScreen.screens
+        guard screens.count > 1 else {
+            captureFullScreen()
+            return
+        }
+
+        isCapturing = true
+        Task {
+            do {
+                var captures: [(image: CGImage, frame: CGRect)] = []
+                for screen in screens {
+                    let displayId = screen.deviceDescription[NSDeviceDescriptionKey("NSScreenNumber")] as? CGDirectDisplayID ?? CGMainDisplayID()
+                    captures.append((try await ScreenCaptureService.shared.captureDisplay(displayId: displayId), screen.frame))
+                }
+                PermissionManager.shared.markAuthorized()
+                guard let combined = Self.combineDisplays(captures) else {
+                    throw AppError.captureFailed(reason: "Couldn't join the display images")
+                }
+                AppLogger.shared.capture.info("All-screens capture: \(captures.count) displays → \(combined.width)x\(combined.height)")
+
+                // Annotate on the display under the pointer, scaled to fit
+                let screen = OverlayWindow.screenUnderMouse ?? screens[0]
+                let union = captures.map(\.frame).reduce(CGRect.null) { $0.union($1) }
+                let frame = Self.fittedFrame(for: union, imageSize: CGSize(width: combined.width, height: combined.height), in: screen.visibleFrame)
+                self.presentEditor(combined, frame: frame, on: screen, title: "All Screens Capture")
+            } catch {
+                AppLogger.shared.capture.error("All-screens capture error: \(error.localizedDescription, privacy: .public)")
+                AppCoordinator.shared.lastErrorMessage = error.localizedDescription
+                CaptureHUD.shared.show(title: "Couldn't capture all screens", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
+                self.isCapturing = false
+            }
+        }
+    }
+
+    /// Places each display image at its arrangement position (AppKit global frames, points) on one canvas,
+    /// at the sharpest display's pixel density. Areas no display covers stay transparent.
+    nonisolated static func combineDisplays(_ captures: [(image: CGImage, frame: CGRect)]) -> CGImage? {
+        guard !captures.isEmpty else { return nil }
+        let union = captures.map(\.frame).reduce(CGRect.null) { $0.union($1) }
+        let scale = captures.map { CGFloat($0.image.width) / max($0.frame.width, 1) }.max() ?? 1
+        let width = Int((union.width * scale).rounded())
+        let height = Int((union.height * scale).rounded())
+        guard width > 0, height > 0, let context = CGContext(
+            data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ) else { return nil }
+        context.interpolationQuality = .high
+        // Both AppKit and CoreGraphics bitmaps are y-up, so frames map directly
+        for capture in captures {
+            let rect = CGRect(
+                x: (capture.frame.minX - union.minX) * scale,
+                y: (capture.frame.minY - union.minY) * scale,
+                width: capture.frame.width * scale,
+                height: capture.frame.height * scale
+            )
+            context.draw(capture.image, in: rect)
+        }
+        return context.makeImage()
     }
 
     public func captureWindow() {

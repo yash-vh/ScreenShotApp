@@ -115,4 +115,70 @@ final class CaptureToolsTests: XCTestCase {
         XCTAssertTrue(area.contains(fitted))
         XCTAssertEqual(fitted.width / fitted.height, 2, accuracy: 0.01)
     }
+
+    // MARK: - All Screens
+
+    private static func solid(_ width: Int, _ height: Int, red: CGFloat) -> CGImage {
+        let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.setFillColor(CGColor(srgbRed: red, green: 0, blue: 0, alpha: 1))
+        ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+        return ctx.makeImage()!
+    }
+
+    func testCombinesDisplaysSideBySideAtSharpestScale() throws {
+        // Retina 1440×900 pt on the left, 1x 1366×768 pt to the right, aligned at the bottom
+        let left = (image: Self.solid(2880, 1800, red: 1), frame: CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let right = (image: Self.solid(1366, 768, red: 0.5), frame: CGRect(x: 1440, y: 0, width: 1366, height: 768))
+        let combined = try XCTUnwrap(CaptureCoordinator.combineDisplays([left, right]))
+        XCTAssertEqual(combined.width, (1440 + 1366) * 2)
+        XCTAssertEqual(combined.height, 900 * 2)
+    }
+
+    func testCombinesStackedDisplays() throws {
+        let bottom = (image: Self.solid(100, 50, red: 1), frame: CGRect(x: 0, y: 0, width: 100, height: 50))
+        let top = (image: Self.solid(80, 40, red: 1), frame: CGRect(x: 10, y: 50, width: 80, height: 40))
+        let combined = try XCTUnwrap(CaptureCoordinator.combineDisplays([bottom, top]))
+        XCTAssertEqual(combined.width, 100)
+        XCTAssertEqual(combined.height, 90)
+    }
+
+    func testAllScreensShortcutDefaultsAndAvoidsMacOSKeys() {
+        let settings = CaptureSettings()
+        XCTAssertEqual(settings.shortcutAllScreens, ShortcutBinding(key: "2", modifiers: ["⌥", "⌘"]))
+        XCTAssertFalse(settings.shortcutAllScreens.isMacOSScreenshotShortcut)
+        XCTAssertTrue(settings.shortcutAllScreens.isValidGlobalHotKey)
+    }
+
+    /// Red channel of the pixel at (x, y), top-left origin
+    private static func red(_ image: CGImage, x: Int, y: Int) -> UInt8 {
+        let ctx = CGContext(data: nil, width: image.width, height: image.height, bitsPerComponent: 8, bytesPerRow: image.width * 4,
+                            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue)!
+        ctx.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+        let data = ctx.data!.assumingMemoryBound(to: UInt8.self)
+        return data[(y * image.width + x) * 4]
+    }
+
+    @MainActor
+    func testAreaAcrossDisplaysIsCutFromBothSnapshots() throws {
+        // Left display bright red, right display dark red, side by side
+        let left = (image: Self.solid(200, 100, red: 1), frame: CGRect(x: 0, y: 0, width: 200, height: 100))
+        let right = (image: Self.solid(200, 100, red: 0.2), frame: CGRect(x: 200, y: 0, width: 200, height: 100))
+        let area = CGRect(x: 150, y: 20, width: 100, height: 60)
+        let cropped = try XCTUnwrap(RegionSelectionOverlayController.crop([left, right], to: area))
+        XCTAssertEqual(cropped.width, 100)
+        XCTAssertEqual(cropped.height, 60)
+        XCTAssertGreaterThan(Self.red(cropped, x: 10, y: 30), 240, "Left part comes from the left display")
+        XCTAssertLessThan(Self.red(cropped, x: 90, y: 30), 80, "Right part comes from the right display")
+    }
+
+    @MainActor
+    func testAreaAcrossStackedDisplaysKeepsTopOnTop() throws {
+        // Upper display (higher y in AppKit) bright, lower display dark
+        let lower = (image: Self.solid(100, 100, red: 0.2), frame: CGRect(x: 0, y: 0, width: 100, height: 100))
+        let upper = (image: Self.solid(100, 100, red: 1), frame: CGRect(x: 0, y: 100, width: 100, height: 100))
+        let cropped = try XCTUnwrap(RegionSelectionOverlayController.crop([lower, upper], to: CGRect(x: 0, y: 50, width: 100, height: 100)))
+        XCTAssertGreaterThan(Self.red(cropped, x: 50, y: 5), 240, "Top rows come from the upper display")
+        XCTAssertLessThan(Self.red(cropped, x: 50, y: 95), 80)
+    }
 }

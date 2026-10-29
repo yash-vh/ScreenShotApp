@@ -6,6 +6,7 @@ import Combine
 public enum CaptureActionType: String, Sendable, CaseIterable {
     case region = "Selected Region"
     case fullScreen = "Full Screen"
+    case allScreens = "All Screens"
     case window = "Window"
     case recording = "Screen Recording"
     case ocr = "OCR Text from Screen"
@@ -14,6 +15,7 @@ public enum CaptureActionType: String, Sendable, CaseIterable {
         switch self {
         case .region: return "crop"
         case .fullScreen: return "macwindow"
+        case .allScreens: return "rectangle.on.rectangle"
         case .window: return "macwindow.on.rectangle"
         case .recording: return "record.circle"
         case .ocr: return "text.viewfinder"
@@ -87,6 +89,8 @@ public final class AppCoordinator: ObservableObject {
             startRegionCapture()
         case .fullScreen:
             startFullScreenCapture()
+        case .allScreens:
+            CaptureCoordinator.shared.captureAllScreens()
         case .window:
             startWindowCapture()
         case .recording:

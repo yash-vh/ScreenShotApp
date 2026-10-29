@@ -10,6 +10,7 @@
 		04DF2E913CAEBF9EF4D8C366 /* VisionService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1392F289CE3F59FD725EE64F /* VisionService.swift */; };
 		055267D8F9A3970D98924D0C /* SensitiveInfoDetector.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5194A16725F27B27D0FD7060 /* SensitiveInfoDetector.swift */; };
 		07CB3A4E2C3FAF082527C57D /* MenuBarController.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0A3A69A822F0D7D5AF6F8492 /* MenuBarController.swift */; };
+		07EF22270A5B6EB8C8C95540 /* ToolCursor.swift in Sources */ = {isa = PBXBuildFile; fileRef = EE5809FD173E80A6F4E0E7F3 /* ToolCursor.swift */; };
 		08A45CF6A4A5359AE77108C6 /* RedactionRendererTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = CE32380AD5822FC90FC3157D /* RedactionRendererTests.swift */; };
 		0D564E94A0C50EEC447CE766 /* AnnotationRenderer.swift in Sources */ = {isa = PBXBuildFile; fileRef = A57B534ACC4EDD809F8F0735 /* AnnotationRenderer.swift */; };
 		115E7748350FD4F8B252AD77 /* RecordingTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = 0581FC1B5B301F7FA1494AE6 /* RecordingTests.swift */; };
@@ -199,6 +200,7 @@
 		EA35A8424F64EF8FEA33FDBF /* RecognitionController.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecognitionController.swift; sourceTree = "<group>"; };
 		EA5A7BBF6A02BB210850E612 /* ImgBBProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImgBBProvider.swift; sourceTree = "<group>"; };
 		EBD7B2CE3CA64A31DF616E0D /* DomainModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModelTests.swift; sourceTree = "<group>"; };
+		EE5809FD173E80A6F4E0E7F3 /* ToolCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCursor.swift; sourceTree = "<group>"; };
 		F66E3F44848C560E09CA19E8 /* GIFEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFEncoder.swift; sourceTree = "<group>"; };
 		F8384A669B211D66E4EE6CB6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FB26A50D7F7BB72A61C04801 /* RecordingWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWriter.swift; sourceTree = "<group>"; };
@@ -225,6 +227,7 @@
 				65FC7635EAC81D83808521FB /* EditorToolbarView.swift */,
 				592946F5C34356FA84AF916A /* ExportCompositor.swift */,
 				E7695B874DBE27796F7E30B2 /* TextHighlightSnapper.swift */,
+				EE5809FD173E80A6F4E0E7F3 /* ToolCursor.swift */,
 				4343C8A8BC770F6C2B74AEAA /* UndoRedoManager.swift */,
 			);
 			path = Editor;
@@ -686,6 +689,7 @@
 				DBDEEB658BAA7E38989288E7 /* SubscriptionManager.swift in Sources */,
 				4364446D8529E4948BAC35BC /* SubscriptionSettingsTab.swift in Sources */,
 				82E52DF30D5F8B27943A43AF /* TextHighlightSnapper.swift in Sources */,
+				07EF22270A5B6EB8C8C95540 /* ToolCursor.swift in Sources */,
 				1F1387380A770B62534F520A /* UndoRedoManager.swift in Sources */,
 				94570168610CD3B2671AF0D0 /* UploadHUD.swift in Sources */,
 				477CD1922D3B0857D4582F79 /* UploadRecord.swift in Sources */,

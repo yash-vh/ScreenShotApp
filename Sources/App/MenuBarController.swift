@@ -128,6 +128,13 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
         applyShortcut(settings.shortcutFullScreen, to: fullScreenItem)
         menu.addItem(fullScreenItem)
 
+        // Only offered when more than one display is connected
+        if NSScreen.screens.count > 1 {
+            let allScreensItem = actionItem("Capture All Screens", symbol: CaptureActionType.allScreens.systemIcon, action: #selector(didSelectCaptureAllScreens))
+            applyShortcut(settings.shortcutAllScreens, to: allScreensItem)
+            menu.addItem(allScreensItem)
+        }
+
         let windowItem = actionItem("Capture Window", symbol: "macwindow.on.rectangle", action: #selector(didSelectCaptureWindow))
         applyShortcut(settings.shortcutWindow, to: windowItem)
         menu.addItem(windowItem)
@@ -304,6 +311,10 @@ public final class MenuBarController: NSObject, NSMenuDelegate {
 
     @objc private func didSelectCaptureFullScreen() {
         coordinator.triggerCapture(type: .fullScreen)
+    }
+
+    @objc private func didSelectCaptureAllScreens() {
+        coordinator.triggerCapture(type: .allScreens)
     }
 
     @objc private func didSelectCaptureWindow() {

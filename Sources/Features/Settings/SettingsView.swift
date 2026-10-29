@@ -516,6 +516,13 @@ struct ShortcutsSettingsTab: View {
                 )
 
                 ShortcutRecorderRow(
+                    label: "Capture All Screens",
+                    icon: "rectangle.on.rectangle",
+                    binding: $config.captureSettings.shortcutAllScreens,
+                    defaultBinding: .defaultAllScreens
+                )
+
+                ShortcutRecorderRow(
                     label: "Capture Window",
                     icon: "macwindow.on.rectangle",
                     binding: $config.captureSettings.shortcutWindow,
@@ -763,7 +770,8 @@ struct AddShortcutSheet: View {
         "Capture Full Screen",
         "Capture Window",
         "Record Screen",
-        "OCR Text from Screen"
+        "OCR Text from Screen",
+        "Capture All Screens"
     ]
 
     var body: some View {

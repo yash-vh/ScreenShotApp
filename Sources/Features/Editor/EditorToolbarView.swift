@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// A trailing action button on the editor toolbar (Save, Upload, …)
@@ -266,52 +267,61 @@ public struct EditorToolbarView: View {
     }
 
     private var inkPanel: some View {
-        VStack(alignment: .leading, spacing: 14) {
+        VStack(alignment: .leading, spacing: 16) {
+            PanelHeader(title: inkHelp, symbol: state.tool.systemIcon)
+
             if usesIntensity {
-                panelSlider(state.tool == .blur ? "Blur" : "Pixel Size", value: $state.blurRadius, range: 8...60, unit: "px")
+                PanelSlider(title: state.tool == .blur ? "Blur Amount" : "Pixel Size", symbol: "drop.halffull",
+                            value: $state.blurRadius, range: 8...60, unit: "px")
             } else {
                 VStack(alignment: .leading, spacing: 8) {
-                    panelHeading("Color")
-                    HStack(spacing: 8) { colorChips }
+                    PanelSectionTitle("Color")
+                    colorChips
                 }
                 if usesFontSize {
-                    panelSlider("Size", value: $state.fontSize, range: state.tool == .step ? 14...48 : 12...72, unit: "pt")
+                    PanelSlider(title: state.tool == .step ? "Marker Size" : "Text Size", symbol: "textformat.size",
+                                value: $state.fontSize, range: state.tool == .step ? 14...48 : 12...72, unit: "pt")
                 } else if state.tool != .highlight {
                     VStack(alignment: .leading, spacing: 8) {
-                        panelHeading("Stroke")
-                        Picker("Stroke", selection: $state.strokeWidth) {
-                            Text("Fine").tag(2.0)
-                            Text("Medium").tag(4.0)
-                            Text("Bold").tag(8.0)
+                        PanelSectionTitle("Stroke")
+                        HStack(spacing: 6) {
+                            ForEach([(2.0, "Fine"), (4.0, "Medium"), (8.0, "Bold")], id: \.0) { width, name in
+                                strokeOption(width: width, name: name)
+                            }
                         }
-                        .pickerStyle(.segmented)
-                        .labelsHidden()
                     }
                 }
             }
         }
-        .padding(14)
-        .frame(width: 236)
+        .padding(16)
+        .frame(width: 268)
     }
 
-    private func panelHeading(_ title: String) -> some View {
-        Text(title)
-            .font(.system(size: 11, weight: .semibold))
-            .foregroundStyle(.secondary)
-    }
-
-    private func panelSlider(_ title: String, value: Binding<Double>, range: ClosedRange<Double>, unit: String) -> some View {
-        VStack(alignment: .leading, spacing: 6) {
-            HStack {
-                panelHeading(title)
-                Spacer()
-                Text("\(Int(value.wrappedValue)) \(unit)")
-                    .font(.system(size: 11).monospacedDigit())
-                    .foregroundStyle(.secondary)
+    /// Visual line-weight choice: shows the actual thickness instead of a word
+    private func strokeOption(width: Double, name: String) -> some View {
+        let selected = state.strokeWidth == width
+        return Button {
+            state.strokeWidth = width
+        } label: {
+            VStack(spacing: 6) {
+                Capsule()
+                    .fill(currentColor)
+                    .frame(width: 34, height: CGFloat(width / 1.6 + 0.5))
+                    .frame(height: 8)
+                Text(name)
+                    .font(.system(size: 10.5, weight: selected ? .semibold : .regular))
+                    .foregroundStyle(selected ? Color.accentColor : .secondary)
             }
-            Slider(value: value, in: range, step: 2)
-                .controlSize(.small)
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 9)
+            .background(selected ? Color.accentColor.opacity(0.14) : Color.primary.opacity(0.05),
+                        in: RoundedRectangle(cornerRadius: 9, style: .continuous))
+            .overlay(RoundedRectangle(cornerRadius: 9, style: .continuous)
+                .strokeBorder(selected ? Color.accentColor.opacity(0.6) : .clear, lineWidth: 1))
+            .contentShape(Rectangle())
         }
+        .buttonStyle(.plain)
+        .animation(.snappy(duration: 0.15), value: selected)
     }
 
     // MARK: - Helpers
@@ -342,14 +352,132 @@ public struct EditorToolbarView: View {
                 Circle()
                     .fill(Color(red: color.red, green: color.green, blue: color.blue).gradient)
                     .frame(width: 20, height: 20)
-                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.2), lineWidth: 0.5))
-                    .padding(2.5)
-                    .overlay(Circle().strokeBorder(Color.primary.opacity(isSelected ? 0.85 : 0), lineWidth: 1.5))
-                    .scaleEffect(isSelected ? 1.06 : 1)
+                    .overlay(Circle().strokeBorder(Color.primary.opacity(0.18), lineWidth: 0.5))
+                    .overlay {
+                        if isSelected {
+                            Image(systemName: "checkmark")
+                                .font(.system(size: 9, weight: .heavy))
+                                .foregroundStyle(color.red + color.green + color.blue > 2.2 ? .black : .white)
+                        }
+                    }
+                    .padding(2)
+                    .overlay(Circle().strokeBorder(Color.accentColor.opacity(isSelected ? 1 : 0), lineWidth: 1.5))
                     .contentShape(Circle())
                     .onTapGesture { state.color = color }
+                    .help(colorName(color))
                     .animation(.snappy(duration: 0.15), value: isSelected)
             }
+            // Compact custom-color well: opens the system color panel
+            Circle()
+                .fill(AngularGradient(colors: [.red, .yellow, .green, .cyan, .blue, .purple, .red], center: .center))
+                .frame(width: 20, height: 20)
+                .overlay(Circle().fill(.white).frame(width: 8, height: 8))
+                .padding(2)
+                .contentShape(Circle())
+                .onTapGesture { ColorPanelBridge.shared.open(current: currentColor) { state.color = $0 } }
+                .help("Custom Color…")
+        }
+    }
+
+    private func colorName(_ color: AnnotationColor) -> String {
+        switch color {
+        case .red: return "Red"
+        case .white: return "White"
+        case .black: return "Black"
+        default:
+            if color.green > 0.7 && color.red > 0.9 { return "Yellow" }
+            if color.green > 0.7 { return "Green" }
+            if color.red > 0.5 { return "Purple" }
+            return "Blue"
+        }
+    }
+}
+
+// MARK: - Popover Building Blocks
+
+/// Routes the shared system color panel to whichever toolbar opened it
+@MainActor
+private final class ColorPanelBridge: NSObject {
+    static let shared = ColorPanelBridge()
+    private var onChange: ((AnnotationColor) -> Void)?
+
+    func open(current: Color, onChange: @escaping (AnnotationColor) -> Void) {
+        self.onChange = onChange
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.color = NSColor(current)
+        panel.setTarget(self)
+        panel.setAction(#selector(colorChanged(_:)))
+        // Above the capture overlay
+        panel.level = .screenSaver + 1
+        panel.orderFrontRegardless()
+    }
+
+    @objc private func colorChanged(_ sender: NSColorPanel) {
+        guard let rgb = sender.color.usingColorSpace(.sRGB) else { return }
+        onChange?(AnnotationColor(red: rgb.redComponent, green: rgb.greenComponent, blue: rgb.blueComponent))
+    }
+}
+
+/// Popover title row: tool glyph on a tinted tile + title
+private struct PanelHeader: View {
+    let title: String
+    let symbol: String
+
+    var body: some View {
+        HStack(spacing: 10) {
+            Image(systemName: symbol)
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundStyle(Color.accentColor)
+                .frame(width: 28, height: 28)
+                .background(Color.accentColor.opacity(0.14), in: RoundedRectangle(cornerRadius: 8, style: .continuous))
+            Text(title)
+                .font(.system(size: 13, weight: .semibold))
+            Spacer(minLength: 0)
+        }
+    }
+}
+
+private struct PanelSectionTitle: View {
+    let title: String
+    init(_ title: String) { self.title = title }
+
+    var body: some View {
+        Text(title.uppercased())
+            .font(.system(size: 10, weight: .semibold))
+            .tracking(0.6)
+            .foregroundStyle(.secondary)
+    }
+}
+
+/// Labeled slider with an icon and a value pill
+struct PanelSlider: View {
+    let title: String
+    let symbol: String
+    @Binding var value: Double
+    let range: ClosedRange<Double>
+    let unit: String
+    var onEditingChanged: (Bool) -> Void = { _ in }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 7) {
+            HStack(spacing: 6) {
+                Image(systemName: symbol)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 14)
+                Text(title)
+                    .font(.system(size: 12, weight: .medium))
+                Spacer()
+                Text("\(Int(value)) \(unit)")
+                    .font(.system(size: 11, weight: .medium).monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 7)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.07), in: Capsule())
+            }
+            Slider(value: $value, in: range, step: 2, onEditingChanged: onEditingChanged)
+                .controlSize(.small)
         }
     }
 }
@@ -451,62 +579,10 @@ struct StylePanel: View {
     private var document: AnnotationDocument { undoRedoManager.document }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text("Background").font(.system(size: 12, weight: .semibold))
-
-            LazyVGrid(columns: Array(repeating: GridItem(.fixed(30), spacing: 8), count: 5), spacing: 8) {
-                swatch(selected: document.backgroundPresetID == nil && document.backgroundColor == nil, help: "None") {
-                    ZStack {
-                        RoundedRectangle(cornerRadius: 6).fill(Color.secondary.opacity(0.15))
-                        Image(systemName: "nosign").font(.system(size: 12)).foregroundColor(.secondary)
-                    }
-                } action: {
-                    update("background") { $0.backgroundPresetID = nil; $0.backgroundColor = nil }
-                }
-
-                swatch(selected: document.backgroundPresetID == BackgroundPresets.desktopID, help: "Desktop Wallpaper") {
-                    DesktopWallpaperSwatch()
-                } action: {
-                    update("background") { doc in
-                        doc.backgroundPresetID = BackgroundPresets.desktopID
-                        doc.backgroundColor = nil
-                        if doc.padding == 0 { doc.padding = 48 }
-                        if doc.cornerRadius == 0 { doc.cornerRadius = 10 }
-                        if doc.shadowRadius == 0 { doc.shadowRadius = 24 }
-                    }
-                }
-
-                ForEach(BackgroundPresets.all) { preset in
-                    swatch(selected: document.backgroundPresetID == preset.id, help: preset.name) {
-                        RoundedRectangle(cornerRadius: 6).fill(
-                            LinearGradient(
-                                colors: preset.colors.map { Color(red: $0.red, green: $0.green, blue: $0.blue) },
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            )
-                        )
-                    } action: {
-                        update("background") { doc in
-                            doc.backgroundPresetID = preset.id
-                            doc.backgroundColor = nil
-                            // A backdrop is invisible without padding: give it sensible defaults on first use
-                            if doc.padding == 0 { doc.padding = 48 }
-                            if doc.cornerRadius == 0 { doc.cornerRadius = 10 }
-                            if doc.shadowRadius == 0 { doc.shadowRadius = 24 }
-                        }
-                    }
-                }
-            }
-
-            Divider()
-
-            slider("Padding", value: \.padding, range: 0...160, unit: "pt")
-            slider("Corners", value: \.cornerRadius, range: 0...48, unit: "pt")
-            slider("Shadow", value: \.shadowRadius, range: 0...80, unit: "pt")
-
+        VStack(alignment: .leading, spacing: 16) {
             HStack {
-                Spacer()
-                Button("Reset Style") {
+                PanelHeader(title: "Background & Frame", symbol: "paintpalette")
+                Button("Reset") {
                     update("reset") { doc in
                         doc.backgroundPresetID = nil
                         doc.backgroundColor = nil
@@ -515,11 +591,69 @@ struct StylePanel: View {
                         doc.shadowRadius = 0
                     }
                 }
+                .buttonStyle(.borderless)
+                .font(.system(size: 12, weight: .medium))
                 .disabled(!document.hasStyling)
             }
+
+            VStack(alignment: .leading, spacing: 8) {
+                PanelSectionTitle("Background")
+                LazyVGrid(columns: Array(repeating: GridItem(.fixed(38), spacing: 8), count: 5), spacing: 8) {
+                    swatch(selected: document.backgroundPresetID == nil && document.backgroundColor == nil, help: "None") {
+                        ZStack {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.06))
+                            Image(systemName: "nosign").font(.system(size: 13)).foregroundColor(.secondary)
+                        }
+                    } action: {
+                        update("background") { $0.backgroundPresetID = nil; $0.backgroundColor = nil }
+                    }
+
+                    swatch(selected: document.backgroundPresetID == BackgroundPresets.desktopID, help: "Desktop Wallpaper") {
+                        DesktopWallpaperSwatch()
+                    } action: {
+                        update("background") { doc in
+                            doc.backgroundPresetID = BackgroundPresets.desktopID
+                            doc.backgroundColor = nil
+                            Self.applyFrameDefaults(&doc)
+                        }
+                    }
+
+                    ForEach(BackgroundPresets.all) { preset in
+                        swatch(selected: document.backgroundPresetID == preset.id, help: preset.name) {
+                            RoundedRectangle(cornerRadius: 8, style: .continuous).fill(
+                                LinearGradient(
+                                    colors: preset.colors.map { Color(red: $0.red, green: $0.green, blue: $0.blue) },
+                                    startPoint: .topLeading,
+                                    endPoint: .bottomTrailing
+                                )
+                            )
+                        } action: {
+                            update("background") { doc in
+                                doc.backgroundPresetID = preset.id
+                                doc.backgroundColor = nil
+                                Self.applyFrameDefaults(&doc)
+                            }
+                        }
+                    }
+                }
+            }
+
+            VStack(alignment: .leading, spacing: 12) {
+                PanelSectionTitle("Frame")
+                slider("Padding", symbol: "arrow.up.left.and.arrow.down.right", value: \.padding, range: 0...160)
+                slider("Corners", symbol: "square.dashed", value: \.cornerRadius, range: 0...48)
+                slider("Shadow", symbol: "shadow", value: \.shadowRadius, range: 0...80)
+            }
         }
-        .padding(14)
-        .frame(width: 250)
+        .padding(16)
+        .frame(width: 268)
+    }
+
+    /// A backdrop is invisible without padding: give it sensible defaults on first use
+    private static func applyFrameDefaults(_ doc: inout AnnotationDocument) {
+        if doc.padding == 0 { doc.padding = 48 }
+        if doc.cornerRadius == 0 { doc.cornerRadius = 10 }
+        if doc.shadowRadius == 0 { doc.shadowRadius = 24 }
     }
 
     private func update(_ key: String, _ mutate: (inout AnnotationDocument) -> Void) {
@@ -529,35 +663,31 @@ struct StylePanel: View {
     private func swatch<Content: View>(selected: Bool, help: String, @ViewBuilder content: () -> Content, action: @escaping () -> Void) -> some View {
         Button(action: action) {
             content()
-                .frame(width: 30, height: 30)
-                .overlay(RoundedRectangle(cornerRadius: 7).stroke(Color.accentColor, lineWidth: selected ? 2 : 0).padding(-2))
+                .frame(width: 38, height: 38)
+                .clipShape(RoundedRectangle(cornerRadius: 8, style: .continuous))
+                .overlay(RoundedRectangle(cornerRadius: 8, style: .continuous).strokeBorder(Color.primary.opacity(0.12), lineWidth: 0.5))
+                .padding(2)
+                .overlay(RoundedRectangle(cornerRadius: 10, style: .continuous).strokeBorder(Color.accentColor, lineWidth: selected ? 2 : 0))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
         .help(help)
     }
 
-    private func slider(_ title: String, value: WritableKeyPath<AnnotationDocument, Double>, range: ClosedRange<Double>, unit: String) -> some View {
-        HStack(spacing: 8) {
-            Text(title)
-                .font(.system(size: 11))
-                .frame(width: 52, alignment: .leading)
-            Slider(
-                value: Binding(
-                    get: { document[keyPath: value] },
-                    set: { newValue in update(title) { $0[keyPath: value] = newValue } }
-                ),
-                in: range,
-                step: 2,
-                onEditingChanged: { editing in
-                    if !editing { undoRedoManager.breakCoalescing() }
-                }
-            )
-            Text("\(Int(document[keyPath: value]))\(unit)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundColor(.secondary)
-                .frame(width: 40, alignment: .trailing)
-        }
+    private func slider(_ title: String, symbol: String, value: WritableKeyPath<AnnotationDocument, Double>, range: ClosedRange<Double>) -> some View {
+        PanelSlider(
+            title: title,
+            symbol: symbol,
+            value: Binding(
+                get: { document[keyPath: value] },
+                set: { newValue in update(title) { $0[keyPath: value] = newValue } }
+            ),
+            range: range,
+            unit: "pt",
+            onEditingChanged: { editing in
+                if !editing { undoRedoManager.breakCoalescing() }
+            }
+        )
     }
 }
 
@@ -569,7 +699,7 @@ private struct DesktopWallpaperSwatch: View {
             Image(decorative: wallpaper, scale: 1)
                 .resizable()
                 .aspectRatio(contentMode: .fill)
-                .frame(width: 30, height: 30)
+                .frame(width: 38, height: 38)
                 .clipShape(shape)
         } else {
             shape.fill(Color.secondary.opacity(0.2))

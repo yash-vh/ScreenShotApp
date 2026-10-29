@@ -52,6 +52,7 @@ private struct CaptureMenuContent: View {
     var body: some View {
         Button("Capture Selected Area") { coordinator.triggerCapture(type: .region) }
         Button("Capture Full Screen") { coordinator.triggerCapture(type: .fullScreen) }
+        Button("Capture All Screens") { coordinator.triggerCapture(type: .allScreens) }
         Button("Capture Window") { coordinator.triggerCapture(type: .window) }
 
         Divider()

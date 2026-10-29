@@ -121,6 +121,7 @@ public struct ShortcutBinding: Codable, Sendable, Equatable {
     public static let defaultWindow = ShortcutBinding(key: "5", modifiers: ["⌥", "⌘"])
     public static let defaultRecording = ShortcutBinding(key: "6", modifiers: ["⌥", "⌘"])
     public static let defaultQuickOcr = ShortcutBinding(key: "7", modifiers: ["⌥", "⌘"])
+    public static let defaultAllScreens = ShortcutBinding(key: "2", modifiers: ["⌥", "⌘"])
 
     /// Whether this binding is usable as a system-wide hotkey (needs ⌘, ⌃ or ⌥, or a function key)
     public var isValidGlobalHotKey: Bool {
@@ -180,6 +181,8 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
     public var shortcutWindow: ShortcutBinding
     public var shortcutRecording: ShortcutBinding
     public var shortcutQuickOcr: ShortcutBinding
+    /// Captures every connected display as one image
+    public var shortcutAllScreens: ShortcutBinding
     public var shortcutCopy: ShortcutBinding
     public var shortcutUpload: ShortcutBinding
     public var shortcutCancel: ShortcutBinding
@@ -201,6 +204,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         shortcutWindow: ShortcutBinding = .defaultWindow,
         shortcutRecording: ShortcutBinding = .defaultRecording,
         shortcutQuickOcr: ShortcutBinding = .defaultQuickOcr,
+        shortcutAllScreens: ShortcutBinding = .defaultAllScreens,
         shortcutCopy: ShortcutBinding = ShortcutBinding(key: "C", modifiers: ["⌘"]),
         shortcutUpload: ShortcutBinding = ShortcutBinding(key: "U", modifiers: ["⌘"]),
         shortcutCancel: ShortcutBinding = ShortcutBinding(key: "Esc", modifiers: []),
@@ -221,6 +225,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.shortcutWindow = shortcutWindow
         self.shortcutRecording = shortcutRecording
         self.shortcutQuickOcr = shortcutQuickOcr
+        self.shortcutAllScreens = shortcutAllScreens
         self.shortcutCopy = shortcutCopy
         self.shortcutUpload = shortcutUpload
         self.shortcutCancel = shortcutCancel
@@ -254,6 +259,7 @@ public struct CaptureSettings: Codable, Sendable, Equatable {
         self.shortcutWindow = try capture(.shortcutWindow, legacyKey: "5", default: .defaultWindow)
         self.shortcutRecording = try capture(.shortcutRecording, legacyKey: "6", default: .defaultRecording)
         self.shortcutQuickOcr = try capture(.shortcutQuickOcr, legacyKey: "7", default: .defaultQuickOcr)
+        self.shortcutAllScreens = try capture(.shortcutAllScreens, legacyKey: "2", default: .defaultAllScreens)
         self.shortcutCopy = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCopy) ?? ShortcutBinding(key: "C", modifiers: ["⌘"])
         self.shortcutUpload = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutUpload) ?? ShortcutBinding(key: "U", modifiers: ["⌘"])
         self.shortcutCancel = try container.decodeIfPresent(ShortcutBinding.self, forKey: .shortcutCancel) ?? ShortcutBinding(key: "Esc", modifiers: [])
