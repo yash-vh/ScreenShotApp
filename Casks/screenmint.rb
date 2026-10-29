@@ -1,6 +1,6 @@
 cask "screenmint" do
   version "1.0.0"
-  sha256 "PLACEHOLDER_SHA256"
+  sha256 "31a0c5574ec2e20cff55cb69ff7d7e5806477ef75ae30f92e3d47f242e24da9a"
 
   url "https://github.com/yash-vh/ScreenShotApp/releases/download/v#{version}/ScreenMint-#{version}.dmg"
   name "ScreenMint"
@@ -13,7 +13,7 @@ cask "screenmint" do
   end
 
   auto_updates true
-  depends_on macos: ">= :sonoma"
+  depends_on macos: :sonoma
 
   app "ScreenMint.app"
 
@@ -28,4 +28,3 @@ cask "screenmint" do
     "~/Library/Saved Application State/com.screenshotapp.mac.savedState",
   ]
 end
-
