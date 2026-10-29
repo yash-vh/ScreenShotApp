@@ -14,7 +14,7 @@ public struct SettingsView: View {
         case storage = "Storage & Cloud"
         case privacy = "Privacy"
         case diagnostics = "Diagnostics"
-        case subscription = "YnShot Pro"
+        case subscription = "ScreenMint Pro"
         case about = "About"
 
         public var id: String { rawValue }
@@ -166,20 +166,20 @@ struct GeneralSettingsTab: View {
                     get: { config.launchAtLogin },
                     set: { loginProblem = config.setLaunchAtLogin($0) }
                 )) {
-                    SettingsRowLabel(title: "Launch at login", subtitle: "Start YnShot when you log in to your Mac.")
+                    SettingsRowLabel(title: "Launch at login", subtitle: "Start \(AppBranding.appName) when you log in to your Mac.")
                 }
                 if let loginProblem {
                     SettingsWarning(loginProblem)
                 }
                 Toggle(isOn: $config.showDockIcon) {
-                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, YnShot runs from the menu bar only.")
+                    SettingsRowLabel(title: "Show in Dock", subtitle: "When off, \(AppBranding.appName) runs from the menu bar only.")
                 }
                 Toggle(isOn: $config.showMenuBarIcon) {
                     SettingsRowLabel(
                         title: "Show in menu bar",
                         subtitle: config.showMenuBarIcon
                             ? "Quick access to captures, recording and the Library."
-                            : "Hidden. Shortcuts still work; open YnShot from Finder or Spotlight for Settings."
+                            : "Hidden. Shortcuts still work; open \(AppBranding.appName) from Finder or Spotlight for Settings."
                     )
                 }
                 Toggle(isOn: $config.indexInSpotlight) {
@@ -214,7 +214,7 @@ struct GeneralSettingsTab: View {
             } header: {
                 Text("Background")
             } footer: {
-                Text("Turning this on restarts YnShot once and also starts it at login.")
+                Text("Turning this on restarts \(AppBranding.appName) once and also starts it at login.")
                     .font(.footnote)
                     .foregroundStyle(.secondary)
             }
@@ -1090,7 +1090,7 @@ struct PrivacySettingsTab: View {
                     SettingsRowLabel(
                         title: "Screen Recording",
                         subtitle: permissionManager.isAuthorized
-                            ? "YnShot can capture your screen."
+                            ? "\(AppBranding.appName) can capture your screen."
                             : "Required to take screenshots and recordings."
                     )
                 }
@@ -1099,12 +1099,12 @@ struct PrivacySettingsTab: View {
                     LabeledContent {
                         HStack(spacing: 8) {
                             Button("Reset") { permissionManager.resetScreenCapturePermission() }
-                            Button("Relaunch YnShot") { permissionManager.relaunchApp() }
+                            Button("Relaunch \(AppBranding.appName)") { permissionManager.relaunchApp() }
                         }
                     } label: {
                         SettingsRowLabel(
                             title: "Already allowed it?",
-                            subtitle: "macOS applies the change after YnShot restarts. Reset if the toggle looks on but captures still fail."
+                            subtitle: "macOS applies the change after \(AppBranding.appName) restarts. Reset if the toggle looks on but captures still fail."
                         )
                     }
                 }
@@ -1292,7 +1292,7 @@ struct AboutSettingsTab: View {
                 .interpolation(.high)
                 .foregroundStyle(Color.accentColor)
                 .frame(width: 96, height: 96)
-                .accessibilityLabel("YnShot logo")
+                .accessibilityLabel("\(AppBranding.appName) logo")
 
             Text(AppBranding.appName)
                 .font(.title)

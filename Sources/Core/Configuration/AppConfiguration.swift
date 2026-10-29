@@ -46,7 +46,7 @@ public final class AppConfiguration: ObservableObject {
     /// Mirrors the system login-item state; change it with `setLaunchAtLogin(_:)`
     @Published public private(set) var launchAtLogin: Bool
 
-    /// Registers or removes YnShot as a login item. Returns an error message when macOS refuses.
+    /// Registers or removes ScreenMint as a login item. Returns an error message when macOS refuses.
     @discardableResult
     public func setLaunchAtLogin(_ enabled: Bool) -> String? {
         var problem: String?
@@ -64,7 +64,7 @@ public final class AppConfiguration: ObservableObject {
         launchAtLogin = status == .enabled || status == .requiresApproval
         defaults.set(launchAtLogin, forKey: Keys.launchAtLogin)
         if status == .requiresApproval {
-            problem = "Approve YnShot in System Settings › General › Login Items."
+            problem = "Approve \(AppBranding.appName) in System Settings › General › Login Items."
         }
         return problem
     }
@@ -75,14 +75,14 @@ public final class AppConfiguration: ObservableObject {
         }
     }
 
-    /// Whether the menu bar menu (status item) is shown; when hidden, reopen YnShot from Finder or Spotlight to reach Settings
+    /// Whether the menu bar menu (status item) is shown; when hidden, reopen ScreenMint from Finder or Spotlight to reach Settings
     @Published public var showMenuBarIcon: Bool {
         didSet {
             defaults.set(showMenuBarIcon, forKey: Keys.showMenuBarIcon)
         }
     }
 
-    /// Whether launchd should relaunch YnShot after a force quit or crash (see `BackgroundRelauncher`)
+    /// Whether launchd should relaunch ScreenMint after a force quit or crash (see `BackgroundRelauncher`)
     @Published public var relaunchAfterUnexpectedQuit: Bool {
         didSet {
             defaults.set(relaunchAfterUnexpectedQuit, forKey: Keys.relaunchAfterUnexpectedQuit)
@@ -265,7 +265,7 @@ public final class AppConfiguration: ObservableObject {
                 return "Couldn't create \(url.path): \(error.localizedDescription)"
             }
         }
-        return fm.isWritableFile(atPath: url.path) ? nil : "YnShot can't write to \(url.path)."
+        return fm.isWritableFile(atPath: url.path) ? nil : "\(AppBranding.appName) can't write to \(url.path)."
     }
 
     /// Directory for Application Support metadata and temporary working buffers

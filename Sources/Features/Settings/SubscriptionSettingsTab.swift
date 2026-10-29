@@ -1,7 +1,7 @@
 import StoreKit
 import SwiftUI
 
-/// YnShot Pro: Apple's subscription store when not subscribed, plan status and management when subscribed.
+/// ScreenMint Pro: Apple's subscription store when not subscribed, plan status and management when subscribed.
 struct SubscriptionSettingsTab: View {
     @ObservedObject private var subscriptions = SubscriptionManager.shared
     @State private var isRestoring = false
@@ -90,7 +90,7 @@ struct SubscriptionSettingsTab: View {
                         .foregroundStyle(.green)
                 } label: {
                     SettingsRowLabel(
-                        title: subscriptions.activeProductName ?? "YnShot Pro",
+                        title: subscriptions.activeProductName ?? "\(AppBranding.appName) Pro",
                         subtitle: renewalText
                     )
                 }
@@ -140,10 +140,10 @@ struct SubscriptionSettingsTab: View {
 
 /// Marketing header shown above Apple's plan picker
 private struct ProMarketingHeader: View {
-    // PLACEHOLDER: describe what YnShot Pro unlocks; every line here must match a real benefit.
+    // PLACEHOLDER: describe what ScreenMint Pro unlocks; every line here must match a real benefit.
     private let benefits: [(String, String)] = [
         ("icloud.and.arrow.up.fill", "Uploads to ImgBB and your own S3 bucket"),
-        ("sparkles", "Every new YnShot feature as it ships"),
+        ("sparkles", "Every new \(AppBranding.appName) feature as it ships"),
         ("heart.fill", "Supports independent development")
     ]
 
@@ -154,7 +154,7 @@ private struct ProMarketingHeader: View {
                 .interpolation(.high)
                 .frame(width: 72, height: 72)
             VStack(spacing: 4) {
-                Text("YnShot Pro")
+                Text("\(AppBranding.appName) Pro")
                     .font(.largeTitle.weight(.bold))
                 Text("Capture, annotate and share without limits.")
                     .font(.title3)

@@ -77,7 +77,7 @@
       <CommandLineArguments>
       </CommandLineArguments>
       <StoreKitConfigurationFileReference
-         identifier = "../../Configuration/YnShot.storekit">
+         identifier = "../../Configuration/ScreenMint.storekit">
       </StoreKitConfigurationFileReference>
    </LaunchAction>
    <ProfileAction

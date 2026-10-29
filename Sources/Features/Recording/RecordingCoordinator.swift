@@ -144,7 +144,7 @@ public final class RecordingCoordinator: ObservableObject {
     private func askToContinueWithoutMicrophone() -> Bool {
         let alert = NSAlert()
         alert.messageText = "Microphone access is off"
-        alert.informativeText = "Allow YnShot in System Settings › Privacy & Security › Microphone to record voiceover. You can still record without sound."
+        alert.informativeText = "Allow \(AppBranding.appName) in System Settings › Privacy & Security › Microphone to record voiceover. You can still record without sound."
         alert.addButton(withTitle: "Record Without Microphone")
         alert.addButton(withTitle: "Open System Settings")
         alert.addButton(withTitle: "Cancel")

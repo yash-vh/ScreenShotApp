@@ -86,7 +86,7 @@ final class CaptureToolsTests: XCTestCase {
     func testSpotlightItemCarriesTitleAndText() {
         let asset = ScreenshotAsset(
             title: "Region Capture",
-            originalFileURL: URL(fileURLWithPath: "/tmp/YnShot 1.png"),
+            originalFileURL: URL(fileURLWithPath: "/tmp/ScreenMint 1.png"),
             pixelWidth: 200, pixelHeight: 100, fileSizeBytes: 10,
             ocrText: "Invoice total 42"
         )

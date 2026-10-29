@@ -11,7 +11,7 @@ public final class SpotlightIndexer {
 
     nonisolated static let domain = "com.screenshotapp.mac.captures"
 
-    private let index = CSSearchableIndex(name: "YnShotCaptures")
+    private let index = CSSearchableIndex(name: "ScreenMintCaptures")
     private var indexed: [UUID: Date] = [:]
     private var hasSynced = false
     private var cancellables = Set<AnyCancellable>()
@@ -49,7 +49,7 @@ public final class SpotlightIndexer {
             }
         }
         if isFirstSync || visible.isEmpty {
-            // Start clean so captures deleted while YnShot wasn't running (or indexing turned off) disappear
+            // Start clean so captures deleted while ScreenMint wasn't running (or indexing turned off) disappear
             index.deleteSearchableItems(withDomainIdentifiers: [Self.domain]) { _ in add() }
         } else if !removed.isEmpty {
             index.deleteSearchableItems(withIdentifiers: removed) { _ in add() }

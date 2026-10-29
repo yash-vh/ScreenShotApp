@@ -127,6 +127,7 @@
 		113F0B45AEFE7ADD2DF6AFD1 /* VisionServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionServiceTests.swift; sourceTree = "<group>"; };
 		1392F289CE3F59FD725EE64F /* VisionService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = VisionService.swift; sourceTree = "<group>"; };
 		177DE3800DAA96348E85591D /* ScreenCaptureServiceTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCaptureServiceTests.swift; sourceTree = "<group>"; };
+		178746C5B74077D51D43DAC3 /* screenmint.rb */ = {isa = PBXFileReference; lastKnownFileType = text.script.ruby; path = screenmint.rb; sourceTree = "<group>"; };
 		18C4E0C06F7D04F7D3AEA56E /* ScreenshotApp.entitlements */ = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = ScreenshotApp.entitlements; sourceTree = "<group>"; };
 		1905DBE4FB82927D76E4361B /* HistoryStoreTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryStoreTests.swift; sourceTree = "<group>"; };
 		1D76639E1A8EB5D3D7D7037F /* HistoryQuery.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = HistoryQuery.swift; sourceTree = "<group>"; };
@@ -143,7 +144,6 @@
 		47D3586C150A2C3BCDA2C637 /* ScreenshotAsset.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenshotAsset.swift; sourceTree = "<group>"; };
 		499E3F35A115E8C4EE7EC7E5 /* UploadTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = UploadTests.swift; sourceTree = "<group>"; };
 		4AB85BB6FDDCD6072287D93A /* CaptureCoordinator.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureCoordinator.swift; sourceTree = "<group>"; };
-		4CC6759254D9F1940F571D13 /* YnShot.storekit */ = {isa = PBXFileReference; path = YnShot.storekit; sourceTree = "<group>"; };
 		5194A16725F27B27D0FD7060 /* SensitiveInfoDetector.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SensitiveInfoDetector.swift; sourceTree = "<group>"; };
 		523D2B430E8B65D9A81A26EA /* MediaType.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MediaType.swift; sourceTree = "<group>"; };
 		559AA4EED561C1D6BBE14A4E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
@@ -152,8 +152,8 @@
 		58B599AF4B350A5DA81E6C9C /* CaptureGeometryTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CaptureGeometryTests.swift; sourceTree = "<group>"; };
 		592946F5C34356FA84AF916A /* ExportCompositor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportCompositor.swift; sourceTree = "<group>"; };
 		5A2E05947BFF4F022D2BBF8F /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
-		5A8D85E7B130834839DACCC7 /* YnShot-logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "YnShot-logo.png"; sourceTree = "<group>"; };
 		5E4DB709F9DBDE8EFD6EE722 /* com.screenshotapp.mac.relauncher.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = com.screenshotapp.mac.relauncher.plist; sourceTree = "<group>"; };
+		5E78EDBDCDFC6FD5D79AC12A /* ScreenMint-menubar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "ScreenMint-menubar.png"; sourceTree = "<group>"; };
 		65FC7635EAC81D83808521FB /* EditorToolbarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = EditorToolbarView.swift; sourceTree = "<group>"; };
 		6CAFD232405F30001A0A8998 /* ImageComposer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImageComposer.swift; sourceTree = "<group>"; };
 		70E9BF49AE2295A39393C7B3 /* ScreenCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ScreenCaptureService.swift; sourceTree = "<group>"; };
@@ -175,12 +175,12 @@
 		A17932D6DEBFD5C8880755D3 /* ExportCompositorTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ExportCompositorTests.swift; sourceTree = "<group>"; };
 		A2232CD13796528A35E7F3D8 /* LibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LibraryView.swift; sourceTree = "<group>"; };
 		A2A68CD8D4AACBBB833DF0A9 /* AppLogger.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppLogger.swift; sourceTree = "<group>"; };
-		A411AE0ABF3B8411CA21A95A /* YnShot-menubar.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "YnShot-menubar.png"; sourceTree = "<group>"; };
 		A57B534ACC4EDD809F8F0735 /* AnnotationRenderer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationRenderer.swift; sourceTree = "<group>"; };
 		AD33F1C209CDF525F4284829 /* OCRResultOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = OCRResultOverlay.swift; sourceTree = "<group>"; };
 		AE27FB4E277F36E5C857D4A2 /* WindowSelectionOverlay.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = WindowSelectionOverlay.swift; sourceTree = "<group>"; };
 		AFFE0642D39ADC4E8665A354 /* RegionOverlayAnnotationTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RegionOverlayAnnotationTests.swift; sourceTree = "<group>"; };
 		B0D348E5896F78D1C40A83C3 /* AppConfiguration.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppConfiguration.swift; sourceTree = "<group>"; };
+		B780D78DBCCFC2811C30B9C1 /* ScreenMint.storekit */ = {isa = PBXFileReference; path = ScreenMint.storekit; sourceTree = "<group>"; };
 		B8BC1E0C7238DD6A423EC014 /* RecordingSession.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingSession.swift; sourceTree = "<group>"; };
 		BD3D8A49B0C0AF8A74060F09 /* SpotlightIndexer.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SpotlightIndexer.swift; sourceTree = "<group>"; };
 		BD74BED221B569AA4405BAFD /* AnnotationCanvasView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AnnotationCanvasView.swift; sourceTree = "<group>"; };
@@ -201,6 +201,7 @@
 		EA5A7BBF6A02BB210850E612 /* ImgBBProvider.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ImgBBProvider.swift; sourceTree = "<group>"; };
 		EBD7B2CE3CA64A31DF616E0D /* DomainModelTests.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = DomainModelTests.swift; sourceTree = "<group>"; };
 		EE5809FD173E80A6F4E0E7F3 /* ToolCursor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ToolCursor.swift; sourceTree = "<group>"; };
+		F48DF322A3A5C059603DA04B /* ScreenMint-logo.png */ = {isa = PBXFileReference; lastKnownFileType = image.png; path = "ScreenMint-logo.png"; sourceTree = "<group>"; };
 		F66E3F44848C560E09CA19E8 /* GIFEncoder.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = GIFEncoder.swift; sourceTree = "<group>"; };
 		F8384A669B211D66E4EE6CB6 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		FB26A50D7F7BB72A61C04801 /* RecordingWriter.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = RecordingWriter.swift; sourceTree = "<group>"; };
@@ -372,6 +373,14 @@
 			path = Capture;
 			sourceTree = "<group>";
 		};
+		9FC20B3926D43A70A5FC4165 /* Casks */ = {
+			isa = PBXGroup;
+			children = (
+				178746C5B74077D51D43DAC3 /* screenmint.rb */,
+			);
+			path = Casks;
+			sourceTree = "<group>";
+		};
 		AEE34D03FCE58D84C6872636 /* Sharing */ = {
 			isa = PBXGroup;
 			children = (
@@ -444,7 +453,7 @@
 		DA1F4B26EDDA6D1BA8A68872 /* Configuration */ = {
 			isa = PBXGroup;
 			children = (
-				4CC6759254D9F1940F571D13 /* YnShot.storekit */,
+				B780D78DBCCFC2811C30B9C1 /* ScreenMint.storekit */,
 			);
 			path = Configuration;
 			sourceTree = "<group>";
@@ -463,8 +472,8 @@
 		E2D9171B1D9C0456E63171E7 /* Branding */ = {
 			isa = PBXGroup;
 			children = (
-				5A8D85E7B130834839DACCC7 /* YnShot-logo.png */,
-				A411AE0ABF3B8411CA21A95A /* YnShot-menubar.png */,
+				F48DF322A3A5C059603DA04B /* ScreenMint-logo.png */,
+				5E78EDBDCDFC6FD5D79AC12A /* ScreenMint-menubar.png */,
 			);
 			path = Branding;
 			sourceTree = "<group>";
@@ -505,6 +514,7 @@
 			isa = PBXGroup;
 			children = (
 				E2D9171B1D9C0456E63171E7 /* Branding */,
+				9FC20B3926D43A70A5FC4165 /* Casks */,
 				DA1F4B26EDDA6D1BA8A68872 /* Configuration */,
 				90F6C28F089FB77C887E3A56 /* Scripts */,
 				E5334F8C6EF767ABCE66BFCA /* Sources */,
@@ -727,7 +737,7 @@
 				OTHER_CODE_SIGN_FLAGS = "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac;
 				PRODUCT_MODULE_NAME = ScreenshotApp;
-				PRODUCT_NAME = YnShot;
+				PRODUCT_NAME = ScreenMint;
 				SDKROOT = macosx;
 			};
 			name = Debug;
@@ -747,7 +757,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac.tests;
 				PRODUCT_NAME = ScreenshotAppTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YnShot.app/Contents/MacOS/YnShot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ScreenMint.app/Contents/MacOS/ScreenMint";
 			};
 			name = Release;
 		};
@@ -891,7 +901,7 @@
 				OTHER_CODE_SIGN_FLAGS = "-r=\"designated => identifier \\\"com.screenshotapp.mac\\\"\"";
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac;
 				PRODUCT_MODULE_NAME = ScreenshotApp;
-				PRODUCT_NAME = YnShot;
+				PRODUCT_NAME = ScreenMint;
 				SDKROOT = macosx;
 			};
 			name = Release;
@@ -911,7 +921,7 @@
 				PRODUCT_BUNDLE_IDENTIFIER = com.screenshotapp.mac.tests;
 				PRODUCT_NAME = ScreenshotAppTests;
 				SDKROOT = macosx;
-				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/YnShot.app/Contents/MacOS/YnShot";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/ScreenMint.app/Contents/MacOS/ScreenMint";
 			};
 			name = Debug;
 		};
