@@ -33,35 +33,43 @@ public struct ProviderCapabilities: Codable, Sendable, Equatable {
     public var supportsPasswordProtection: Bool
     public var supportsLinkRevocation: Bool
     public var supportsResumableUploads: Bool
+    /// Whether this provider can receive video/GIF file uploads (not just images)
+    public var supportsVideo: Bool
 
     public init(
         supportsDelete: Bool = true,
         supportsExpiringLinks: Bool = false,
         supportsPasswordProtection: Bool = false,
         supportsLinkRevocation: Bool = false,
-        supportsResumableUploads: Bool = false
+        supportsResumableUploads: Bool = false,
+        supportsVideo: Bool = false
     ) {
         self.supportsDelete = supportsDelete
         self.supportsExpiringLinks = supportsExpiringLinks
         self.supportsPasswordProtection = supportsPasswordProtection
         self.supportsLinkRevocation = supportsLinkRevocation
         self.supportsResumableUploads = supportsResumableUploads
+        self.supportsVideo = supportsVideo
     }
 
+    /// S3 / S3-compatible buckets support video and GIF uploads (arbitrary Content-Type via PUT)
     public static let s3Default = ProviderCapabilities(
         supportsDelete: true,
         supportsExpiringLinks: true,
         supportsPasswordProtection: false,
         supportsLinkRevocation: false,
-        supportsResumableUploads: true
+        supportsResumableUploads: true,
+        supportsVideo: true
     )
 
+    /// ImgBB only accepts images — video upload is not supported
     public static let imgbbDefault = ProviderCapabilities(
         supportsDelete: false,
         supportsExpiringLinks: true,
         supportsPasswordProtection: false,
         supportsLinkRevocation: false,
-        supportsResumableUploads: false
+        supportsResumableUploads: false,
+        supportsVideo: false
     )
 }
 

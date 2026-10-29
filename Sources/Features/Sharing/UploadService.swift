@@ -107,6 +107,55 @@ public final class UploadService: ObservableObject {
 
     // MARK: - Core Upload
 
+    /// Maps a file extension to its MIME content type for video / GIF payloads.
+    static func contentType(for ext: String) -> String {
+        switch ext.lowercased() {
+        case "mp4":  return "video/mp4"
+        case "mov":  return "video/quicktime"
+        case "gif":  return "image/gif"
+        case "jpg", "jpeg": return "image/jpeg"
+        case "png":  return "image/png"
+        default:     return "application/octet-stream"
+        }
+    }
+
+    /// Uploads a video or GIF file to S3. Only available when the configured provider is S3-compatible.
+    /// Throws `AppError.networkUnavailable` when offline — the upload is then queued and retried automatically.
+    @discardableResult
+    public func uploadVideo(assetId: UUID, progress: @escaping @Sendable (Double) -> Void = { _ in }) async throws -> UploadRecord {
+        guard let providerType = config.uploadProvider else { throw AppError.cloudProviderNotConfigured }
+        guard providerType == .s3Compatible else {
+            throw AppError.invalidConfiguration(key: "Video upload", reason: "Video uploads are only supported with an S3-compatible bucket. Switch your upload provider in Settings › Storage & Cloud.")
+        }
+        let provider = try makeProvider(providerType)
+        guard provider.capabilities.supportsVideo else {
+            throw AppError.invalidConfiguration(key: "Video upload", reason: "\(providerType.displayName) does not support video uploads.")
+        }
+        guard let asset = history.asset(id: assetId) else { throw AppError.assetCorrupted(id: assetId) }
+
+        let fileURL = asset.originalFileURL
+        let ext = fileURL.pathExtension.lowercased().isEmpty ? "mp4" : fileURL.pathExtension.lowercased()
+        let mimeType = Self.contentType(for: ext)
+        let expiry = config.uploadExpiry
+
+        // Load video data off the main thread to keep the HUD responsive
+        let videoData = await Task.detached(priority: .userInitiated) { () -> Data? in
+            try? Data(contentsOf: fileURL)
+        }.value
+
+        guard let data = videoData, !data.isEmpty else {
+            throw AppError.fileReadFailed(path: fileURL.lastPathComponent)
+        }
+
+        let payload = UploadPayload(data: data, contentType: mimeType, fileExtension: ext, expiry: expiry)
+        let record = UploadRecord(providerType: providerType, remoteKey: "", status: .inProgress, capabilities: provider.capabilities)
+        history.mutate(id: assetId) { $0.uploadRecords.append(record) }
+        let queued = queueFile(for: record.id, ext: ext)
+        let queuedData = payload.data
+        await Task.detached(priority: .utility) { try? queuedData.write(to: queued, options: .atomic) }.value
+        return try await perform(recordId: record.id, assetId: assetId, payload: payload, provider: provider, queuedFile: queued, progress: progress)
+    }
+
     /// Uploads `image` (or the asset's file) and records the result on the asset.
     /// Throws `AppError.networkUnavailable` when offline — the upload is then queued and retried automatically.
     @discardableResult
@@ -215,7 +264,7 @@ public final class UploadService: ObservableObject {
             try await provider.delete(remoteKey: record.remoteKey, deleteToken: try? secrets.value(for: account))
         }
         secrets.remove(account)
-        for ext in ["png", "jpg"] { try? FileManager.default.removeItem(at: queueFile(for: recordId, ext: ext)) }
+        for ext in ["png", "jpg", "mp4", "mov", "gif"] { try? FileManager.default.removeItem(at: queueFile(for: recordId, ext: ext)) }
         setRecord(recordId, on: assetId) { $0.status = .deleted; $0.shareURL = nil }
         AppLogger.shared.sharing.info("Deleted upload \(record.remoteKey, privacy: .private)")
     }
@@ -233,10 +282,10 @@ public final class UploadService: ObservableObject {
         for asset in history.assets {
             for record in asset.uploadRecords where record.status == .pending {
                 guard let provider = try? makeProvider(record.providerType) else { continue }
-                let candidates = [("png", "image/png"), ("jpg", "image/jpeg")].map { (queueFile(for: record.id, ext: $0.0), $0) }
+                let candidates = [("png", "image/png"), ("jpg", "image/jpeg"), ("mp4", "video/mp4"), ("mov", "video/quicktime"), ("gif", "image/gif")].map { (queueFile(for: record.id, ext: $0.0), $0) }
                 guard let (file, kind) = candidates.first(where: { FileManager.default.fileExists(atPath: $0.0.path) }),
                       let data = try? Data(contentsOf: file) else {
-                    setRecord(record.id, on: asset.id) { $0.status = .failed; $0.errorMessage = "Queued image was removed" }
+                    setRecord(record.id, on: asset.id) { $0.status = .failed; $0.errorMessage = "Queued file was removed" }
                     continue
                 }
                 let payload = UploadPayload(data: data, contentType: kind.1, fileExtension: kind.0, expiry: config.uploadExpiry)
@@ -280,6 +329,65 @@ public final class UploadService: ObservableObject {
     }
 
     // MARK: - User-Facing Flow
+
+    /// Entry point for video upload buttons: uploads the video/GIF, shows progress, copies the share link.
+    /// Only available when the configured provider is S3-compatible (gated at the UI level too).
+    public func requestVideoUpload(assetId: UUID) {
+        guard let providerType = config.uploadProvider, providerType == .s3Compatible else {
+            let alert = NSAlert()
+            alert.messageText = "S3 required for video uploads"
+            alert.informativeText = "Video uploads need an S3-compatible bucket. Configure one in Settings › Storage & Cloud."
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                AppCoordinator.shared.openSettings(tab: .storage)
+            }
+            return
+        }
+
+        do { _ = try makeProvider(providerType) } catch {
+            let alert = NSAlert()
+            alert.messageText = "\(providerType.displayName) isn't set up yet"
+            alert.informativeText = error.localizedDescription
+            alert.addButton(withTitle: "Open Settings")
+            alert.addButton(withTitle: "Cancel")
+            NSApp.activate(ignoringOtherApps: true)
+            if alert.runModal() == .alertFirstButtonReturn {
+                AppCoordinator.shared.openSettings(tab: .storage)
+            }
+            return
+        }
+
+        let hud = UploadHUD.shared
+        hud.showProgress(providerName: providerType.displayName)
+        Task { @MainActor in
+            do {
+                let record = try await uploadVideo(assetId: assetId) { fraction in
+                    Task { @MainActor in hud.updateProgress(fraction) }
+                }
+                if let url = record.shareURL {
+                    let pasteboard = NSPasteboard.general
+                    pasteboard.clearContents()
+                    pasteboard.setString(url.absoluteString, forType: .string)
+                    hud.showSuccess(url: url, expiresAt: record.expiresAt, canDelete: record.capabilities.supportsDelete, deletePageURL: nil) { [weak self] in
+                        Task { @MainActor in
+                            do {
+                                try await self?.deleteUpload(assetId: assetId, recordId: record.id)
+                                CaptureHUD.shared.show(title: "Upload deleted", detail: "The link no longer works.", symbol: "trash.fill")
+                            } catch {
+                                CaptureHUD.shared.show(title: "Couldn't delete upload", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
+                            }
+                        }
+                    }
+                }
+            } catch AppError.networkUnavailable {
+                hud.showMessage(title: "You're offline", detail: "The upload will start automatically when you reconnect.", symbol: "wifi.slash")
+            } catch {
+                hud.showMessage(title: "Video upload failed", detail: error.localizedDescription, symbol: "exclamationmark.icloud.fill")
+            }
+        }
+    }
 
     /// Entry point for ⌘U / Upload buttons: uploads straight away, shows progress and copies the link
     public func requestUpload(assetId: UUID, image: CGImage? = nil) {

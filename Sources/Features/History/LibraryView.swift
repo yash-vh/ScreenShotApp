@@ -38,6 +38,11 @@ struct LibraryView: View {
     @State private var usage = StorageUsage(cacheBytes: 0, thumbnailBytes: 0, savedBytes: 0, databaseBytes: 0)
     @State private var pendingDeletion: Set<UUID> = []
 
+    /// Whether the current upload provider supports video uploads (S3-compatible only)
+    private var providerSupportsVideo: Bool {
+        AppConfiguration.shared.uploadProvider == .s3Compatible
+    }
+
     private let columns = [GridItem(.adaptive(minimum: 180, maximum: 240), spacing: 18)]
 
     var body: some View {
@@ -195,6 +200,9 @@ struct LibraryView: View {
             if asset.mediaType == .image {
                 Divider()
                 Button("Upload & Copy Link") { UploadService.shared.requestUpload(assetId: asset.id) }
+            } else if (asset.mediaType == .video || asset.mediaType == .gif) && AppConfiguration.shared.uploadProvider == .s3Compatible {
+                Divider()
+                Button("Upload Video & Copy Link") { UploadService.shared.requestVideoUpload(assetId: asset.id) }
             }
         } else {
             Button("Locate File…") { locate(asset) }

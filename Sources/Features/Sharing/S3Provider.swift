@@ -163,8 +163,17 @@ public struct S3Provider: CloudStorageProvider {
         endpoint.appendingPathComponent(bucket).appendingPathComponent(key)
     }
 
+    /// Selects an S3 key prefix based on the payload content type.
+    /// - Images go to `screenshots/`, videos and GIFs go to `videos/`.
+    private func keyPrefix(for contentType: String) -> String {
+        if contentType.hasPrefix("video/") || contentType == "image/gif" {
+            return "videos/"
+        }
+        return "screenshots/"
+    }
+
     public func upload(_ payload: UploadPayload, progress: @escaping @Sendable (Double) -> Void) async throws -> UploadResult {
-        let key = "screenshots/\(ShareID.random()).\(payload.fileExtension)"
+        let key = "\(keyPrefix(for: payload.contentType))\(ShareID.random()).\(payload.fileExtension)"
         var request = URLRequest(url: objectURL(for: key))
         request.httpMethod = "PUT"
         request.setValue(payload.contentType, forHTTPHeaderField: "Content-Type")
