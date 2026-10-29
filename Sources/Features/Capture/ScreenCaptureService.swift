@@ -40,7 +40,9 @@ public actor ScreenCaptureService {
             }
         }
 
-        // CoreGraphics Fallback
+        // CoreGraphics Fallback. Without Screen Recording access it returns only the wallpaper and menu bar,
+        // which looks like a capture that silently lost every window, so report the missing permission instead.
+        guard CGPreflightScreenCaptureAccess() else { throw AppError.screenCapturePermissionDenied }
         guard let cgImage = CGDisplayCreateImage(displayId) else {
             throw AppError.captureFailed(reason: "CGDisplayCreateImage returned nil for display \(displayId)")
         }
@@ -72,7 +74,8 @@ public actor ScreenCaptureService {
             }
         }
 
-        // CoreGraphics Fallback
+        // CoreGraphics Fallback (window contents come back blank without Screen Recording access)
+        guard CGPreflightScreenCaptureAccess() else { throw AppError.screenCapturePermissionDenied }
         let options: CGWindowImageOption = [.boundsIgnoreFraming, .bestResolution]
         guard let cgImage = CGWindowListCreateImage(.null, .optionIncludingWindow, windowId, options) else {
             throw AppError.windowNotFound(windowId: windowId)

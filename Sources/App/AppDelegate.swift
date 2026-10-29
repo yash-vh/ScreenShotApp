@@ -13,6 +13,7 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
 
         // With the relaunch agent on, only the launchd-managed instance runs; other copies hand off and exit
         if BackgroundRelauncher.handOffIfNeeded() { return }
+        if BackgroundRelauncher.applyDefaultIfNeeded() { return }
 
         // Disable automatic termination so the menu bar status item and global hotkeys remain active indefinitely
         ProcessInfo.processInfo.disableAutomaticTermination("Screenshot utility background runner")

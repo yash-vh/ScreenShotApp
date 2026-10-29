@@ -42,6 +42,7 @@ public final class CaptureCoordinator: ObservableObject {
                         self.processCapturedRegion(cgImage, title: "Region Capture", scaleFactor: Double(screen.backingScaleFactor), action: action)
                     } catch {
                         AppLogger.shared.capture.error("Region capture error: \(error.localizedDescription, privacy: .public)")
+                        Self.reportCaptureFailure(error)
                         AppCoordinator.shared.lastErrorMessage = error.localizedDescription
                     }
                     self.isCapturing = false
@@ -88,6 +89,7 @@ public final class CaptureCoordinator: ObservableObject {
                 self.processCapturedImage(cgImage, title: "Full Screen Capture", scaleFactor: 2.0)
             } catch {
                 AppLogger.shared.capture.error("Full screen capture error: \(error.localizedDescription, privacy: .public)")
+                Self.reportCaptureFailure(error)
                 AppCoordinator.shared.lastErrorMessage = error.localizedDescription
             }
             self.isCapturing = false
@@ -134,7 +136,9 @@ public final class CaptureCoordinator: ObservableObject {
             } catch {
                 AppLogger.shared.capture.error("All-screens capture error: \(error.localizedDescription, privacy: .public)")
                 AppCoordinator.shared.lastErrorMessage = error.localizedDescription
-                CaptureHUD.shared.show(title: "Couldn't capture all screens", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
+                if !Self.reportCaptureFailure(error) {
+                    CaptureHUD.shared.show(title: "Couldn't capture all screens", detail: error.localizedDescription, symbol: "exclamationmark.triangle.fill")
+                }
                 self.isCapturing = false
             }
         }
@@ -193,6 +197,7 @@ public final class CaptureCoordinator: ObservableObject {
                         self.processCapturedImage(cgImage, title: "Window Capture", scaleFactor: Double(OverlayWindow.screenUnderMouse?.backingScaleFactor ?? 2.0))
                     } catch {
                         AppLogger.shared.capture.error("Window capture error: \(error.localizedDescription, privacy: .public)")
+                        Self.reportCaptureFailure(error)
                         AppCoordinator.shared.lastErrorMessage = error.localizedDescription
                     }
                     self.isCapturing = false
@@ -202,6 +207,16 @@ public final class CaptureCoordinator: ObservableObject {
                 self?.isCapturing = false
             }
         )
+    }
+
+    /// Screen Recording access missing (e.g. revoked, or never granted after a bundle ID change): explain how to fix it
+    /// instead of failing silently. Returns true when the failure was a permission problem.
+    @discardableResult
+    static func reportCaptureFailure(_ error: Error) -> Bool {
+        guard let appError = error as? AppError,
+              appError == .screenCapturePermissionDenied || appError == .screenCaptureNotAuthorized else { return false }
+        PermissionManager.shared.showScreenRecordingPermissionDialog()
+        return true
     }
 
     // MARK: - Editor for Full Screen & Window Captures

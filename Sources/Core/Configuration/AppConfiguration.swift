@@ -200,7 +200,8 @@ public final class AppConfiguration: ObservableObject {
         self.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
         self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
         self.showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) != nil ? defaults.bool(forKey: Keys.showMenuBarIcon) : true
-        self.relaunchAfterUnexpectedQuit = defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit)
+        // On by default so a force-quit app keeps its shortcuts; the agent is registered on first launch
+        self.relaunchAfterUnexpectedQuit = defaults.object(forKey: Keys.relaunchAfterUnexpectedQuit) != nil ? defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit) : true
         self.indexInSpotlight = defaults.object(forKey: Keys.indexInSpotlight) != nil ? defaults.bool(forKey: Keys.indexInSpotlight) : true
 
         self.s3Endpoint = defaults.string(forKey: Keys.s3Endpoint) ?? ""

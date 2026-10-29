@@ -15,6 +15,7 @@ public enum BackgroundRelauncher {
     static let label = "com.screenmint.mac.relauncher"
     static let openSettingsNotification = Notification.Name("com.screenmint.mac.openSettings")
     private static let pendingOpenSettingsKey = "com.screenmint.pendingOpenSettings"
+    private static let defaultAppliedKey = "com.screenmint.relaunchDefaultApplied"
 
     private static var service: SMAppService { .agent(plistName: "\(label).plist") }
 
@@ -83,6 +84,25 @@ public enum BackgroundRelauncher {
         AppLogger.shared.app.info("Handing off to the relaunch agent instance.")
         NSApp.terminate(nil)
         return true
+    }
+
+    /// First launch: registers the agent the setting defaults to, so shortcuts come back after a force quit
+    /// without visiting Settings. Runs once; a later choice in Settings or Login Items is respected.
+    /// Returns true when this copy handed off to the newly started managed instance and is exiting.
+    public static func applyDefaultIfNeeded() -> Bool {
+        let defaults = UserDefaults.standard
+        guard !defaults.bool(forKey: defaultAppliedKey) else { return false }
+        defaults.set(true, forKey: defaultAppliedKey)
+        guard AppConfiguration.shared.relaunchAfterUnexpectedQuit, !isAgentEnabled, !isLaunchedByAgent else { return false }
+
+        AppLogger.shared.app.info("Registering the relaunch agent (on by default).")
+        let problem = setEnabled(true)
+        if problem != nil, !isAgentEnabled {
+            AppConfiguration.shared.relaunchAfterUnexpectedQuit = false
+            return false
+        }
+        // setEnabled has asked this copy to terminate once launchd started the managed instance
+        return isAgentEnabled
     }
 
     /// Whether this launch should show Settings (cleared once read)

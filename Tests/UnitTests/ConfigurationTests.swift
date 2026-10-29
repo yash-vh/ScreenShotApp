@@ -73,9 +73,9 @@ final class ConfigurationTests: XCTestCase {
         let suite = "Relaunch-\(UUID().uuidString)"
         let defaults = UserDefaults(suiteName: suite)!
         defer { defaults.removePersistentDomain(forName: suite) }
-        XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
-        AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = true
         XCTAssertTrue(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
+        AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit = false
+        XCTAssertFalse(AppConfiguration(defaults: defaults).relaunchAfterUnexpectedQuit)
     }
 
     func testDefaultsAvoidMacOSScreenshotShortcuts() {
