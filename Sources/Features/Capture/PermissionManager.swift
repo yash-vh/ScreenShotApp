@@ -149,6 +149,12 @@ public final class PermissionManager: ObservableObject {
         let bundleURL = Bundle.main.bundleURL
         AppLogger.shared.app.info("Relaunching \(AppBranding.appName) from \(bundleURL.path, privacy: .public)")
 
+        // With the relaunch agent on, a second copy would hand off to this (quitting) one and exit too,
+        // leaving nothing running; let launchd restart the managed instance instead
+        if BackgroundRelauncher.isAgentEnabled, BackgroundRelauncher.restartManagedInstance() {
+            return
+        }
+
         let process = Process()
         process.executableURL = URL(fileURLWithPath: "/usr/bin/open")
         process.arguments = ["-n", bundleURL.path]
