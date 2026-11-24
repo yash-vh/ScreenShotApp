@@ -2,6 +2,9 @@ import AppKit
 import SwiftUI
 import Combine
 
+private let keyAELaunchedAsLogInItem: OSType = 0x6c676974 // 'lgit'
+private let keyAELaunchedAsServiceItem: OSType = 0x73766974 // 'svit'
+
 /// AppKit application delegate handling lifecycle, menu bar instantiation, and dock visibility.
 @MainActor
 public final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -24,23 +27,31 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
             config: AppConfiguration.shared
         )
 
-        // Configure dock visibility
-        updateActivationPolicy(showInDock: AppConfiguration.shared.showDockIcon)
+        // Configure dock visibility quietly on launch
+        updateActivationPolicy(showInDock: AppConfiguration.shared.showDockIcon, activate: false)
 
-        // Observe dock icon setting changes
+        // Observe dock icon setting changes (when user toggles in Settings)
         AppConfiguration.shared.$showDockIcon
             .receive(on: DispatchQueue.main)
             .sink { [weak self] showInDock in
-                self?.updateActivationPolicy(showInDock: showInDock)
+                self?.updateActivationPolicy(showInDock: showInDock, activate: true)
             }
             .store(in: &cancellables)
 
-        // Show Settings on launch, except when launchd silently restores ScreenMint in the background
+        // Handle window presentation on launch:
+        // When launched at system boot / login, run completely silently in the menu bar without opening windows.
         let restoreRequestedSettings = BackgroundRelauncher.consumePendingOpenSettings()
-        if PermissionsWindowController.isNeeded {
-            // Ask for Screen Recording up front rather than on the first shortcut press
+        let launchedAtLogin = isLaunchedAtLogin
+
+        if restoreRequestedSettings {
+            AppCoordinator.shared.openSettings()
+        } else if launchedAtLogin {
+            AppLogger.shared.app.info("\(AppBranding.appName) launched at login; running silently in menu bar.")
+        } else if PermissionsWindowController.isNeeded {
+            // Ask for Screen Recording up front on manual first launch
             PermissionsWindowController.shared.show()
-        } else if !BackgroundRelauncher.isLaunchedByAgent || restoreRequestedSettings {
+        } else {
+            // Manual launch: open Settings so the user can configure preferences and view shortcuts
             AppCoordinator.shared.openSettings()
         }
 
@@ -80,10 +91,10 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
         return false
     }
 
-    private func updateActivationPolicy(showInDock: Bool) {
+    private func updateActivationPolicy(showInDock: Bool, activate: Bool = false) {
         let policy: NSApplication.ActivationPolicy = showInDock ? .regular : .accessory
         NSApp.setActivationPolicy(policy)
-        if showInDock {
+        if showInDock && activate {
             NSApp.activate(ignoringOtherApps: true)
         }
     }
@@ -91,10 +102,39 @@ public final class AppDelegate: NSObject, NSApplicationDelegate {
     public func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
         guard !CaptureCoordinator.shared.isCapturing else { return true }
         Self.restoreDockIconIfNeeded()
-        if !flag && AppConfiguration.shared.showDockIcon {
+        if !flag {
             AppCoordinator.shared.openSettings()
         }
         return true
+    }
+
+    /// Determines whether this process was launched automatically at login / system boot
+    private var isLaunchedAtLogin: Bool {
+        // 1. Started by launchd relaunch agent
+        if BackgroundRelauncher.isLaunchedByAgent {
+            return true
+        }
+
+        // 2. Official macOS AppleEvent attributes for login items
+        if let event = NSAppleEventManager.shared().currentAppleEvent {
+            if event.attributeDescriptor(forKeyword: AEKeyword(keyAELaunchedAsLogInItem)) != nil
+                || event.attributeDescriptor(forKeyword: AEKeyword(keyAELaunchedAsServiceItem)) != nil {
+                return true
+            }
+        }
+
+        // 3. Process arguments
+        let args = ProcessInfo.processInfo.arguments
+        if args.contains("--login-item") || args.contains("-background") || args.contains("--background") {
+            return true
+        }
+
+        // 4. System startup heuristic: launchAtLogin is enabled and system uptime is under 3 minutes
+        if AppConfiguration.shared.launchAtLogin && ProcessInfo.processInfo.systemUptime < 180 {
+            return true
+        }
+
+        return false
     }
 
     /// Dock › Quit keeps ScreenMint running in the menu bar so global shortcuts keep working.

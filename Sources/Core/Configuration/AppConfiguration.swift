@@ -198,7 +198,13 @@ public final class AppConfiguration: ObservableObject {
         // App general preferences
         let loginStatus = SMAppService.mainApp.status
         self.launchAtLogin = loginStatus == .enabled || loginStatus == .requiresApproval
-        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : true
+
+        // Menu-bar-first default: run from the menu bar without cluttering the Dock
+        if !defaults.bool(forKey: "com.screenmint.dockIconMigratedToFalse") {
+            defaults.set(true, forKey: "com.screenmint.dockIconMigratedToFalse")
+            defaults.removeObject(forKey: Keys.showDockIcon)
+        }
+        self.showDockIcon = defaults.object(forKey: Keys.showDockIcon) != nil ? defaults.bool(forKey: Keys.showDockIcon) : false
         self.showMenuBarIcon = defaults.object(forKey: Keys.showMenuBarIcon) != nil ? defaults.bool(forKey: Keys.showMenuBarIcon) : true
         // On by default so a force-quit app keeps its shortcuts; the agent is registered on first launch
         self.relaunchAfterUnexpectedQuit = defaults.object(forKey: Keys.relaunchAfterUnexpectedQuit) != nil ? defaults.bool(forKey: Keys.relaunchAfterUnexpectedQuit) : true
